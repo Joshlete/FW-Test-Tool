@@ -1,0 +1,32 @@
+# Python-specific ignores
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+*.venv
+.env
+
+# IDE-specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sqlite
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Other project-specific ignores
+# Add any other files or directories specific to your project here
