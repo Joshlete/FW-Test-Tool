@@ -26,6 +26,13 @@ class KeybindingManager:
             self.is_listening = True
             print("Listeners started.")  # Debug statement
 
+    def stop_listeners(self):
+        """Stop keyboard listeners."""
+        if self.is_listening:
+            self.keyboard_listener.stop()
+            self.is_listening = False
+            print("Listeners stopped.")  # Debug statement
+
     def on_key_press(self, key):
         """Handle keyboard press events."""
         try:

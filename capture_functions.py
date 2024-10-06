@@ -10,15 +10,15 @@ from io import BytesIO
 from dotenv import load_dotenv
 import threading
 
-
 class CaptureManager:
-    def __init__(self):
+    def __init__(self, current_directory):
         """Initialize the CaptureManager class."""
         load_dotenv()  # Load environment variables from .env file
         self.manhattan_ui_url = os.getenv('MANHATTAN_UI_URL')
         self.captured_sequence = []
         self.pressed_keys = set()
         self.pressed_buttons = set()
+        self.current_directory = current_directory
 
         # Initialize multiple monitor support
         self.rectangle_id = None
@@ -173,9 +173,10 @@ class CaptureManager:
             # Destroy the overlay window and show the main window again
             overlay.destroy()
             
-            root.deiconify()  # Bring the main window back
-            root.lift()
-            root.focus_force()
+            root.deiconify()
+            root.lower()  # Push the window to the bottom of the stack
+            root.update()  # Ensure the window state is updated
+
 
         # Create a canvas to draw the rectangle
         canvas = tk.Canvas(overlay, cursor="cross", bg="black")
@@ -234,7 +235,7 @@ class CaptureManager:
         def capture_task():
             try:
                 # Call capture_ui with user input in a separate thread
-                self.capture_ui(ip_address, file_name, selected_directory, error_label)
+                self.capture_ui(ip_address, file_name, self.current_directory, error_label)
             finally:
                 # Re-enable the capture button and reset text after capturing is complete
                 capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
