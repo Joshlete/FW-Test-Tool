@@ -8,6 +8,8 @@ from screeninfo import get_monitors
 import win32clipboard as clipboard
 from io import BytesIO
 from dotenv import load_dotenv
+import threading
+
 
 class CaptureManager:
     def __init__(self):
@@ -203,6 +205,42 @@ class CaptureManager:
         clipboard.SetClipboardData(clipboard.CF_DIB, data)
         clipboard.CloseClipboard()
         print("Image copied to clipboard.")
+
+    def on_capture(self, capture_ui_button, ip_entry, file_name_entry, dir_tree_instance, error_label):
+        # Disable the capture button and change text to "Capturing..."
+        capture_ui_button.config(state=tk.DISABLED, text="Capturing...")
+
+        # Retrieve user input from the entry fields
+        ip_address = ip_entry.get().strip()
+        file_name = file_name_entry.get().strip()
+        selected_directory = dir_tree_instance.get_directory()
+
+        # Validate user input
+        if not ip_address:
+            error_label.config(text="IP Address is required.", foreground="red")
+            capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+            return
+
+        if not file_name:
+            error_label.config(text="File Name is required.", foreground="red")
+            capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+            return
+
+        if not selected_directory:
+            error_label.config(text="Please select a save directory first.", foreground="red")
+            capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+            return
+
+        def capture_task():
+            try:
+                # Call capture_ui with user input in a separate thread
+                self.capture_ui(ip_address, file_name, selected_directory, error_label)
+            finally:
+                # Re-enable the capture button and reset text after capturing is complete
+                capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+
+        # Start the capture process in a new thread
+        threading.Thread(target=capture_task).start()
 
 # Example usage:
 if __name__ == "__main__":
