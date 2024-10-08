@@ -3,7 +3,6 @@ import threading
 from vncdotool import api
 import os
 from tkinter import filedialog
-from dotenv import load_dotenv
 import tempfile
 import shutil
 from typing import Callable, Optional
@@ -20,35 +19,24 @@ class RemoteControlPanel:
         self.update_image_callback = update_image_callback
         self.username = "root"
         self.password = "myroot"
-        self.capture_button.config(state="disabled")
         self.timeout = 5
         self.vnc_port = 5900
         self.ssh_client: Optional[paramiko.SSHClient] = None
         self.vnc_client: Optional[api.VNCClient] = None
         self.update_screenshot_job = None
-        self.ssh_thread = None
+        # self.ssh_thread = None
         self.ip = self.get_ip_func()
 
     def connect(self):
-        self.ssh_thread = threading.Thread(target=self._connection_thread, daemon=True)
-        self.ssh_thread.start()
-
-    def _connection_thread(self):
+        self.ip = self.get_ip_func()
         try:
-            self._prepare_connection()
+            logging.info(f"Connecting to IP: {self.ip}")
             self._establish_ssh_connection()
             self._establish_vnc_connection()
-            self._update_ui_after_connect()
-            self.start_continuous_capture()
+            # self.start_continuous_capture()
         except Exception as e:
             self._handle_connection_error(e)
-        finally:
-            self.connect_button.config(state="normal")
-
-    def _prepare_connection(self):
-        self.connect_button.config(state="disabled")
-        logging.info(f"Connecting to IP: {self.ip}")
-        self.error_label.config(text=f"Connecting to IP: {self.ip}...", foreground="black")
+        # finally:
 
     def _establish_ssh_connection(self):
         self.ssh_client = paramiko.SSHClient()
@@ -56,7 +44,8 @@ class RemoteControlPanel:
         self.ssh_client.connect(self.ip, username=self.username, password=self.password, timeout=self.timeout)
         logging.info("SSH connection successful!")
         
-        stdin, stdout, stderr = self.ssh_client.exec_command(self.remote_control_command)
+        command = "cd /core/bin && ./remoteControlPanel -r 90 -t /dev/input/event0 &"
+        stdin, stdout, stderr = self.ssh_client.exec_command(command)
         
         exit_status = stdout.channel.recv_exit_status()
         if exit_status != 0:
@@ -67,11 +56,6 @@ class RemoteControlPanel:
         self.vnc_client = api.connect(f'{self.ip}::{self.vnc_port}')
         logging.info("VNC connection established")
 
-    def _update_ui_after_connect(self):
-        self.error_label.config(text="SSH Connected successfully!", foreground="green")
-        self.connect_button.config(text="Disconnect SSH(Dune Debug/Release)")
-        self.capture_button.config(state="normal")
-
     def _handle_connection_error(self, error: Exception):
         error_message = str(error)
         logging.error(f"Connection failed: {error_message}")
@@ -80,18 +64,11 @@ class RemoteControlPanel:
     def close(self):
         try:
             logging.info("Attempting to disconnect...")
-            self.stop_continuous_capture()
+            # self.stop_continuous_capture()
             self._close_vnc_connection()
-            self._close_ssh_connection()
-            self._update_ui_after_disconnect()
-            self.capture_button.config(state="disabled")
-            
-            if self.ssh_thread and self.ssh_thread.is_alive():
-                self.ssh_thread.join(timeout=5.0)
-                
+            self._close_ssh_connection()      
         except Exception as e:
             logging.error(f"Disconnection failed: {e}")
-            self.error_label.config(text=f"Failed to disconnect: {e}", foreground="red")
 
     def _close_vnc_connection(self):
         if self.vnc_client:
@@ -111,11 +88,6 @@ class RemoteControlPanel:
             finally:
                 self.ssh_client = None
 
-    def _update_ui_after_disconnect(self):
-        logging.info("Disconnection successful!")
-        self.error_label.config(text="Disconnected successfully!", foreground="green")
-        self.connect_button.config(text="Connect SSH(Dune Debug/Release)")
-
     def toggle_ssh_connection(self):
         self.ip = self.get_ip_func()
         if not self.is_connected():
@@ -132,7 +104,7 @@ class RemoteControlPanel:
         logging.info("Starting continuous capture")
         if self.is_connected() and self.vnc_client:
             self.capture_screenshot(save_file=False)
-            self.update_screenshot_job = threading.Timer(0.5, self.start_continuous_capture)
+            self.update_screenshot_job = threading.Timer(0.1, self.start_continuous_capture)  # Reduced interval to 0.1 seconds
             self.update_screenshot_job.start()
 
     def stop_continuous_capture(self):
@@ -144,7 +116,6 @@ class RemoteControlPanel:
         self.ip = self.get_ip_func()
         if not self.is_connected():
             logging.warning("SSH connection lost. Reconnecting...")
-            self.error_label.config(text="SSH connection lost. Reconnecting...", foreground="orange")
             try:
                 self._establish_ssh_connection()
                 self._establish_vnc_connection()
@@ -160,7 +131,6 @@ class RemoteControlPanel:
             self.update_image_callback(temp_file_path)
 
             logging.info("Screenshot captured")
-            self.error_label.config(text="Screenshot captured", foreground="green")
 
             if save_file:
                 file_path = filedialog.asksaveasfilename(
@@ -172,12 +142,10 @@ class RemoteControlPanel:
                 if file_path:
                     shutil.copy(temp_file_path, file_path)
                     logging.info(f"Screenshot saved to: {file_path}")
-                    self.error_label.config(text=f"Screenshot saved to: {file_path}", foreground="green")
                 else:
                     logging.info("Screenshot not saved")
 
             os.unlink(temp_file_path)
         else:
             logging.error("VNC client not connected, cannot capture screenshot")
-            self.error_label.config(text="VNC client not connected, cannot capture screenshot", foreground="red")
 
