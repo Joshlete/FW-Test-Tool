@@ -26,6 +26,13 @@ class KeybindingManager:
             self.is_listening = True
             print("Listeners started.")  # Debug statement
 
+    def stop_listeners(self):
+        """Stop keyboard listeners."""
+        if self.is_listening:
+            self.keyboard_listener.stop()
+            self.is_listening = False
+            print("Listeners stopped.")  # Debug statement
+
     def on_key_press(self, key):
         """Handle keyboard press events."""
         try:
@@ -78,10 +85,19 @@ class KeybindingManager:
     def check_hotkey_combination(self):
         """Check if the currently pressed keys match the registered hotkey."""
         required_keys = set(self.hotkey_combination.split('+'))
+        # print(f"Required keys: {required_keys}")  # Debug: Show required keys
+        # print(f"Active keys: {self.active_keys}")  # Debug: Show current active keys
 
         if required_keys.issubset(self.active_keys):
-            print(f"Hotkey combination {self.hotkey_combination} detected!")  # Debug statement
+            # print(f"Hotkey combination {self.hotkey_combination} detected!")
             self.trigger_snip_tool()
+        # else:
+            # print("Hotkey combination not yet complete.")  # Debug: Indicate incomplete combination
+
+        # Debug: Show which keys are missing, if any
+        # missing_keys = required_keys - self.active_keys
+        # if missing_keys:
+            # print(f"Missing keys: {missing_keys}")
 
     def trigger_snip_tool(self):
         """Trigger the snip tool when the hotkey is pressed."""

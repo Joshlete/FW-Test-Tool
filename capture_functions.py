@@ -8,15 +8,17 @@ from screeninfo import get_monitors
 import win32clipboard as clipboard
 from io import BytesIO
 from dotenv import load_dotenv
+import threading
 
 class CaptureManager:
-    def __init__(self):
+    def __init__(self, current_directory):
         """Initialize the CaptureManager class."""
         load_dotenv()  # Load environment variables from .env file
         self.manhattan_ui_url = os.getenv('MANHATTAN_UI_URL')
         self.captured_sequence = []
         self.pressed_keys = set()
         self.pressed_buttons = set()
+        self.current_directory = current_directory
 
         # Initialize multiple monitor support
         self.rectangle_id = None
@@ -171,9 +173,10 @@ class CaptureManager:
             # Destroy the overlay window and show the main window again
             overlay.destroy()
             
-            root.deiconify()  # Bring the main window back
-            root.lift()
-            root.focus_force()
+            root.deiconify()
+            root.lower()  # Push the window to the bottom of the stack
+            root.update()  # Ensure the window state is updated
+
 
         # Create a canvas to draw the rectangle
         canvas = tk.Canvas(overlay, cursor="cross", bg="black")
@@ -203,6 +206,42 @@ class CaptureManager:
         clipboard.SetClipboardData(clipboard.CF_DIB, data)
         clipboard.CloseClipboard()
         print("Image copied to clipboard.")
+
+    def on_capture(self, capture_ui_button, ip_entry, file_name_entry, dir_tree_instance, error_label):
+        # Disable the capture button and change text to "Capturing..."
+        capture_ui_button.config(state=tk.DISABLED, text="Capturing...")
+
+        # Retrieve user input from the entry fields
+        ip_address = ip_entry.get().strip()
+        file_name = file_name_entry.get().strip()
+        selected_directory = dir_tree_instance.get_directory()
+
+        # Validate user input
+        if not ip_address:
+            error_label.config(text="IP Address is required.", foreground="red")
+            capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+            return
+
+        if not file_name:
+            error_label.config(text="File Name is required.", foreground="red")
+            capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+            return
+
+        if not selected_directory:
+            error_label.config(text="Please select a save directory first.", foreground="red")
+            capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+            return
+
+        def capture_task():
+            try:
+                # Call capture_ui with user input in a separate thread
+                self.capture_ui(ip_address, file_name, self.current_directory, error_label)
+            finally:
+                # Re-enable the capture button and reset text after capturing is complete
+                capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
+
+        # Start the capture process in a new thread
+        threading.Thread(target=capture_task).start()
 
 # Example usage:
 if __name__ == "__main__":
