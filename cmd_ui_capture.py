@@ -13,12 +13,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 class RemoteControlPanel:
-    def __init__(self, ip: str, error_label, connect_button, capture_button, image_update_callback: Callable[[str], None]):
-        self.ip = ip
+    def __init__(self, get_ip_func, error_label, connect_button, capture_screenshot_button, update_image_callback):
+        self.get_ip_func = get_ip_func
         self.error_label = error_label
         self.connect_button = connect_button
-        self.capture_button = capture_button
-        self.image_update_callback = image_update_callback
+        self.capture_button = capture_screenshot_button  # Ensure capture_button is initialized
+        self.update_image_callback = update_image_callback  # Correct attribute name
         self.username = "root"
         self.password = "myroot"
         self.capture_button.config(state="disabled")  # Initially disabled
@@ -28,6 +28,7 @@ class RemoteControlPanel:
         self.vnc_client: Optional[api.VNCClient] = None
         self.update_screenshot_job = None
         self.ssh_thread = None
+        self.ip = self.get_ip_func()  # Initialize the IP address
 
     def connect(self):
         self.ssh_thread = threading.Thread(target=self._connection_thread, daemon=True)
@@ -117,6 +118,8 @@ class RemoteControlPanel:
         self.connect_button.config(text="Connect SSH(Dune Debug/Release)")
 
     def toggle_ssh_connection(self):
+        self.ip = self.get_ip_func()  # Update the IP address before attempting connection
+        current_ip = self.get_ip_func()
         if not self.is_connected():
             self.connect()
         else:
@@ -140,6 +143,7 @@ class RemoteControlPanel:
             self.update_screenshot_job = None
 
     def capture_screenshot(self, save_file: bool = True):
+        self.ip = self.get_ip_func()  # Update the IP address before capturing screenshot
         if not self.is_connected():
             logging.warning("SSH connection lost. Reconnecting...")
             self.error_label.config(text="SSH connection lost. Reconnecting...", foreground="orange")
@@ -155,7 +159,7 @@ class RemoteControlPanel:
                 temp_file_path = temp_file.name
 
             self.vnc_client.captureScreen(temp_file_path)
-            self.image_update_callback(temp_file_path)
+            self.update_image_callback(temp_file_path)  # Correct attribute name
 
             logging.info("Screenshot captured")
             self.error_label.config(text="Screenshot captured", foreground="green")

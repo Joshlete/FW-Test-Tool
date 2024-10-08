@@ -49,10 +49,12 @@ class Application(tk.Tk):
         self.main_frame = self.create_main_frame()
         self.layout_manager = LayoutManager(self.main_frame)
         self.widget_placements = self.layout_manager.get_widget_placements()
+        self.ip_entry = DEFAULT_IP  # Initialize it here
         self.create_widgets()
         self.remote_control_panel = None  # Initialize to None
         self.keybinding_manager = None  # Initialize to None
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
 
     def create_main_frame(self):
         main_frame = ttk.Frame(self)
@@ -77,6 +79,12 @@ class Application(tk.Tk):
         self.ip_entry = tk.Entry(self.main_frame)
         self.ip_entry.insert(0, DEFAULT_IP)
         self.ip_entry.grid(**placement)
+
+        def update_default_ip(*args):
+            global DEFAULT_IP
+            DEFAULT_IP = self.ip_entry.get()
+
+        self.ip_entry.bind('<FocusOut>', update_default_ip)
 
     def create_file_name_entry(self, placement):
         file_name_label = ttk.Label(self.main_frame, text="Enter File Name:")
@@ -126,8 +134,11 @@ class Application(tk.Tk):
             self.image_label.config(image=photo)
             self.image_label.image = photo
 
+        def get_current_ip():
+            return self.ip_entry.get().strip()
+
         self.remote_control_panel = RemoteControlPanel(
-            self.ip_entry.get().strip(),
+            get_current_ip,  # Pass the function to get the current IP
             self.error_label,
             self.connect_button,
             self.capture_screenshot_button,
