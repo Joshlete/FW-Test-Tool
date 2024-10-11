@@ -1,10 +1,13 @@
 from .base import TabContent
 from tkinter import ttk, StringVar
+import tkinter as tk
+
 
 class SettingsTab(TabContent):
     def __init__(self, parent, app):
         self.app = app
         self.keybinding_var = StringVar()
+        self.capture_window = None
         super().__init__(parent)
 
     def create_widgets(self) -> None:
@@ -30,16 +33,35 @@ class SettingsTab(TabContent):
 
     def capture_keybindings(self):
         # Start the keybinding capture process
-        self.app.keybinding_manager.start_keybinding_capture()
+        self.app.keybinding_manager.start_keybinding_capture(callback=self.update_capture_label)
+
+        # Create the capture window
+        self.capture_window = tk.Toplevel(self.frame)
+        self.capture_window.title("Capturing Keybinding")
+        tk.Label(self.capture_window, text="Press any keys...").pack()
+        self.keybinding_label = tk.Label(self.capture_window, text="")
+        self.keybinding_label.pack()
+
+        # Add the "Finish Capture" button to the capture window
+        stop_button = tk.Button(self.capture_window, text="Finish Capture", command=self.finish_capture)
+        stop_button.pack()
 
         # Wait for the capture window to close
-        self.frame.wait_window(self.app.keybinding_manager.capture_window)
+        self.frame.wait_window(self.capture_window)
 
-        # Retrieve the new keybinding
+    def update_capture_label(self, keys):
+        if self.capture_window and self.keybinding_label:
+            self.keybinding_label.config(text=" + ".join(keys))
+
+    def finish_capture(self):
+        # Stop the keybinding capture and update the display
         new_keybinding = self.app.keybinding_manager.stop_keybinding_capture()
-
-        # If a new keybinding is captured, register it and update the keybinding display
         if new_keybinding:
             print(f"New keybinding captured: {new_keybinding}")
             self.keybinding_var.set(new_keybinding)
             print(f"Registered new keybinding: {new_keybinding} for Snip Tool")
+        
+        # Close the capture window
+        if self.capture_window:
+            self.capture_window.destroy()
+            self.capture_window = None
