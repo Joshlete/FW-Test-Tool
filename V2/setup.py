@@ -6,8 +6,9 @@ setup(
     packages=find_packages(),
     entry_points={
         "gui_tabs": [
-            "dune = gui_tabs.dune:DuneTab",
-            "sirius = gui_tabs.sirius:SiriusTab",
+            "1_dune = gui_tabs.dune:DuneTab",
+            "2_sirius = gui_tabs.sirius:SiriusTab",
+            "3_settings = gui_tabs.settings:SettingsTab",
         ],
     },
 )

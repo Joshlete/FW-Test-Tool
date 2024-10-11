@@ -4,6 +4,9 @@ from tkinter import ttk
 from typing import Dict, List, Callable
 from importlib.metadata import entry_points
 import ipaddress
+from capture_functions import CaptureManager
+from keybindings import KeybindingManager
+
 
 # default ip address
 DEFAULT_IP = "15.8.177.148"
@@ -21,9 +24,18 @@ class App(tk.Tk):
         self._ip_callbacks: List[Callable[[str], None]] = []
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        
         print("> Creating IP input section")
         self.create_ip_input()
+
+        # Create a frame for the Snip Tool
+        print("> Creating Snip Tool")
+        self.capture_manager = CaptureManager(current_directory=".") # Initialize the CaptureManager
+        self.create_snip_tool()
+
+        # create keybinding manager
+        print("> Creating Keybinding Manager")
+        self.keybinding_manager = KeybindingManager(self, self.capture_manager)
+
         
         print("> Creating Notebook")
         self.tab_control = ttk.Notebook(self)
@@ -35,7 +47,21 @@ class App(tk.Tk):
         print("> Packing tab control")
         self.tab_control.pack(expand=1, fill="both")
         print("> App initialization complete")
-    
+
+
+    def create_snip_tool(self) -> None:
+        snip_frame = ttk.Frame(self)
+        snip_frame.pack(fill="x", padx=10, pady=10)
+        
+        # Add a "Snip Tool" button
+        self.snip_tool_button = ttk.Button(snip_frame, text="Snip Tool", command=self.snip_tool)
+        self.snip_tool_button.pack(side="left", padx=5)
+
+    def snip_tool(self) -> None:
+        # Corrected to use self as the root window
+        root = self.winfo_toplevel()  # Get the root window
+        self.capture_manager.capture_screen_region(root, "screenshot", ".", None)
+
     def create_ip_input(self) -> None:
         ip_frame = ttk.Frame(self)
         ip_frame.pack(fill="x", padx=10, pady=10)
@@ -66,9 +92,10 @@ class App(tk.Tk):
     
     def create_tabs(self) -> None:
         print("> Entering create_tabs method")
-        for ep in entry_points(group='gui_tabs'):
-            print(f"    > Found entry point: {ep.name}")
-            self.add_tab(ep.name, ep.load())
+        eps = sorted(entry_points(group='gui_tabs'), key=lambda ep: ep.name)
+        for ep in eps:
+            print(f" > Found entry point: {ep.name}")
+            self.add_tab(ep.name.split('_', 1)[1], ep.load())  # Remove the order prefix when adding the tab
         print("> Exiting create_tabs method")
     
     def add_tab(self, tab_name: str, tab_class: type) -> None:
@@ -86,7 +113,7 @@ class App(tk.Tk):
             tab_instance = tab_class(tab_frame, self)
             tab_instance.frame.pack(expand=True, fill="both")
             self.tabs[tab_name] = tab_instance
-            print(f"  > Successfully added tab: {tab_name}")
+            print(f" > Successfully added tab: {tab_name}")
             
         except Exception as e:
             print(f">! Error adding tab '{tab_name}': {str(e)}")
@@ -109,6 +136,10 @@ class App(tk.Tk):
             if hasattr(tab, 'remote_control_panel'):
                 print(f"Stopping remote control panel for tab: {tab}")
                 tab.remote_control_panel.close()
+
+        # Stop snip tool listeners
+        print("Stopping snip tool listeners...")
+        self.keybinding_manager.stop_listeners()  # Assuming stop_listeners method exists
 
         # Join other threads
         for thread in threading.enumerate():

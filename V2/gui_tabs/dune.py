@@ -2,7 +2,6 @@ from .base import TabContent
 from tkinter import ttk
 from cmd_ui_capture import RemoteControlPanel  # Import the RemoteControlPanel class
 import threading
-from PIL import Image, ImageTk
 
 CONNECTING = "Connecting..."
 CONNECT = "Connect To Printer"
@@ -25,6 +24,7 @@ class DuneTab(TabContent):
             update_image_callback=self.update_image_label  # Update image label with the screenshot
         )
 
+
     def create_widgets(self) -> None:
         # Create a main frame to hold the sections
         self.main_frame = ttk.Frame(self.frame)
@@ -40,11 +40,11 @@ class DuneTab(TabContent):
 
         # Add "Connect To Printer" button in the left frame
         self.connect_button = ttk.Button(self.left_frame, text="Connect To Printer", command=self.toggle_printer_connection)
-        self.connect_button.pack(pady=10, padx=10, anchor="w")
+        self.connect_button.pack(pady=5, padx=10, anchor="w")
 
         # Add a "capture UI" button in the left frame
         self.capture_ui_button = ttk.Button(self.left_frame, text="Capture UI", command=self.capture_ui)
-        self.capture_ui_button.pack(padx=10, anchor="w")
+        self.capture_ui_button.pack(pady=5, padx=10, anchor="w")
         self.capture_ui_button.config(state="disabled")
 
         # Add a notification label at the bottom center of the DuneTab page
