@@ -38,8 +38,8 @@ class SettingsTab(TabContent):
         # Retrieve the new keybinding
         new_keybinding = self.app.keybinding_manager.stop_keybinding_capture()
 
-        # If a new keybinding is captured, register it and update the display
+        # If a new keybinding is captured, register it and update the keybinding display
         if new_keybinding:
-            self.app.keybinding_manager.register_keybinding("Snip Tool", new_keybinding, self.app.keybinding_manager.trigger_snip_tool)
+            print(f"New keybinding captured: {new_keybinding}")
             self.keybinding_var.set(new_keybinding)
             print(f"Registered new keybinding: {new_keybinding} for Snip Tool")
