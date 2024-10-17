@@ -1,22 +1,28 @@
 import tkinter as tk
 from pynput import keyboard
+import json
+import os
 
 class KeybindingManager:
+    CONFIG_FILE = "config.json"
+
     def __init__(self, root, capture_manager):
         """Initialize the KeybindingManager class."""
         self.root = root
         self.capture_manager = capture_manager
-        self.active_keys = set()  # To keep track of currently pressed keys
+        self.active_keys = set()  # Track currently pressed keys
         self.is_listening = False
+        self.capturing_keybinding = False
+        self.captured_keys = set()  # Store captured keys during keybinding setup
+        self.callback = None  # Callback function for keybinding capture
 
-        # Set a custom keybinding to Ctrl + Shift + F10
-        self.hotkey_combination = "<ctrl>+<shift>+<f10>"
+        # Load hotkey combination from config file or use default
+        self._hotkey_combination = self.load_hotkey_combination() or "<ctrl>+<shift>+<f10>"
 
-        # Start listeners immediately
         self.start_listeners()
 
     def start_listeners(self):
-        """Start keyboard listeners."""
+        """Start keyboard listeners if not already listening."""
         if not self.is_listening:
             self.keyboard_listener = keyboard.Listener(
                 on_press=self.on_key_press,
@@ -24,87 +30,118 @@ class KeybindingManager:
             )
             self.keyboard_listener.start()
             self.is_listening = True
-            print("Listeners started.")  # Debug statement
 
     def stop_listeners(self):
-        """Stop keyboard listeners."""
+        """Stop keyboard listeners if currently listening."""
         if self.is_listening:
             self.keyboard_listener.stop()
             self.is_listening = False
-            print("Listeners stopped.")  # Debug statement
+
+    def start_keybinding_capture(self, callback=None):
+        """Start capturing a new keybinding."""
+        self.capturing_keybinding = True
+        self.captured_keys.clear()
+        self.callback = callback
+
+    def stop_keybinding_capture(self):
+        """Stop capturing the keybinding and return the new combination."""
+        if self.capturing_keybinding:
+            self.capturing_keybinding = False
+            new_hotkey = self.combine_keys(self.captured_keys)
+            self._hotkey_combination = new_hotkey
+            self.save_hotkey_combination()  # Save the new hotkey combination
+            self.captured_keys.clear()
+            self.callback = None
+            return new_hotkey
+        return None
 
     def on_key_press(self, key):
         """Handle keyboard press events."""
         try:
-            key_repr = None
-
-            # Handle modifier keys separately
-            if key == keyboard.Key.ctrl_l or key == keyboard.Key.ctrl_r:
-                key_repr = '<ctrl>'
-            elif key == keyboard.Key.shift_l or key == keyboard.Key.shift_r:
-                key_repr = '<shift>'
-            elif key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
-                key_repr = '<alt>'
-            elif key == keyboard.Key.f10:  # Example: F10 key
-                key_repr = '<f10>'
-            elif hasattr(key, 'char') and key.char:  # Regular character keys
-                key_repr = key.char.lower()
-
+            key_repr = self.get_key_representation(key)
             if key_repr:
                 self.active_keys.add(key_repr)
-                # print(f"Active keys: {self.active_keys}")  # Debug statement
-
-                # Check for hotkey combination
-                self.check_hotkey_combination()
+                if self.capturing_keybinding:
+                    self.captured_keys.add(key_repr)
+                    if self.callback:
+                        self.callback(self.get_ordered_keys())
+                else:
+                    self.run_snippet_tool()
         except Exception as e:
-            print(f"Error capturing key: {e}")  # Debug statement
+            print(f"Error capturing key: {e}")
 
     def on_key_release(self, key):
         """Handle keyboard release events."""
         try:
-            key_repr = None
-
-            # Handle modifier keys separately
-            if key == keyboard.Key.ctrl_l or key == keyboard.Key.ctrl_r:
-                key_repr = '<ctrl>'
-            elif key == keyboard.Key.shift_l or key == keyboard.Key.shift_r:
-                key_repr = '<shift>'
-            elif key == keyboard.Key.alt_l or key == keyboard.Key.alt_r:
-                key_repr = '<alt>'
-            elif key == keyboard.Key.f10:  # Example: F10 key
-                key_repr = '<f10>'
-            elif hasattr(key, 'char') and key.char:  # Regular character keys
-                key_repr = key.char.lower()
-
+            key_repr = self.get_key_representation(key)
             if key_repr and key_repr in self.active_keys:
                 self.active_keys.remove(key_repr)
-                # print(f"Key released: {key_repr}. Active keys: {self.active_keys}")  # Debug statement
+                if self.capturing_keybinding and self.callback:
+                    self.callback(self.get_ordered_keys())
         except Exception as e:
-            print(f"Error releasing key: {e}")  # Debug statement
+            print(f"Error releasing key: {e}")
 
-    def check_hotkey_combination(self):
-        """Check if the currently pressed keys match the registered hotkey."""
-        required_keys = set(self.hotkey_combination.split('+'))
-        # print(f"Required keys: {required_keys}")  # Debug: Show required keys
-        # print(f"Active keys: {self.active_keys}")  # Debug: Show current active keys
+    def get_key_representation(self, key):
+        """Get a consistent string representation of a key."""
+        if isinstance(key, keyboard.Key):
+            if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+                return '<ctrl>'
+            elif key in (keyboard.Key.shift_l, keyboard.Key.shift_r):
+                return '<shift>'
+            elif key in (keyboard.Key.alt_l, keyboard.Key.alt_r):
+                return '<alt>'
+            return f'<{key.name}>'
+        elif isinstance(key, keyboard.KeyCode):
+            if key.char:
+                # Handle control characters (ASCII 1-26)
+                if 1 <= ord(key.char) <= 26:
+                    return chr(ord(key.char) + 96)  # Convert to lowercase letter
+                return key.char.lower()
+            elif key.vk and 65 <= key.vk <= 90:  # ASCII codes for A-Z
+                return chr(key.vk + 32)  # Convert to lowercase
+        return None
 
+    def run_snippet_tool(self):
+        """Check if the currently pressed keys match the registered hotkey and trigger the snippet tool."""
+        required_keys = set(self._hotkey_combination.split('+'))
         if required_keys.issubset(self.active_keys):
-            # print(f"Hotkey combination {self.hotkey_combination} detected!")
-            self.trigger_snip_tool()
-        # else:
-            # print("Hotkey combination not yet complete.")  # Debug: Indicate incomplete combination
+            self.capture_manager.capture_screen_region(
+                self.root, 
+                file_name="snip_capture", 
+                save_directory=".",
+                error_label=tk.Label(self.root, text="", foreground="red")
+            )
 
-        # Debug: Show which keys are missing, if any
-        # missing_keys = required_keys - self.active_keys
-        # if missing_keys:
-            # print(f"Missing keys: {missing_keys}")
+    def get_hotkey_combination(self):
+        """Get the current hotkey combination."""
+        return self._hotkey_combination
 
-    def trigger_snip_tool(self):
-        """Trigger the snip tool when the hotkey is pressed."""
-        print("Triggering snip tool...")  # Debug statement
-        self.capture_manager.capture_screen_region(
-            self.root, 
-            file_name="snip_capture", 
-            save_directory=".",  # Adjust save directory as needed
-            error_label=tk.Label(self.root, text="", foreground="red")
-        )
+    def combine_keys(self, key_set):
+        """Combine keys into a single representation."""
+        return '+'.join(self.get_ordered_keys())
+
+    def get_ordered_keys(self):
+        """Get the captured keys in the specified order (modifiers first, then other keys)."""
+        modifiers = ['<shift>', '<ctrl>', '<alt>']
+        ordered_keys = [key for key in self.captured_keys if key in modifiers]
+        other_keys = [key for key in self.captured_keys if key not in modifiers]
+        
+        # Sort modifiers in the specified order
+        ordered_keys.sort(key=lambda x: modifiers.index(x))
+        
+        return ordered_keys + other_keys
+
+    def save_hotkey_combination(self):
+        """Save the current hotkey combination to a config file."""
+        config = {"hotkey_combination": self._hotkey_combination}
+        with open(self.CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+
+    def load_hotkey_combination(self):
+        """Load the hotkey combination from a config file."""
+        if os.path.exists(self.CONFIG_FILE):
+            with open(self.CONFIG_FILE, "r") as f:
+                config = json.load(f)
+                return config.get("hotkey_combination")
+        return None
+

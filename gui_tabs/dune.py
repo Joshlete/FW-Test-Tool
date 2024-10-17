@@ -1,6 +1,6 @@
 from .base import TabContent
 from tkinter import ttk
-from cmd_ui_capture import RemoteControlPanel
+from dune_ui_capture import RemoteControlPanel
 import threading
 from PIL import Image, ImageTk
 from tkinter import filedialog
@@ -49,7 +49,7 @@ class DuneTab(TabContent):
         self.capture_ui_button.pack(pady=5, padx=10, anchor="w")
 
         # Add a "fetch JSON" button in the left frame
-        self.fetch_json_button = ttk.Button(self.left_frame, text="Fetch JSON", command=self.fetch_json)
+        self.fetch_json_button = ttk.Button(self.left_frame, text="Fetch CDM", command=self.fetch_json)
         self.fetch_json_button.pack(pady=5, padx=10, anchor="w")
 
         # Create notification label

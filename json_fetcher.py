@@ -1,20 +1,23 @@
+import os
+from dotenv import load_dotenv
 import requests
 import json
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from requests.packages.urllib3.exceptions import InsecureRequestWarning # type: ignore
-import os
+
+# Load environment variables from .env file
+load_dotenv()
 
 class WebJsonFetcher:
     def __init__(self, ip_address):
         self.ip_address = ip_address
-        self.base_url = f"https://{ip_address}/{os.getenv('CDM_SUPPLY')}"
-        self.endpoints = [
-            "alerts",
-            "suppliesPublic",
-            "suppliesPrivate",
-            "supplyAssessment"
-        ]
+        self.base_url = os.getenv('DUNE_BASE_URL', 'https://{ip_address}/cdm/supply/v1').format(ip_address=ip_address)
+        
+        # Get endpoints from .env file
+        dune_endpoints = os.getenv('DUNE_ENDPOINTS', '')
+        self.endpoints = dune_endpoints.split(',') if dune_endpoints else []
+        
         # Disable SSL warnings
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 

@@ -1,199 +1,196 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-from pynput import mouse, keyboard
-from keybindings import KeybindingManager
-from capture_functions import CaptureManager
-from directory_tree import DirectoryTree
-from cmd_ui_capture import RemoteControlPanel
-from json_fetcher import WebJsonFetcher
 import threading
-from PIL import Image, ImageTk
+import tkinter as tk
+from tkinter import ttk
+from typing import Dict, List, Callable
+import ipaddress
+from snip_tool import CaptureManager
+from keybindings import KeybindingManager
+from gui_tabs.sirius import SiriusTab
+from gui_tabs.settings import SettingsTab
+from gui_tabs.dune import DuneTab
+from cdm_ledm_fetcher import create_fetcher
+import json
+import os
+import time
 
-DEFAULT_IP = "15.8.177.149"
+class App(tk.Tk):
+    CONFIG_FILE = "config.json"
+    DEFAULT_IP = "15.8.177.148"
 
-class LayoutManager:
-    def __init__(self, main_frame):
-        self.main_frame = main_frame
-        self.configure_grid()
-
-    def configure_grid(self):
-        self.main_frame.grid_columnconfigure(1, weight=1)
-        self.main_frame.grid_columnconfigure(2, weight=1)
-        for i in range(10):
-            self.main_frame.grid_rowconfigure(i, weight=1)
-
-    def get_widget_placements(self):
-        row = 0
-        placements = {}
-        
-        placements['ip_entry'] = {'row': row, 'column': 1, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['file_name_entry'] = {'row': (row := row + 1), 'column': 1, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['connect_button'] = {'row': (row := row + 3), 'column': 0, 'columnspan': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['capture_screenshot_button'] = {'row': (row := row + 1), 'column': 0, 'columnspan': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['capture_ui_button'] = {'row': (row := row + 1), 'column': 0, 'columnspan': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['snip_button'] = {'row': (row := row + 1), 'column': 0, 'columnspan': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['fetch_button'] = {'row': (row := row + 1), 'column': 0, 'columnspan': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['image_label'] = {'row': (row := row + 1), 'column': 0, 'columnspan': 2, 'sticky': "nsew", 'padx': 5, 'pady': 5}
-        
-        placements['dir_tree'] = {'row': 0, 'column': 2, 'rowspan': row + 1, 'sticky': "nsew", 'padx': 5, 'pady': 5}
-        placements['save_directory'] = {'row': (row := row + 1), 'column': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['save_directory_label'] = {'row': (row := row + 1), 'column': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        placements['error_label'] = {'row': (row := row + 1), 'column': 0, 'columnspan': 2, 'sticky': "ew", 'padx': 5, 'pady': 5}
-        
-        return placements
-
-class Application(tk.Tk):
-    def __init__(self):
+    def __init__(self) -> None:
+        print("> [App.__init__] Initializing App")
         super().__init__()
-        self.title("Test Capture Tool")
-        self.main_frame = self.create_main_frame()
-        self.layout_manager = LayoutManager(self.main_frame)
-        self.widget_placements = self.layout_manager.get_widget_placements()
-        self.ip_entry = DEFAULT_IP  # Initialize it here
-        self.create_widgets()
-        self.remote_control_panel = None  # Initialize to None
-        self.keybinding_manager = None  # Initialize to None
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.title("FW Test Tool")
+        self.geometry("600x500")
         
+        # Load IP address from config file or use default
+        self._ip_address = self.load_ip_address() or self.DEFAULT_IP
+        self.ip_var = tk.StringVar(value=self._ip_address)
+        self.ip_var.trace_add("write", self._on_ip_change)  # Track changes to IP input
+        self._ip_callbacks: List[Callable[[str], None]] = []
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    def create_main_frame(self):
-        main_frame = ttk.Frame(self)
-        main_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-        return main_frame
-
-    def create_widgets(self):
-        self.create_ip_entry(self.widget_placements['ip_entry'])
-        self.create_file_name_entry(self.widget_placements['file_name_entry'])
-        self.create_error_label(self.widget_placements['error_label'])
-        self.create_buttons(self.widget_placements)
-        self.create_image_label(self.widget_placements['image_label'])
-        self.create_directory_tree(self.widget_placements['dir_tree'])
-        self.create_remote_control_panel()
-        self.create_capture_manager()
-        self.create_json_fetcher()
-        self.create_keybinding_manager()
-
-    def create_ip_entry(self, placement):
-        ip_label = tk.Label(self.main_frame, text="IP Address:")
-        ip_label.grid(row=placement['row'], column=placement['column']-1, sticky="w")
-        self.ip_entry = tk.Entry(self.main_frame)
-        self.ip_entry.insert(0, DEFAULT_IP)
-        self.ip_entry.grid(**placement)
-
-        def update_default_ip(*args):
-            global DEFAULT_IP
-            DEFAULT_IP = self.ip_entry.get()
-
-        self.ip_entry.bind('<FocusOut>', update_default_ip)
-
-    def create_file_name_entry(self, placement):
-        file_name_label = ttk.Label(self.main_frame, text="Enter File Name:")
-        file_name_label.grid(row=placement['row'], column=placement['column']-1, sticky="w")
-        self.file_name_entry = ttk.Entry(self.main_frame)
-        self.file_name_entry.grid(**placement)
-
-    def create_error_label(self, placement):
-        self.error_label = tk.Label(self.main_frame, text="", fg="red")
-        self.error_label.grid(**placement)
-
-    def create_buttons(self, placements):
-        print("Creating connect_button with placement:", placements['connect_button'])  # Debug print
-        self.connect_button = tk.Button(self.main_frame, text="Connect SSH(Dune Debug/Release)")
-        self.connect_button.grid(**placements['connect_button'])
-        print("connect_button grid info:", self.connect_button.grid_info())  # Debug print
-
-        self.capture_screenshot_button = tk.Button(self.main_frame, text="Capture UI(Dune)", state="disabled")
-        self.capture_screenshot_button.grid(**placements['capture_screenshot_button'])
-
-        self.capture_ui_button = tk.Button(self.main_frame, text="Capture UI (Manhattan)", command=self.capture_ui)
-        self.capture_ui_button.grid(**placements['capture_ui_button'])
-
-        self.snip_button = tk.Button(self.main_frame, text="Snip Tool", command=self.snip_tool)
-        self.snip_button.grid(**placements['snip_button'])
-
-        self.fetch_button = tk.Button(self.main_frame, text="Save CDM (Dune)", command=self.fetch_json)
-        self.fetch_button.grid(**placements['fetch_button'])
-
-    def create_image_label(self, placement):
-        self.image_label = tk.Label(self.main_frame)
-        self.image_label.grid(**placement)
-
-    def create_directory_tree(self, placement):
-        self.dir_tree_instance = DirectoryTree(self.main_frame)
-        self.dir_tree_instance.dir_listbox.bind("<<DirectorySelected>>", self.on_directory_selected)
-
-    def on_directory_selected(self, event):
-        selected_dir = self.dir_tree_instance.get_directory()
-        print(f"Selected directory: {selected_dir}")
-
-    def create_remote_control_panel(self):
-        def update_image(temp_file_path):
-            image = Image.open(temp_file_path)
-            image.thumbnail((400, 300))
-            photo = ImageTk.PhotoImage(image)
-            self.image_label.config(image=photo)
-            self.image_label.image = photo
-
-        def get_current_ip():
-            return self.ip_entry.get().strip()
-
-        self.remote_control_panel = RemoteControlPanel(
-            get_current_ip,  # Pass the function to get the current IP
-            self.error_label,
-            self.connect_button,
-            self.capture_screenshot_button,
-            update_image
-        )
-        self.connect_button.config(command=self.remote_control_panel.toggle_ssh_connection)
-        self.capture_screenshot_button.config(command=self.remote_control_panel.capture_screenshot)
-
-    def update_ui(self):
-        # This method should be called periodically to update the UI
-        self.root.update_idletasks()
-        self.root.after(100, self.update_ui)
-
-    def create_capture_manager(self):
-        self.capture_manager = CaptureManager(self.dir_tree_instance.get_directory())
-
-    def create_json_fetcher(self):
-        self.json_fetcher = WebJsonFetcher(self.ip_entry.get().strip())
-
-    def create_keybinding_manager(self):
+        # Create UI components
+        self.create_ip_input()
+        self.capture_manager = CaptureManager(current_directory=".")
+        self.create_snip_tool()
         self.keybinding_manager = KeybindingManager(self, self.capture_manager)
 
-    def capture_ui(self):
-        self.capture_manager.on_capture(
-            self.capture_ui_button, self.ip_entry, self.file_name_entry, self.dir_tree_instance, self.error_label
-        )
+        # Create and set up the tab control
+        self.tab_control = ttk.Notebook(self)
+        self.tabs: Dict[str, ttk.Frame] = {}
+        self.create_tabs()
+        self.tab_control.pack(expand=1, fill="both")
+        print("> [App.__init__] App initialization complete")
 
-    def snip_tool(self):
-        self.capture_manager.capture_screen_region(
-            self, self.file_name_entry.get(), self.dir_tree_instance.get_directory(), self.error_label
-        )
+        self.sirius_fetcher = None
+        self.dune_fetcher = None
+        self.update_fetchers()
+        
+        # Register IP change callback
+        self.register_ip_callback(self.update_fetchers)
 
-    def fetch_json(self):
-        selected_directory = self.dir_tree_instance.get_directory()
-        self.json_fetcher.save_to_file(selected_directory)
+    def create_snip_tool(self) -> None:
+        print("> [App.create_snip_tool] Creating Snip Tool")
+        # Create a frame and button for the Snip Tool functionality
+        snip_frame = ttk.Frame(self)
+        snip_frame.pack(fill="x", padx=10, pady=10)
+        self.snip_tool_button = ttk.Button(snip_frame, text="Snip Tool", command=self.snip_tool)
+        self.snip_tool_button.pack(side="left", padx=5)
+
+    def snip_tool(self) -> None:
+        print("> [App.snip_tool] Capturing screen region")
+        # Capture a screen region when the Snip Tool button is clicked
+        root = self.winfo_toplevel()
+        self.capture_manager.capture_screen_region(root, "screenshot", ".", None)
+
+    def create_ip_input(self) -> None:
+        print("> [App.create_ip_input] Creating IP input field")
+        # Create an input field for the IP address
+        ip_frame = ttk.Frame(self)
+        ip_frame.pack(fill="x", padx=10, pady=10)
+        ttk.Label(ip_frame, text="IP Address:").pack(side="left")
+        self.ip_entry = ttk.Entry(ip_frame, textvariable=self.ip_var)
+        self.ip_entry.pack(side="left", padx=5)
+        self._on_ip_change()  # Validate initial IP
+
+    def _on_ip_change(self, *args) -> None:
+        print(f"> [App._on_ip_change] IP changed to: {self.ip_var.get()}")
+        # Validate and process IP address changes
+        ip = self.ip_var.get()
+        self._ip_address = ip
+        try:
+            ipaddress.ip_address(ip)
+            print(f"> Valid IP address entered: {ip}")
+            self.save_ip_address()  # Save the new IP address
+            for callback in self._ip_callbacks:
+                callback(ip)
+        except ValueError:
+            print(f"> Invalid IP address: {ip}")
+
+    def save_ip_address(self) -> None:
+        """Save the current IP address to the config file."""
+        config = self.load_config()
+        config["ip_address"] = self._ip_address
+        with open(self.CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+
+    def load_ip_address(self) -> str:
+        """Load the IP address from the config file."""
+        config = self.load_config()
+        return config.get("ip_address")
+
+    @classmethod
+    def load_config(cls) -> dict:
+        """Load the entire config file."""
+        if os.path.exists(cls.CONFIG_FILE):
+            with open(cls.CONFIG_FILE, "r") as f:
+                return json.load(f)
+        return {}
+
+    def get_ip_address(self) -> str:
+        print(f"> [App.get_ip_address] Returning IP: {self._ip_address}")
+        # Getter for the current IP address
+        return self._ip_address
+
+    def register_ip_callback(self, callback: Callable[[str], None]) -> None:
+        print(f"> [App.register_ip_callback] Registering new IP callback")
+        # Register callbacks for IP address changes
+        self._ip_callbacks.append(callback)
+
+    def create_tabs(self) -> None:
+        print("> [App.create_tabs] Creating tabs")
+        # Directly add tabs without using entry points
+        self.add_tab("Sirius", SiriusTab)
+        self.add_tab("Dune", DuneTab)
+        self.add_tab("Settings", SettingsTab)
+
+    def add_tab(self, tab_name: str, tab_class: type) -> None:
+        print(f"> [App.add_tab] Adding tab: {tab_name}")
+        # Add a new tab to the notebook
+        if tab_name in self.tabs:
+            print(f"> Warning: Tab '{tab_name}' already exists.")
+            return
+        
+        try:
+            tab_frame = ttk.Frame(self.tab_control)
+            self.tab_control.add(tab_frame, text=tab_name.capitalize())
+            tab_instance = tab_class(tab_frame, self)
+            tab_instance.frame.pack(expand=True, fill="both")
+            self.tabs[tab_name] = tab_instance
+        except Exception as e:
+            print(f">! Error adding tab '{tab_name}': {str(e)}")
+
+    def update_fetchers(self, *args):
+        ip = self.get_ip_address()
+        self.sirius_fetcher = create_fetcher(ip, "sirius")
+        self.dune_fetcher = create_fetcher(ip, "dune")
 
     def on_closing(self):
-        if self.remote_control_panel:
-            self.remote_control_panel.close()
-        if self.keybinding_manager:
-            self.keybinding_manager.stop_listeners()
-        self.stop_all_threads()
+        print("> [App.on_closing] Closing application")
+        self._stop_threads = True  # Signal threads to stop
+
+        # Stop the Twisted Reactor if it's running
+        try:
+            from twisted.internet import reactor
+            if reactor.running:
+                print("Stopping Twisted Reactor...")
+                reactor.callFromThread(reactor.stop)
+        except ImportError:
+            print("Twisted is not used in this application.")
+
+        # Stop listeners for all tabs
+        for tab_name, tab in self.tabs.items():
+            if hasattr(tab, 'stop_listeners'):
+                print(f"Stopping listeners for tab: {tab_name}")
+                tab.stop_listeners()
+            if hasattr(tab, 'remote_control_panel'):
+                print(f"Stopping remote control panel for tab: {tab_name}")
+                tab.remote_control_panel.close()
+
+        # Stop snip tool listeners
+        print("Stopping snip tool listeners...")
+        self.keybinding_manager.stop_listeners()
+
+        # Join remaining threads with a timeout
+        timeout = 5  # 5 seconds timeout
+        start_time = time.time()
+        for thread in threading.enumerate():
+            if thread != threading.main_thread():
+                remaining_time = max(0, timeout - (time.time() - start_time))
+                if remaining_time <= 0:
+                    print(f"Timeout reached. Unable to stop thread: {thread.name}")
+                    break
+                print(f"Waiting for thread to stop: {thread.name}")
+                thread.join(timeout=remaining_time)
+
         print("Closing application...")
         self.quit()
         self.destroy()
 
-    def stop_all_threads(self):
-        for thread in threading.enumerate():
-            if thread != threading.main_thread():
-                print(f"Stopping thread: {thread.name}")
-                thread.join(timeout=1.0)
-
-def main():
-    app = Application()
-    app.mainloop()
-
 if __name__ == "__main__":
-    main()
+    print("> Starting application")
+    app = App()
+    print("> Entering main event loop")
+    app.mainloop()
+    print("> Application closed")
