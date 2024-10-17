@@ -3,6 +3,7 @@ import requests
 from PIL import Image, ImageTk
 import io
 import time
+import urllib3
 import os
 from dotenv import load_dotenv
 

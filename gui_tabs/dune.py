@@ -1,31 +1,40 @@
 from .base import TabContent
-from tkinter import ttk
-from dune_ui_capture import RemoteControlPanel
+from dune_fpui import DuneFPUI
+from tkinter import simpledialog, ttk
 import threading
-from PIL import Image, ImageTk
-from tkinter import filedialog
+import socket
+import queue
+import os
 
 # Constants for button text
 CONNECTING = "Connecting..."
-CONNECT = "Connect To Printer"
+CONNECT_UI = "View UI"
 DISCONNECTING = "Disconnecting..."  
-DISCONNECT = "Disconnect from Printer"
+DISCONNECT_UI = "Disconnect from UI"
+CONNECT = "Connect"
+DISCONNECT = "Disconnect"
+
+# TODO:
+# - when running continuous capture, check if disconnected, if so, stop continuous capture
 
 class DuneTab(TabContent):
     def __init__(self, parent, app):
-        self.app = app
         super().__init__(parent)
-        self.ip = self.get_current_ip()
-        self.is_connected = False
+        self.app = app
+        self.root = parent.winfo_toplevel()  # Get the root window
+        self.ip = self.app.get_ip_address()
+        self.directory = self.app.get_directory()
+        self.is_connected = False  # Global variable to track connection status
+        self.sock = None    
+        self.dune_fpui = DuneFPUI()
         
-        # Initialize the remote control panel for printer connection and UI capture
-        self.remote_control_panel = RemoteControlPanel(
-            get_ip_func=self.app.get_ip_address,
-            error_label=None,  # Will be set in create_widgets
-            connect_button=None,  # Will be set in create_widgets
-            capture_screenshot_button=None,
-            update_image_callback=self.update_image_label
-        )
+        self.task_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self.worker_thread.start()
+
+        # Register callbacks for IP address and directory changes
+        self.app.register_ip_callback(self.on_ip_change)
+        self.app.register_directory_callback(self.on_directory_change)
 
     def create_widgets(self) -> None:
         # Create main layout frames
@@ -40,21 +49,23 @@ class DuneTab(TabContent):
         self.right_frame = ttk.Frame(self.main_frame)
         self.right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="n")
 
-        # Add "Connect To Printer" button in the left frame
-        self.connect_button = ttk.Button(self.left_frame, text="Connect To Printer", command=self.toggle_printer_connection)
+
+        # # Add a "fetch JSON" button in the left frame
+        # self.fetch_json_button = ttk.Button(self.left_frame, text="Fetch CDM", command=self.fetch_json)
+        # self.fetch_json_button.pack(pady=5, padx=10, anchor="w")
+
+
+        # Add a "Connect To Printer" button in the left frame
+        self.connect_button = ttk.Button(self.left_frame, text="Connect", command=self.toggle_printer_connection)
         self.connect_button.pack(pady=5, padx=10, anchor="w")
 
+        # Add "Connect To Printer" button in the left frame
+        # self.continuous_ui_button = ttk.Button(self.left_frame, text=CONNECT_UI, command=self.toggle_fpui_screen, state="disabled")
+        # self.continuous_ui_button.pack(pady=5, padx=10, anchor="w")
+
         # Add a "capture UI" button in the left frame
-        self.capture_ui_button = ttk.Button(self.left_frame, text="Capture UI", command=self.capture_ui, state="disabled")
+        self.capture_ui_button = ttk.Button(self.left_frame, text="Capture UI", command=self.queue_save_fpui_image, state="disabled")
         self.capture_ui_button.pack(pady=5, padx=10, anchor="w")
-
-        # Add a "fetch JSON" button in the left frame
-        self.fetch_json_button = ttk.Button(self.left_frame, text="Fetch CDM", command=self.fetch_json)
-        self.fetch_json_button.pack(pady=5, padx=10, anchor="w")
-
-        # Create notification label
-        self.notification_label = ttk.Label(self.frame, text="", foreground="red")
-        self.notification_label.pack(side="bottom", pady=10, padx=10)
 
         # Add an image label to display the printer screen with a border in the right frame
         self.image_frame = ttk.Frame(self.right_frame, borderwidth=2, relief="solid")
@@ -63,111 +74,145 @@ class DuneTab(TabContent):
         self.image_label = ttk.Label(self.image_frame)
         self.image_label.pack(pady=10, padx=10, anchor="center")
 
-    def capture_ui(self):
-        """Trigger UI capture when the button is pressed"""
-        self.remote_control_panel.capture_screenshot()
+        # Create notification label
+        self.notification_label = ttk.Label(self.frame, text="", foreground="red")
+        self.notification_label.pack(side="bottom", pady=10, padx=10)
 
-    def get_current_ip(self) -> str:
-        """Get the current IP address from the app"""
-        return self.app.get_ip_address()
+    def _worker(self):
+        while True:
+            task, args = self.task_queue.get()
+            if task is None:
+                break  # Exit the loop if we receive a sentinel value
+            try:
+                task(*args)
+            except Exception as e:
+                print(f"Error in worker thread: {e}")
+            finally:
+                self.task_queue.task_done()
+
+    def queue_task(self, task, *args):
+        self.task_queue.put((task, args))
 
     def toggle_printer_connection(self):
-        """Toggle printer connection state and update UI"""
-        self.connect_button.config(state="disabled", text=CONNECTING if not self.remote_control_panel.is_connected() else DISCONNECTING)
-        threading.Thread(target=self._handle_connection).start()
-
-    def update_image_label(self, image_path: str):
-        """Update the image display with the captured UI"""
         if not self.is_connected:
-            return
-        image = Image.open(image_path)
-        photo = ImageTk.PhotoImage(image)
-        self.image_label.config(image=photo)
-        self.image_label.image = photo  # Keep a reference to avoid garbage collection
+            self.queue_task(self._connect_to_printer)
+        else:
+            self.queue_task(self._disconnect_from_printer)
 
-    def _handle_connection(self):
-        """Handle the connection/disconnection process"""
-        self.ip = self.get_current_ip()
-        try:
-            if not self.remote_control_panel.is_connected():
-                self._connect_printer()
-            else:
-                self._disconnect_printer()
-        except Exception as e:
-            self._handle_connection_error(str(e))
+    def _connect_to_printer(self):
+        ip = self.ip
+        self.root.after(0, lambda: self.connect_button.config(state="disabled", text=CONNECTING))
         
-        print("Connection/Disconnection operation completed")
+        try:
+            self.sock = socket.create_connection((ip, 80), timeout=2)
+            self.is_connected = True
+            self.root.after(0, lambda: self.connect_button.config(state="normal", text=DISCONNECT))
+            self.root.after(0, lambda: self.capture_ui_button.config(state="normal"))
+            print(f">     [Dune] Successfully connected to printer: {ip}")
+            self.root.after(0, lambda: self._show_notification("Connected to printer", "green"))
+        except Exception as e:
+            self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
+            self.is_connected = False
+            self.sock = None
+            print(f"Connection to printer failed: {str(e)}")
+            self.root.after(0, lambda: self._show_notification(f"Failed to connect to printer: {str(e)}", "red"))
 
-    def _connect_printer(self):
-        """Establish connection with the printer"""
-        self.remote_control_panel.connect()
-        self.is_connected = True
-        self.connect_button.config(text=DISCONNECT, state="normal")
-        self.capture_ui_button.config(state="normal")
-        self._show_notification("Connected successfully", "green")
-        self.remote_control_panel.start_continuous_capture()
+    def _disconnect_from_printer(self):
+        self.root.after(0, lambda: self.connect_button.config(state="disabled", text=DISCONNECTING))
+        
+        try:
+            if self.sock:
+                self.sock.close()
+            self.sock = None
+            self.is_connected = False
+            if hasattr(self, 'remote_control_panel') and self.remote_control_panel:
+                self.remote_control_panel.close()
 
-    def _disconnect_printer(self):
-        """Disconnect from the printer"""
-        self.remote_control_panel.close()
-        self.is_connected = False
-        self.connect_button.config(text=CONNECT, state="normal")
-        self.capture_ui_button.config(state="disabled")
-        self._show_notification("Disconnected successfully", "green")
-        self.image_label.config(image=None)
-        self.image_label.image = None
+            self.dune_fpui.disconnect()
 
-    def _handle_connection_error(self, error_message):
-        """Handle connection/disconnection errors"""
-        print(f"Operation failed: {error_message}")
-        self.connect_button.config(text=CONNECT if not self.remote_control_panel.is_connected() else DISCONNECT, state="normal")
-        self.capture_ui_button.config(state="disabled")
-        self._show_notification("Operation failed: Check IP Address", "red", duration=10000)
+            self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
+            self.root.after(0, lambda: self.capture_ui_button.config(state="disabled"))
+            self.root.after(0, lambda: self.image_label.config(image=None))
+            self.root.after(0, lambda: setattr(self.image_label, 'image', None))
+            
+            print(f">     [Dune] Successfully disconnected from printer: {self.ip}")
+        except Exception as e:
+            print(f"An error occurred while disconnecting: {e}")
+        finally:
+            self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
+
+    def queue_save_fpui_image(self):
+        self.queue_task(self._save_fpui_image)
+
+    def _save_fpui_image(self):
+        if not self.dune_fpui.is_connected():
+            if not self.dune_fpui.connect(self.ip):
+                self._show_notification("Failed to connect to Dune FPUI", "red")
+                print("Failed to connect to Dune FPUI")
+                return
+        
+        # Use root.after to ask for the file name in the main thread
+        self.root.after(0, self._ask_for_filename)
+
+    def _ask_for_filename(self):
+        file_name = simpledialog.askstring("Save Screenshot", "Enter a name for the screenshot:")
+        if not file_name:
+            self._show_notification("Screenshot capture cancelled", "blue")
+            # self.dune_fpui.disconnect()
+            return
+        
+        # Continue with the screenshot capture in the background thread
+        self.queue_task(self._continue_save_fpui_image, file_name)
+
+    def _continue_save_fpui_image(self, file_name):
+        # Ensure the file has a .png extension
+        if not file_name.lower().endswith('.png'):
+            file_name += '.png'
+
+        # Capture the UI image
+        captured = self.dune_fpui.capture_ui(self.directory, file_name)
+        if not captured:
+            self._show_notification("Failed to capture UI", "red")
+            return
+
+        # self.dune_fpui.disconnect()
+        self._show_notification("Screenshot Captured", "green")
+
+    def on_ip_change(self, new_ip):
+        self.ip = new_ip
+        print(f">     [Dune] IP address changed to: {self.ip}")
+        if self.is_connected:
+            # Disconnect from the current printer
+            self._disconnect_from_printer()
+
+    def on_directory_change(self, new_directory):
+        """Update the stored directory when it changes"""
+        self.directory = new_directory
+        print(f">     [Dune] Directory changed to: {self.directory}")
+        # Add any additional actions you want to perform when the directory changes
 
     def _show_notification(self, message, color, duration=5000):
         """Display a notification message"""
-        self.notification_label.config(text=message, foreground=color)
-        self.frame.after(duration, lambda: self.notification_label.config(text=""))
+        self.root.after(0, lambda: self.notification_label.config(text=message, foreground=color))
+        self.root.after(duration, lambda: self.notification_label.config(text=""))
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
         print(f"Stopping listeners for DuneTab")
         if self.is_connected:
             print("Disconnecting from printer...")
-            self._disconnect_printer()
-        
-        if hasattr(self.remote_control_panel, 'stop_continuous_capture'):
-            print("Stopping continuous capture...")
-            self.remote_control_panel.stop_continuous_capture()
-        
-        print("Closing remote control panel...")
-        self.remote_control_panel.close()
-        
-        self.is_connected = False
-        print(f"DuneTab listeners stopped")
-
-    def fetch_json(self):
-        """Fetch JSON data using json_fetcher"""
-        directory = filedialog.askdirectory()
-        if not directory:
-            return  # User cancelled the operation
-
-        threading.Thread(target=self._fetch_json_thread, args=(directory,)).start()
-
-    def _fetch_json_thread(self, directory):
-        """Thread function to fetch JSON data"""
-        try:
-            self.fetch_json_button.config(state="disabled")
-            self._show_notification("Fetching JSON data...", "blue")
+            if self.sock:
+                self.sock.close()
             
-            # Use the Dune fetcher from the app
-            fetcher = self.app.dune_fetcher
-            if fetcher:
-                fetcher.save_to_file(directory)
-                self._show_notification("JSON data fetched successfully", "green")
-            else:
-                raise ValueError("Dune fetcher not initialized")
-        except Exception as e:
-            self._show_notification(f"Error fetching JSON data: {str(e)}", "red")
-        finally:
-            self.fetch_json_button.config(state="normal")
+            # Add this block to disconnect DuneFPUI
+            if self.dune_fpui.is_connected():
+                print("Disconnecting DuneFPUI...")
+                self.dune_fpui.disconnect()
+        
+        # Stop the worker thread
+        self.task_queue.put((None, None))  # Sentinel to stop the thread
+        self.worker_thread.join(timeout=5)  # Add a timeout to prevent hanging
+        if self.worker_thread.is_alive():
+            print("Warning: Worker thread did not stop within the timeout period")
+        
+        print(f"DuneTab listeners stopped")

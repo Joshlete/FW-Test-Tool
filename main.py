@@ -1,6 +1,6 @@
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
 from typing import Dict, List, Callable
 import ipaddress
 from snip_tool import CaptureManager
@@ -16,6 +16,7 @@ import time
 class App(tk.Tk):
     CONFIG_FILE = "config.json"
     DEFAULT_IP = "15.8.177.148"
+    DEFAULT_DIRECTORY = "."
 
     def __init__(self) -> None:
         print("> [App.__init__] Initializing App")
@@ -30,9 +31,16 @@ class App(tk.Tk):
         self._ip_callbacks: List[Callable[[str], None]] = []
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        # Load directory from config file or use default
+        self._directory = self.load_directory() or self.DEFAULT_DIRECTORY
+        self.directory_var = tk.StringVar(value=self.shorten_directory(self._directory))
+        self._directory_callbacks: List[Callable[[str], None]] = []
+
         # Create UI components
         self.create_ip_input()
+        self.create_directory_input()  # New method call
         self.capture_manager = CaptureManager(current_directory=".")
+
         self.create_snip_tool()
         self.keybinding_manager = KeybindingManager(self, self.capture_manager)
 
@@ -75,18 +83,40 @@ class App(tk.Tk):
         self._on_ip_change()  # Validate initial IP
 
     def _on_ip_change(self, *args) -> None:
-        print(f"> [App._on_ip_change] IP changed to: {self.ip_var.get()}")
         # Validate and process IP address changes
         ip = self.ip_var.get()
         self._ip_address = ip
         try:
             ipaddress.ip_address(ip)
-            print(f"> Valid IP address entered: {ip}")
             self.save_ip_address()  # Save the new IP address
             for callback in self._ip_callbacks:
                 callback(ip)
+            print(f"> [App._on_ip_change] IP changed to: {self.ip_var.get()}")
         except ValueError:
-            print(f"> Invalid IP address: {ip}")
+            print(f"> [App._on_ip_change] Invalid IP address: {ip}")
+
+    def create_directory_input(self) -> None:
+        print("> [App.create_directory_input] Creating Directory input field")
+        dir_frame = ttk.Frame(self)
+        dir_frame.pack(fill="x", padx=10, pady=5)
+        ttk.Label(dir_frame, text="Directory:").pack(side="left")
+        self.dir_entry = ttk.Entry(dir_frame, textvariable=self.directory_var, width=40, state="readonly")
+        self.dir_entry.pack(side="left", padx=5)
+        self.dir_button = ttk.Button(dir_frame, text="Browse", command=self.browse_directory)
+        self.dir_button.pack(side="left")
+
+    def browse_directory(self) -> None:
+        print("> [App.browse_directory] Opening directory browser")
+        directory = filedialog.askdirectory()
+        if directory:
+            self._directory = directory
+            shortened_directory = self.shorten_directory(directory)
+
+            # Update the directory display
+            self.directory_var.set(shortened_directory)
+            self.save_directory()
+            for callback in self._directory_callbacks:
+                callback(directory)
 
     def save_ip_address(self) -> None:
         """Save the current IP address to the config file."""
@@ -109,20 +139,53 @@ class App(tk.Tk):
         return {}
 
     def get_ip_address(self) -> str:
-        print(f"> [App.get_ip_address] Returning IP: {self._ip_address}")
         # Getter for the current IP address
         return self._ip_address
+    
+    def get_directory(self) -> str:
+        return self._directory
 
     def register_ip_callback(self, callback: Callable[[str], None]) -> None:
         print(f"> [App.register_ip_callback] Registering new IP callback")
         # Register callbacks for IP address changes
         self._ip_callbacks.append(callback)
 
+
+    def register_directory_callback(self, callback: Callable[[str], None]) -> None:
+        print(f"> [App.register_directory_callback] Registering new directory callback")
+        self._directory_callbacks.append(callback)
+
+    def save_directory(self) -> None:
+        """Save the current directory to the config file."""
+        config = self.load_config()
+        config["directory"] = self._directory
+        with open(self.CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+
+    def load_directory(self) -> str:
+        """Load the directory from the config file."""
+        config = self.load_config()
+        return config.get("directory")
+
+    def shorten_directory(self, directory: str) -> str:
+        """Shorten the directory path to show only the last 3 components."""
+        path_components = directory.split('/')
+        last_three_components = '/'.join(path_components[-3:])
+        return f".../{last_three_components}" if len(path_components) > 3 else directory
+
+    def get_directory(self) -> str:
+        print(f"> [App.get_directory] Returning directory: {self._directory}")
+        return self._directory
+
+    def register_directory_callback(self, callback: Callable[[str], None]) -> None:
+        print(f"> [App.register_directory_callback] Registering new directory callback")
+        self._directory_callbacks.append(callback)
+
     def create_tabs(self) -> None:
         print("> [App.create_tabs] Creating tabs")
         # Directly add tabs without using entry points
-        self.add_tab("Sirius", SiriusTab)
         self.add_tab("Dune", DuneTab)
+        self.add_tab("Sirius", SiriusTab)
         self.add_tab("Settings", SettingsTab)
 
     def add_tab(self, tab_name: str, tab_class: type) -> None:
@@ -164,9 +227,6 @@ class App(tk.Tk):
             if hasattr(tab, 'stop_listeners'):
                 print(f"Stopping listeners for tab: {tab_name}")
                 tab.stop_listeners()
-            if hasattr(tab, 'remote_control_panel'):
-                print(f"Stopping remote control panel for tab: {tab_name}")
-                tab.remote_control_panel.close()
 
         # Stop snip tool listeners
         print("Stopping snip tool listeners...")

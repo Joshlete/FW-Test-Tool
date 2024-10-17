@@ -9,6 +9,7 @@ import requests
 import io
 import urllib3
 import os
+import datetime
 from dotenv import load_dotenv
 
 # Suppress InsecureRequestWarning
@@ -36,9 +37,14 @@ class SiriusTab(TabContent):
         self.update_thread = None
         self.stop_update = threading.Event()
         self.ui_connection = None
-        
+        self.telemetry_windows = []
+        self._directory = self.app.get_directory()  # Get initial directory from app
+
         # Register callback for IP changes
         self.app.register_ip_callback(self.update_ip)
+        
+        # Register callback for directory changes
+        self.app.register_directory_callback(self.update_directory)
 
     @property
     def ip(self):
@@ -53,6 +59,10 @@ class SiriusTab(TabContent):
         if self.ui_connection:
             self.ui_connection.update_ip(new_ip)
 
+    def update_directory(self, new_directory: str) -> None:
+        print(f"> [SiriusTab.update_directory] Updating directory to: {new_directory}")
+        self._directory = new_directory
+
     def stop_listeners(self):
         """Stop the update thread and clean up resources"""
         print(f"Stopping listeners for SiriusTab")
@@ -60,6 +70,12 @@ class SiriusTab(TabContent):
             self.ui_connection.disconnect()
         self.ui_connection = None
         self.is_connected = False
+
+        # Close all open telemetry windows
+        for window in self.telemetry_windows[:]:
+            window.close_window()
+        self.telemetry_windows.clear()
+
         print(f"SiriusTab listeners stopped")
 
     def get_current_ip(self) -> str:
@@ -164,7 +180,6 @@ class SiriusTab(TabContent):
             """Handle connection/disconnection errors"""
             print(f"Operation failed: {error_message}")
             self.connect_button.config(text=CONNECT if not self.is_connected else DISCONNECT, state="normal")
-            self.capture_ui_button.config(state="disabled")
             self._show_notification(f"Connection failed: {error_message}", "red", duration=10000)
 
         # Start the connection handling in a separate thread
@@ -172,14 +187,18 @@ class SiriusTab(TabContent):
 
     def capture_ledm(self):
         """Fetch LEDM data using json_fetcher"""
-        # Use a file dialog to get the directory to save the files
-        directory = filedialog.askdirectory()
-        if not directory:
-            return  # User cancelled the operation
+        directory = self._directory  # Use the updated directory
 
         # Ask the user for an optional number prefix
         number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", parent=self.frame)
         
+        # If user clicks the X to close the dialog, don't proceed
+        if number is None:
+            self._show_notification("LEDM capture cancelled", "blue")
+            return
+
+        # number can be an empty string if user didn't enter anything
+
         def _fetch_cdm_thread():
             """Thread function to fetch LEDM data"""
             try:
@@ -189,7 +208,7 @@ class SiriusTab(TabContent):
                 # Use the Sirius fetcher from the app
                 fetcher = self.app.sirius_fetcher
                 if fetcher:
-                    fetcher.save_to_file(directory, number if number else "")
+                    fetcher.save_to_file(directory, number)  # number can be an empty string
                     self._show_notification("LEDM data fetched successfully", "green")
                 else:
                     raise ValueError("Sirius fetcher not initialized")
@@ -204,10 +223,11 @@ class SiriusTab(TabContent):
 
     def capture_telemetry(self):
         """Capture telemetry data using json_fetcher"""
-        TelemetryWindow(self.frame, self.ip)
+        telemetry_window = TelemetryWindow(self.frame, self.ip)
+        self.telemetry_windows.append(telemetry_window)
 
     def capture_ui(self):
-        """Capture the latest screenshot and open a 'save as' dialog to save the file"""
+        """Capture the latest screenshot and save it to the _directory"""
         self.capture_ui_button.config(text="Capturing...", state="disabled")
 
         def _capture_ui_thread():
@@ -221,17 +241,9 @@ class SiriusTab(TabContent):
                 if response.status_code == 200:
                     image_data = response.content
                     print("Debug: Screenshot data fetched successfully")
-                    # Open 'save as' dialog
-                    file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG files", "*.png")])
-                    print(f"Debug: Save as dialog returned file path: {file_path}")
-                    if file_path:
-                        with open(file_path, 'wb') as file:
-                            file.write(image_data)
-                        self._show_notification("Screenshot saved successfully", "green")
-                        print("Debug: Screenshot saved successfully")
-                    else:
-                        self._show_notification("Save operation cancelled", "yellow")
-                        print("Debug: Save operation cancelled")
+                    
+                    # Schedule the dialog on the main thread
+                    self.frame.after(0, lambda: self._ask_filename_and_save(image_data))
                 else:
                     self._show_notification(f"Failed to capture screenshot: {response.status_code}", "red")
                     print(f"Debug: Failed to capture screenshot, status code: {response.status_code}")
@@ -243,15 +255,44 @@ class SiriusTab(TabContent):
 
         threading.Thread(target=_capture_ui_thread).start()
 
+    def _ask_filename_and_save(self, image_data):
+        """Ask for filename and save the screenshot"""
+        default_filename = f"UI"
+        filename = simpledialog.askstring("", "Enter file name:", 
+                                          initialvalue="")
+        
+        if filename:
+            # Ensure the filename ends with .png
+            if not filename.lower().endswith('.png'):
+                filename += '.png'
+            
+            file_path = os.path.join(self._directory, filename)
+            with open(file_path, 'wb') as file:
+                file.write(image_data)
+            self._show_notification(f"Screenshot saved to {file_path}", "green")
+            print(f"Debug: Screenshot saved successfully to {file_path}")
+        else:
+            self._show_notification("Screenshot capture cancelled", "blue")
+            print("Debug: Screenshot capture cancelled by user")
+
     def capture_ews(self):
         """Capture EWS screenshots in a separate thread"""
         self.capture_screenshot_button.config(text="Capturing...", state="disabled")
 
+        # Ask the user for an optional number prefix
+        number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", parent=self.frame)
+        
+        # If user clicks the X to close the dialog, don't proceed
+        if number is None:
+            self._show_notification("EWS capture cancelled", "blue")
+            self.capture_screenshot_button.config(text="Capture EWS", state="normal")
+            return
+
         def _capture_screenshot_background():
             """Capture EWS screenshots in the background"""
             try:
-                capturer = EWSScreenshotCapturer(self.frame, self.ip)
-                success, message = capturer.capture_screenshots()
+                capturer = EWSScreenshotCapturer(self.frame, self.ip, self._directory)
+                success, message = capturer.capture_screenshots(number)
                 self.frame.after(0, lambda: self._show_notification(message, "green" if success else "red"))
             except Exception as e:
                 self.frame.after(0, lambda: self._show_notification(f"Error capturing EWS screenshot: {str(e)}", "red"))
