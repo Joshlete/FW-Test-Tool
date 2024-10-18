@@ -8,6 +8,7 @@ import logging
 from typing import Optional
 
 import os
+import socket
 
 # Load environment variables from .env file
 load_dotenv()
@@ -82,6 +83,11 @@ class DuneFPUI:
             return False  # Return False if connection fails
 
     def disconnect(self):
+        print(f">     [dune_fpui] Disconnecting from IP {self._ip}")
+        if not self.is_connected():
+            print(f">     [dune_fpui] Already disconnected")
+            return True
+
         try:
             # close vnc connection
             if self.vnc_client:
@@ -92,20 +98,17 @@ class DuneFPUI:
                 finally:
                     self.vnc_client = None
 
-            # Terminate remoteControlPanel processes if they are running
+            # Handle SSH-related operations
             if self.ssh_client:
                 try:
                     self.ssh_client.exec_command(self.remote_control_terminate_command)
                     logging.info("Terminated remoteControlPanel processes")
-                except Exception as e:
-                    logging.error(f"Error terminating remoteControlPanel processes: {e}")
-
-            # close ssh connection
-            if self.ssh_client:
-                try:
+                    
+                    # Close SSH connection
                     self.ssh_client.close()
+                    logging.info("Closed SSH connection")
                 except Exception as e:
-                    logging.error(f"Error closing SSH client: {e}")
+                    logging.error(f"Error during SSH operations: {e}")
                 finally:
                     self.ssh_client = None
 
@@ -161,20 +164,33 @@ class DuneFPUI:
             os.unlink(temp_filename)
 
             # Return the image data as bytes
-            print(f">     [dune_fpui] UI captured successfully to {temp_filename}")
             return image_data
         except Exception as e:
-            if "Connection was refused" in str(e):
-                logging.error("Error capturing UI: Connection was refused. UI cannot be captured.")
-                print(">     [dune_fpui] UI cannot be captured due to connection issues.")
-            else:
-                logging.error(f"Error capturing UI: {e}")
-                print(f">     [dune_fpui] Error details: {str(e)}")
+            logging.error(f"Error capturing UI: {e}")
             return False
         
     def is_connected(self):
-        return self._is_connected
-    
+        print(f">     [dune_fpui] Checking if connected: {self._is_connected}")
+        if self.ssh_client is None or self.vnc_client is None:
+            print(f">     [dune_fpui] SSH or VNC client is None: {self.ssh_client is None} {self.vnc_client is None}")
+            self._is_connected = False
+            return False
+        
+        print(f">     [dune_fpui] Checking connection...")
+        try:
+            # Check SSH connection
+            self.ssh_client.exec_command('echo 1', timeout=2)
+            
+            # Check VNC connection
+            self.vnc_client.refreshScreen()
+            
+            self._is_connected = True
+            return True
+        except (paramiko.SSHException, socket.error, EOFError, api.VNCError) as e:
+            # If we get an exception, one of the connections is likely dead
+            logging.error(f"Connection check failed: {e}")
+            self._is_connected = False
+            return False
+
     def get_ip(self):
         return self._ip
-

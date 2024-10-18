@@ -7,6 +7,7 @@ import socket
 import queue
 from PIL import Image, ImageTk
 import io
+import time
 
 # Constants for button text
 CONNECTING = "Connecting..."
@@ -28,6 +29,9 @@ class DuneTab(TabContent):
         self.is_viewing_ui = False
         self.ui_update_job = None
         self.telemetry_window = None
+        self.ui_queue = queue.Queue()
+        self.ui_thread = None
+        self.is_capturing = False
 
         print("> [DuneTab.__init__] Calling super().__init__()")
         super().__init__(parent, app)
@@ -269,63 +273,117 @@ class DuneTab(TabContent):
     def start_view_ui(self):
         print(f">     [Dune] Starting UI view")
         self.is_viewing_ui = True
-        
+        self.is_capturing = True
         self.continuous_ui_button.config(text=DISCONNECT_UI)
-        self.update_ui()
+        
+        # Start the background thread for UI capture
+        self.ui_thread = threading.Thread(target=self.capture_ui_thread, daemon=True)
+        self.ui_thread.start()
+        
+        # Start processing the queue in the main thread
+        self.process_ui_queue()
 
-    def update_ui(self):
-        if not self.dune_fpui.is_connected():
-            # Attempt to connect if not already connected
-            if not self.dune_fpui.connect(self.ip):
-                self.show_notification("Failed to connect to Dune FPUI", "red")
-                print("Failed to connect to Dune FPUI")
-                self.stop_view_ui()  # Stop viewing UI if connection fails
-                return
-
-        if self.is_viewing_ui:
+    def capture_ui_thread(self):
+        while self.is_capturing:
+            if not self.dune_fpui.is_connected():
+                if not self.dune_fpui.connect(self.ip):
+                    self.ui_queue.put(("error", "Failed to connect to Dune FPUI"))
+                    break
+            
             image_data = self.dune_fpui.capture_ui()
             if image_data:
-                image = Image.open(io.BytesIO(image_data))
+                self.ui_queue.put(("image", image_data))
+            threading.Event().wait(0.1)  # Sleep for 100ms
+
+    def process_ui_queue(self):
+        try:
+            message_type, data = self.ui_queue.get_nowait()
+            if message_type == "image":
+                image = Image.open(io.BytesIO(data))
                 photo = ImageTk.PhotoImage(image)
                 self.image_label.config(image=photo)
                 self.image_label.image = photo  # Keep a reference
-            self.ui_update_job = self.app.after(100, self.update_ui)  # Update every 1 second
-        else:
-            self.stop_view_ui()
+            elif message_type == "error":
+                self.show_notification(data, "red")
+                self.stop_view_ui()
+        except queue.Empty:
+            pass
+        
+        if self.is_viewing_ui:
+            self.app.after(100, self.process_ui_queue)
 
     def stop_view_ui(self):
         print(f">     [Dune] Stopping UI view")
         self.is_viewing_ui = False
+        self.is_capturing = False
         self.continuous_ui_button.config(text=CONNECT_UI)
         
         # Clear the image
         self.image_label.config(image='')
         self.image_label.image = None  # Remove the reference
 
-        if self.ui_update_job:
-            self.app.after_cancel(self.ui_update_job)
-            self.ui_update_job = None
+        # Wait for the background thread to finish
+        if self.ui_thread:
+            self.ui_thread.join()
+            self.ui_thread = None
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
-        print(f"Stopping listeners for DuneTab")
         if self.is_connected:
             print("Disconnecting from printer...")
             if self.sock:
-                self.sock.close()
+                try:
+                    self.sock.settimeout(5)  # 5 seconds timeout
+                    self.sock.shutdown(socket.SHUT_RDWR)
+                    self.sock.close()
+                except socket.timeout:
+                    print("Socket closure timed out")
+                except Exception as e:
+                    print(f"Error closing socket: {e}")
+                finally:
+                    self.sock = None
             
-            # Add this block to disconnect DuneFPUI
-            if self.dune_fpui.is_connected():
-                print("Disconnecting DuneFPUI...")
-                self.dune_fpui.disconnect()
+            try:
+                is_connected = self.dune_fpui.is_connected()
+                if is_connected:
+                    self.dune_fpui.disconnect()
+            except Exception as e:
+                print(f"Error during DuneFPUI operations: {e}")
         
-        # Stop the worker thread
-        self.task_queue.put((None, None))  # Sentinel to stop the thread
-        self.worker_thread.join(timeout=5)  # Add a timeout to prevent hanging
-        if self.worker_thread.is_alive():
-            print("Warning: Worker thread did not stop within the timeout period")
-        
-        print(f"DuneTab listeners stopped")
+        # Stop UI capture thread
+        try:
+            self.is_capturing = False
+            self.is_viewing_ui = False
+            if self.ui_thread and self.ui_thread.is_alive():
+                self.ui_thread.join(timeout=5)
+                if self.ui_thread.is_alive():
+                    print("Warning: UI capture thread did not stop within the timeout period")
+                else:
+                    print("UI capture thread stopped successfully")
+        except Exception as e:
+            print(f"Error stopping UI capture thread: {e}")
+
+        # Stop worker thread
+        try:
+            self.task_queue.put((None, None))  # Sentinel to stop the thread
+            self.worker_thread.join(timeout=5)
+            if self.worker_thread.is_alive():
+                print("Warning: Worker thread did not stop within the timeout period")
+            else:
+                print("Worker thread stopped successfully")
+        except Exception as e:
+            print(f"Error stopping worker thread: {e}")
+
+        # Clear the queues
+        try:
+            while not self.task_queue.empty():
+                self.task_queue.get_nowait()
+            while not self.ui_queue.empty():
+                self.ui_queue.get_nowait()
+        except Exception as e:
+            print(f"Error clearing queues: {e}")
+
+        print("DuneTab listeners stopped")
 
     def open_telemetry_window(self):
         if self.is_connected:
