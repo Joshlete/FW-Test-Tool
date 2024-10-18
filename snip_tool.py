@@ -1,16 +1,9 @@
-import os
-from dotenv import load_dotenv
 from PIL import ImageGrab
-from playwright.sync_api import sync_playwright
 import tkinter as tk
 from tkinter import filedialog
 from screeninfo import get_monitors
 import win32clipboard as clipboard
 from io import BytesIO
-import threading
-
-# Load environment variables from .env file
-load_dotenv()
 
 class CaptureManager:
     def __init__(self, current_directory):
@@ -22,7 +15,6 @@ class CaptureManager:
         self.current_directory = current_directory
         self.rectangle_id = None
         self.monitors = self.get_all_monitors()
-        self.manhattan_ui_url = os.getenv('MANHATTAN_UI_URL')
 
     def get_all_monitors(self):
         # Get information about all connected monitors and print their details
@@ -37,50 +29,6 @@ class CaptureManager:
             print(f"  Position: ({monitor.x}, {monitor.y})")
             print("-" * 50)
         return monitors
-
-    def capture_ui(self, ip_address, file_name, save_directory, error_label):
-        # Capture a screenshot of a web UI using Playwright
-        print(f"> [CaptureManager.capture_ui] Capturing UI for {ip_address}")
-        # Input validation
-        if not all([save_directory, file_name, ip_address]):
-            error_label.config(text="Please fill in all required fields.", foreground="red")
-            return
-
-        url = f"http://{ip_address}/{self.manhattan_ui_url}"
-        
-        with sync_playwright() as p:
-            try:
-                print("> [CaptureManager.capture_ui] Launching browser")
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context(ignore_https_errors=True)
-                page = context.new_page()
-                
-                # Block unnecessary resources for better performance
-                context.route("**/*", lambda route: route.abort() if route.request.resource_type in ['image', 'stylesheet', 'font'] else route.continue_())
-
-                print(f"> [CaptureManager.capture_ui] Navigating to {url}")
-                page.goto(url, timeout=10000)
-                
-                # Adjust viewport size to content
-                page.evaluate("() => window.scrollTo(0, 0)")
-                page.set_viewport_size({
-                    "width": page.evaluate("() => document.documentElement.scrollWidth"),
-                    "height": page.evaluate("() => document.documentElement.scrollHeight")
-                })
-
-                # Save screenshot
-                png_path = os.path.join(save_directory, f"{file_name}.png")
-                print(f"> [CaptureManager.capture_ui] Saving screenshot to {png_path}")
-                page.screenshot(path=png_path, full_page=False)
-                error_label.config(text="Screenshot saved successfully!", foreground="green")
-
-            except Exception as e:
-                print(f">! [CaptureManager.capture_ui] Error - {e}")
-                error_label.config(text=f"Error: {e}", foreground="red")
-
-            finally:
-                if 'browser' in locals():
-                    browser.close()
 
     def capture_screen_region(self, root, file_name, save_directory, error_label):
         print("> [CaptureManager.capture_screen_region] Starting region capture")
@@ -186,24 +134,3 @@ class CaptureManager:
         clipboard.EmptyClipboard()
         clipboard.SetClipboardData(clipboard.CF_DIB, data)
         clipboard.CloseClipboard()
-
-    def on_capture(self, capture_ui_button, ip_entry, file_name_entry, dir_tree_instance, error_label):
-        """Handle the UI capture button click event."""
-        capture_ui_button.config(state=tk.DISABLED, text="Capturing...")
-
-        ip_address = ip_entry.get().strip()
-        file_name = file_name_entry.get().strip()
-        selected_directory = dir_tree_instance.get_directory()
-
-        if not all([ip_address, file_name, selected_directory]):
-            error_label.config(text="Please fill in all required fields.", foreground="red")
-            capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
-            return
-
-        def capture_task():
-            try:
-                self.capture_ui(ip_address, file_name, self.current_directory, error_label)
-            finally:
-                capture_ui_button.config(state=tk.NORMAL, text="Capture UI (Manhattan)")
-
-        threading.Thread(target=capture_task).start()

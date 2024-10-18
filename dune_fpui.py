@@ -1,19 +1,26 @@
 import os
 from dotenv import load_dotenv
-import shutil
+import io
+import tempfile
 import paramiko
 from vncdotool import api
 import logging
 from typing import Optional
-from PIL import Image
-import threading
-import tempfile
-import io
+
+import os
 
 # Load environment variables from .env file
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
+# Suppress vncdotool (twisted) logging
+logging.getLogger('twisted').setLevel(logging.CRITICAL)
+
+# Set up our custom logger
+logger = logging.getLogger('DuneFPUI')
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
 
 class DuneFPUI:
     def __init__(self):
@@ -109,7 +116,7 @@ class DuneFPUI:
             logging.error(f"Disconnection failed: {e}")
             return False  # Return False if disconnection fails
 
-    def capture_ui(self, directory, file_name):
+    def save_ui(self, directory, file_name):
         print(f">     [dune_fpui] Starting UI capture to {directory}/{file_name}")
         if not self.is_connected() or not self.vnc_client:
             logging.error("Not connected to VNC. Cannot capture UI.")
@@ -132,9 +139,42 @@ class DuneFPUI:
             logging.error(f"Error capturing UI: {e}")
             print(f">     [dune_fpui] Error details: {str(e)}")
             return False
+
+    def capture_ui(self):
+        if not self.is_connected():
+            logging.error("Not connected to VNC. Cannot capture UI.")
+            return False
+        
+        try:
+            # Create a temporary file with .png extension
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+                temp_filename = temp_file.name
+            
+            # Capture the screen to the temporary file
+            self.vnc_client.captureScreen(temp_filename)
+
+            # Read the contents of the temporary file
+            with open(temp_filename, 'rb') as f:
+                image_data = f.read()
+
+            # Delete the temporary file
+            os.unlink(temp_filename)
+
+            # Return the image data as bytes
+            print(f">     [dune_fpui] UI captured successfully to {temp_filename}")
+            return image_data
+        except Exception as e:
+            if "Connection was refused" in str(e):
+                logging.error("Error capturing UI: Connection was refused. UI cannot be captured.")
+                print(">     [dune_fpui] UI cannot be captured due to connection issues.")
+            else:
+                logging.error(f"Error capturing UI: {e}")
+                print(f">     [dune_fpui] Error details: {str(e)}")
+            return False
         
     def is_connected(self):
         return self._is_connected
     
     def get_ip(self):
         return self._ip
+

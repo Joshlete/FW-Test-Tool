@@ -15,6 +15,7 @@ class EWSScreenshotCapturer:
     def __init__(self, parent_frame, ip_address, directory):
         self.parent_frame = parent_frame
         self.ip_address = ip_address
+        self.directory = directory
         self.manhattan_printer_info_page = os.getenv('MANHATTAN_PRINTER_INFO_PATH')
         self.manhattan_supplies_page = os.getenv('MANHATTAN_SUPPLIES_PATH')
         print(f"    >> Initializing EWSScreenshotCapturer for IP: {ip_address}")

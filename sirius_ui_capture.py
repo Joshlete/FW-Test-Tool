@@ -19,6 +19,8 @@ class SiriusConnection:
         self.on_image_update = on_image_update
         self.on_connection_status = on_connection_status
         self.ui_capture_url = os.getenv('MANHATTAN_UI_URL')
+        # Disable SSL warnings
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def connect(self):
         self._test_connection()

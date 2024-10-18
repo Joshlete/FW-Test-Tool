@@ -30,38 +30,20 @@ DISCONNECT = "Disconnect from UI"
 
 class SiriusTab(TabContent):
     def __init__(self, parent, app):
-        self.app = app
-        super().__init__(parent)
-        self._ip = self.get_current_ip()
+        super().__init__(parent, app)
         self.is_connected = False
         self.update_thread = None
         self.stop_update = threading.Event()
         self.ui_connection = None
         self.telemetry_windows = []
-        self._directory = self.app.get_directory()  # Get initial directory from app
 
-        # Register callback for IP changes
-        self.app.register_ip_callback(self.update_ip)
-        
-        # Register callback for directory changes
-        self.app.register_directory_callback(self.update_directory)
-
-    @property
-    def ip(self):
-        return self._ip
-
-    @ip.setter
-    def ip(self, value):
-        self._ip = value
-
-    def update_ip(self, new_ip):
-        self._ip = new_ip
+    def on_ip_change(self) -> None:
         if self.ui_connection:
-            self.ui_connection.update_ip(new_ip)
+            self.ui_connection.update_ip(self.ip)
 
-    def update_directory(self, new_directory: str) -> None:
-        print(f"> [SiriusTab.update_directory] Updating directory to: {new_directory}")
-        self._directory = new_directory
+    def on_directory_change(self) -> None:
+        print(f"> [SiriusTab.on_directory_change] Updating directory to: {self.directory}")
+        # Add any additional actions you want to perform when the directory changes
 
     def stop_listeners(self):
         """Stop the update thread and clean up resources"""
@@ -77,15 +59,6 @@ class SiriusTab(TabContent):
         self.telemetry_windows.clear()
 
         print(f"SiriusTab listeners stopped")
-
-    def get_current_ip(self) -> str:
-        """Get the current IP address from the app"""
-        return self.app.get_ip_address()
-    
-    def _show_notification(self, message, color, duration=5000):
-        """Display a notification message"""
-        self.notification_label.config(text=message, foreground=color)
-        self.frame.after(duration, lambda: self.notification_label.config(text=""))
 
     def create_widgets(self) -> None:
         # Create main layout frames
@@ -120,10 +93,6 @@ class SiriusTab(TabContent):
         self.capture_telemetry_button = ttk.Button(self.left_frame, text="Capture Telemetry", command=self.capture_telemetry)
         self.capture_telemetry_button.pack(pady=5, padx=10, anchor="w")
 
-        # Create notification label
-        self.notification_label = ttk.Label(self.frame, text="", foreground="red")
-        self.notification_label.pack(side="bottom", pady=10, padx=10)
-
         # Add an image label to display the printer screen with a border in the right frame
         self.image_frame = ttk.Frame(self.right_frame, borderwidth=2, relief="solid")
         self.image_frame.pack(pady=10, padx=10, anchor="w")
@@ -138,7 +107,6 @@ class SiriusTab(TabContent):
 
         def _handle_connection():
             """Handle the connection/disconnection process"""
-            self.ip = self.get_current_ip()
             try:
                 if not self.is_connected:
                     self.ui_connection = SiriusConnection(
@@ -166,7 +134,7 @@ class SiriusTab(TabContent):
                 self.image_label.image = photo  # Keep a reference to prevent garbage collection
             except Exception as e:
                 print(f"Error displaying image: {str(e)}")
-                self._show_notification("Error displaying image", "red")
+                self.show_notification("Error displaying image", "red")
 
         def _update_connection_status(is_connected, message):
             self.is_connected = is_connected
@@ -174,27 +142,25 @@ class SiriusTab(TabContent):
                 text=DISCONNECT if is_connected else CONNECT,
                 state="normal"
             )
-            self._show_notification(message, "green")
+            self.show_notification(message, "green")
 
         def _handle_connection_error(error_message):
             """Handle connection/disconnection errors"""
             print(f"Operation failed: {error_message}")
             self.connect_button.config(text=CONNECT if not self.is_connected else DISCONNECT, state="normal")
-            self._show_notification(f"Connection failed: {error_message}", "red", duration=10000)
+            self.show_notification(f"Connection failed: {error_message}", "red", duration=10000)
 
         # Start the connection handling in a separate thread
         threading.Thread(target=_handle_connection).start()
 
     def capture_ledm(self):
         """Fetch LEDM data using json_fetcher"""
-        directory = self._directory  # Use the updated directory
-
         # Ask the user for an optional number prefix
         number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", parent=self.frame)
         
         # If user clicks the X to close the dialog, don't proceed
         if number is None:
-            self._show_notification("LEDM capture cancelled", "blue")
+            self.show_notification("LEDM capture cancelled", "blue")
             return
 
         # number can be an empty string if user didn't enter anything
@@ -203,17 +169,17 @@ class SiriusTab(TabContent):
             """Thread function to fetch LEDM data"""
             try:
                 self.fetch_cdm_button.config(state="disabled")
-                self._show_notification("Fetching LEDM data...", "blue")
+                self.show_notification("Fetching LEDM data...", "blue")
                 
                 # Use the Sirius fetcher from the app
                 fetcher = self.app.sirius_fetcher
                 if fetcher:
-                    fetcher.save_to_file(directory, number)  # number can be an empty string
-                    self._show_notification("LEDM data fetched successfully", "green")
+                    fetcher.save_to_file(self.directory, number)  # number can be an empty string
+                    self.show_notification("LEDM data fetched successfully", "green")
                 else:
                     raise ValueError("Sirius fetcher not initialized")
             except Exception as e:
-                self._show_notification(f"Error fetching LEDM data: {str(e)}", "red")
+                self.show_notification(f"Error fetching LEDM data: {str(e)}", "red")
             finally:
                 self.fetch_cdm_button.config(state="normal")
 
@@ -245,10 +211,10 @@ class SiriusTab(TabContent):
                     # Schedule the dialog on the main thread
                     self.frame.after(0, lambda: self._ask_filename_and_save(image_data))
                 else:
-                    self._show_notification(f"Failed to capture screenshot: {response.status_code}", "red")
+                    self.show_notification(f"Failed to capture screenshot: {response.status_code}", "red")
                     print(f"Debug: Failed to capture screenshot, status code: {response.status_code}")
             except requests.RequestException as e:
-                self._show_notification(f"Error capturing screenshot: {str(e)}", "red")
+                self.show_notification(f"Error capturing screenshot: {str(e)}", "red")
                 print(f"Debug: Error capturing screenshot: {str(e)}")
             finally:
                 self.frame.after(0, lambda: self.capture_ui_button.config(text="Capture UI", state="normal"))
@@ -266,13 +232,13 @@ class SiriusTab(TabContent):
             if not filename.lower().endswith('.png'):
                 filename += '.png'
             
-            file_path = os.path.join(self._directory, filename)
+            file_path = os.path.join(self.directory, filename)
             with open(file_path, 'wb') as file:
                 file.write(image_data)
-            self._show_notification(f"Screenshot saved to {file_path}", "green")
+            self.show_notification(f"Screenshot saved to {file_path}", "green")
             print(f"Debug: Screenshot saved successfully to {file_path}")
         else:
-            self._show_notification("Screenshot capture cancelled", "blue")
+            self.show_notification("Screenshot capture cancelled", "blue")
             print("Debug: Screenshot capture cancelled by user")
 
     def capture_ews(self):
@@ -284,18 +250,18 @@ class SiriusTab(TabContent):
         
         # If user clicks the X to close the dialog, don't proceed
         if number is None:
-            self._show_notification("EWS capture cancelled", "blue")
+            self.show_notification("EWS capture cancelled", "blue")
             self.capture_screenshot_button.config(text="Capture EWS", state="normal")
             return
 
         def _capture_screenshot_background():
             """Capture EWS screenshots in the background"""
             try:
-                capturer = EWSScreenshotCapturer(self.frame, self.ip, self._directory)
+                capturer = EWSScreenshotCapturer(self.frame, self.ip, self.directory)
                 success, message = capturer.capture_screenshots(number)
-                self.frame.after(0, lambda: self._show_notification(message, "green" if success else "red"))
+                self.frame.after(0, lambda: self.show_notification(message, "green" if success else "red"))
             except Exception as e:
-                self.frame.after(0, lambda: self._show_notification(f"Error capturing EWS screenshot: {str(e)}", "red"))
+                self.frame.after(0, lambda: self.show_notification(f"Error capturing EWS screenshot: {str(e)}", "red"))
             finally:
                 # Reset the capture screenshot button state
                 self.frame.after(0, lambda: self.capture_screenshot_button.config(text="Capture EWS", state="normal"))

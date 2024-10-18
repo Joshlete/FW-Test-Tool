@@ -1,0 +1,152 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import threading
+import os
+import json
+import requests
+from dotenv import load_dotenv
+
+class DuneTelemetryWindow:
+    def __init__(self, parent, ip):
+        load_dotenv()  # Load environment variables
+        self.window = parent  # Use the parent window directly
+        self.ip = ip
+        self.telemetry_endpoint = os.getenv('DUNE_TELEMETRY_ENDPOINT')
+        self.window.title(f"Telemetry for {ip}")
+        self.window.geometry("400x500")
+
+        # Center the window on the screen
+        self.window.update_idletasks()
+        width = self.window.winfo_width()
+        height = self.window.winfo_height()
+        x = (self.window.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.window.winfo_screenheight() // 2) - (height // 2)
+        self.window.geometry('{}x{}+{}+{}'.format(width, height, x, y))
+
+        # Add a status label
+        self.status_label = tk.Label(self.window, text="Status: Ready")
+        self.status_label.pack(pady=10)
+
+        # Create a frame for buttons
+        button_frame = tk.Frame(self.window)
+        button_frame.pack(pady=10)
+
+        update_button = tk.Button(button_frame, text="Update", command=self.fetch_telemetry)
+        update_button.pack(side=tk.LEFT, padx=5)
+
+
+        listbox_frame = tk.Frame(self.window)
+        listbox_frame.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+
+        self.file_listbox = tk.Listbox(listbox_frame, height=10, width=50, selectmode=tk.EXTENDED)
+        self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.file_listbox.bind('<Double-1>', self.open_json_viewer)
+
+        scrollbar = tk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=self.file_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.file_listbox.config(yscrollcommand=scrollbar.set)
+
+        # Add this line to handle window close event
+        self.window.protocol("WM_DELETE_WINDOW", self.close_window)
+
+        self.telemetry_data = None
+
+    def fetch_telemetry(self):
+        self.update_status("Fetching telemetry...")
+        threading.Thread(target=self._fetch_telemetry_thread, daemon=True).start()
+
+    def _fetch_telemetry_thread(self):
+        try:
+            url = f"http://{self.ip}{self.telemetry_endpoint}"
+            response = requests.get(url, timeout=10, verify=False)
+            response.raise_for_status()
+            # Add event_id to each event
+            self.telemetry_data = [
+                {**event} for event in response.json().get('events', [])
+            ]
+            self.window.after(0, self.display_files)
+        except Exception as e:
+            self.window.after(0, self.update_status, f"Failed to fetch telemetry: {str(e)}")
+
+    def display_files(self):
+        self.file_listbox.delete(0, tk.END)
+        if self.telemetry_data:
+            # Sort telemetry_data by sequenceNumber in reverse order
+            self.telemetry_data.sort(key=lambda event: event['sequenceNumber'], reverse=True)  # {{ edit_1 }}
+            for index, event in enumerate(self.telemetry_data, start=1):  # Start numbering from 1
+                # Display index and eventCategory and serialNumber as identifiers
+                event_id = f"Telemetry {event['sequenceNumber']}"
+                self.file_listbox.insert(tk.END, event_id)
+            self.update_status("Telemetry fetched successfully")
+        else:
+            self.update_status("No telemetry data available")
+
+    def update_status(self, message):
+        self.status_label.config(text=f"Status: {message}")
+
+    def close_window(self):
+        self.window.destroy()
+
+    def open_json_viewer(self, event):
+        selected_indices = self.file_listbox.curselection()
+        if selected_indices:
+            self.display_json(selected_indices[0])
+
+    def display_json(self, event_id):
+        try:
+            print(f"event_id: {event_id}")
+            print(json.dumps(self.telemetry_data[event_id], indent=4))
+            event_data = self.telemetry_data[event_id]
+            print(event_data)
+            if event_data:
+                pretty_content = json.dumps(event_data, indent=4)
+
+                # Create a new window to display the JSON
+                json_window = tk.Toplevel(self.window)
+                json_window.title(f"JSON Viewer - {event_id}")
+                json_window.geometry("700x400")
+
+                # Create a Text widget with scrollbar
+                text_frame = tk.Frame(json_window)
+                text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+                text_widget = tk.Text(text_frame, wrap=tk.NONE)
+                text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+                scrollbar_y = tk.Scrollbar(text_frame, orient=tk.VERTICAL, command=text_widget.yview)
+                scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+
+                scrollbar_x = tk.Scrollbar(json_window, orient=tk.HORIZONTAL, command=text_widget.xview)
+                scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+                text_widget.config(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
+
+                # Insert the pretty-printed JSON into the Text widget
+                text_widget.insert(tk.END, pretty_content)
+                text_widget.config(state=tk.DISABLED)  # Make the text read-only
+
+                # Add right-click context menu for copying
+                json_context_menu = tk.Menu(json_window, tearoff=0)
+                json_context_menu.add_command(label="Copy", command=lambda: self.copy_selected_text(text_widget))
+
+                def show_json_context_menu(event):
+                    if text_widget.tag_ranges(tk.SEL):
+                        json_context_menu.tk_popup(event.x_root, event.y_root)
+
+                text_widget.bind("<Button-3>", show_json_context_menu)
+
+                # Add Ctrl+C (Command+C on macOS) binding for copying
+                text_widget.bind("<Control-c>", lambda event: self.copy_selected_text(text_widget))
+                text_widget.bind("<Command-c>", lambda event: self.copy_selected_text(text_widget))
+            else:
+                self.update_status(f"Event data not found for {event_id}")
+        except json.JSONDecodeError:
+            self.update_status(f"Error: {event_id} is not a valid JSON file")
+        except Exception as e:
+            self.update_status(f"Failed to display JSON: {str(e)}")
+
+    def copy_selected_text(self, text_widget):
+        if text_widget.tag_ranges(tk.SEL):
+            selected_text = text_widget.get(tk.SEL_FIRST, tk.SEL_LAST)
+            self.window.clipboard_clear()
+            self.window.clipboard_append(selected_text)
