@@ -4,14 +4,19 @@ from typing import Any
 
 class TabContent(ABC):
     def __init__(self, parent: Any, app: Any) -> None:
+        print(f"> [TabContent.__init__] Initializing {self.__class__.__name__}")
         self.parent = parent
         self.app = app
         self.frame = ttk.Frame(self.parent)
-        self._ip = ""  # Initialize with empty string, the callbacks will set the initial values
-        self._directory = ""  # Initialize with empty string, the callbacks will set the initial values
+        self._ip = ""
+        self._directory = ""
+        print(f"> [TabContent.__init__] Creating widgets for {self.__class__.__name__}")
         self.create_widgets()
+        print(f"> [TabContent.__init__] Creating notification label for {self.__class__.__name__}")
         self._create_notification_label()
+        print(f"> [TabContent.__init__] Registering callbacks for {self.__class__.__name__}")
         self._register_callbacks()
+        print(f"> [TabContent.__init__] {self.__class__.__name__} initialization complete")
 
     @property
     def ip(self) -> str:
@@ -33,6 +38,7 @@ class TabContent(ABC):
 
     @abstractmethod
     def create_widgets(self) -> None:
+        print(f"> [TabContent.create_widgets222] Creating widgets for {self.__class__.__name__}")
         pass
 
     def _create_notification_label(self) -> None:

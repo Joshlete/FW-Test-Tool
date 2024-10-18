@@ -3,7 +3,7 @@ from ews_capture import EWSScreenshotCapturer
 from sirius_ui_capture import SiriusConnection
 from sirius_telemetry_window import TelemetryWindow
 from .base import TabContent
-from tkinter import ttk, filedialog, simpledialog
+from tkinter import ttk, simpledialog
 from PIL import Image, ImageTk
 import requests
 import io
@@ -30,12 +30,20 @@ DISCONNECT = "Disconnect from UI"
 
 class SiriusTab(TabContent):
     def __init__(self, parent, app):
-        super().__init__(parent, app)
+        print("> [SiriusTab.__init__] Initializing SiriusTab")
         self.is_connected = False
         self.update_thread = None
         self.stop_update = threading.Event()
         self.ui_connection = None
         self.telemetry_windows = []
+
+        print("> [SiriusTab.__init__] Calling super().__init__()")
+        super().__init__(parent, app)
+        
+        # Ensure the frame is packed
+        self.frame.pack(fill="both", expand=True)
+
+        print("> [SiriusTab.__init__] SiriusTab initialization complete")
 
     def on_ip_change(self) -> None:
         if self.ui_connection:
@@ -61,44 +69,44 @@ class SiriusTab(TabContent):
         print(f"SiriusTab listeners stopped")
 
     def create_widgets(self) -> None:
-        # Create main layout frames
+        print("> [SiriusTab.create_widgets] Creating widgets for SiriusTab")
+        
+        # Create main layout frame
         self.main_frame = ttk.Frame(self.frame)
         self.main_frame.pack(fill="both", expand=True)
 
-        # Create a left frame for the buttons and notifications
+        # Create left frame for buttons
         self.left_frame = ttk.Frame(self.main_frame)
-        self.left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="n")
+        self.left_frame.pack(side="left", fill="y", padx=10, pady=10)
 
-        # Create a right frame for the image
+        # Create right frame for image
         self.right_frame = ttk.Frame(self.main_frame)
-        self.right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="n")
+        self.right_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
 
-        # Add "Connect To Printer" button in the left frame
+        # Add buttons to left frame
         self.connect_button = ttk.Button(self.left_frame, text=CONNECT, command=self.toggle_ui_connection)
         self.connect_button.pack(pady=5, padx=10, anchor="w")
 
-        # Update the "Capture UI" button
         self.capture_ui_button = ttk.Button(self.left_frame, text="Capture UI", command=self.capture_ui)
         self.capture_ui_button.pack(pady=5, padx=10, anchor="w")
 
-        # Add "Fetch LEDM" button in the left frame
         self.fetch_cdm_button = ttk.Button(self.left_frame, text="Capture LEDM", command=self.capture_ledm)
         self.fetch_cdm_button.pack(pady=5, padx=10, anchor="w")
 
-        # Add "Capture Screenshot" button in the left frame
         self.capture_screenshot_button = ttk.Button(self.left_frame, text="Capture EWS", command=self.capture_ews)
         self.capture_screenshot_button.pack(pady=5, padx=10, anchor="w")
-        
-        # add "Capture Telemetry" button in the left frame
+
         self.capture_telemetry_button = ttk.Button(self.left_frame, text="Capture Telemetry", command=self.capture_telemetry)
         self.capture_telemetry_button.pack(pady=5, padx=10, anchor="w")
 
-        # Add an image label to display the printer screen with a border in the right frame
+        # Add image label to right frame
         self.image_frame = ttk.Frame(self.right_frame, borderwidth=2, relief="solid")
-        self.image_frame.pack(pady=10, padx=10, anchor="w")
+        self.image_frame.pack(fill="both", expand=True, pady=10, padx=10)
         
         self.image_label = ttk.Label(self.image_frame)
-        self.image_label.pack(pady=10, padx=10, anchor="center")
+        self.image_label.pack(fill="both", expand=True, pady=10, padx=10)
+
+        print("> [SiriusTab.create_widgets] Widgets created for SiriusTab")
 
     def toggle_ui_connection(self):
         """Toggle printer connection state and update UI"""

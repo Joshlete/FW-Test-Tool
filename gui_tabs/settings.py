@@ -5,10 +5,15 @@ import tkinter as tk
 
 class SettingsTab(TabContent):
     def __init__(self, parent, app):
+        print("> [SettingsTab.__init__] Initializing SettingsTab")
         self.app = app
         self.keybinding_var = StringVar()
         self.capture_window = None
-        super().__init__(parent)
+        super().__init__(parent, app)
+        
+        # Ensure the frame is packed
+        self.frame.pack(fill="both", expand=True)
+
 
     def create_widgets(self) -> None:
         # Create a main frame to hold the settings

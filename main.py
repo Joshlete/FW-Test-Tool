@@ -1,7 +1,7 @@
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog
-from typing import Dict, List, Callable
+from typing import List, Callable
 import ipaddress
 from snip_tool import CaptureManager
 from keybindings import KeybindingManager
@@ -10,8 +10,6 @@ from gui_tabs.settings import SettingsTab
 from gui_tabs.dune import DuneTab
 from cdm_ledm_fetcher import create_fetcher
 from config_manager import ConfigManager
-import json
-import os
 import time
 
 
@@ -25,10 +23,12 @@ class App(tk.Tk):
         self.geometry("800x500")
 
         # Initialize callback lists
+        print("> [App.__init__] Initializing callback lists")
         self._ip_callbacks: List[Callable[[str], None]] = []
         self._directory_callbacks: List[Callable[[str], None]] = []
 
         # load config
+        print("> [App.__init__] Loading configuration")
         self.config_manager = ConfigManager()
         self._ip_address = self.config_manager.get("ip_address")
         self._directory = self.config_manager.get("directory")
@@ -36,6 +36,7 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # Create UI components
+        print("> [App.__init__] Creating UI components")
         self.create_ip_input()
         self.create_directory_input()  # New method call
         self.capture_manager = CaptureManager(current_directory=".")
@@ -44,10 +45,12 @@ class App(tk.Tk):
         self.keybinding_manager = KeybindingManager(self, self.capture_manager)
 
         # Initialize cdm/ledm fetchers
+        print("> [App.__init__] Initializing fetchers")
         self.sirius_fetcher = create_fetcher(self._ip_address, "sirius")
         self.dune_fetcher = create_fetcher(self._ip_address, "dune")
 
         # Create tabs
+        print("> [App.__init__] Creating tabs")
         self.tab_manager = TabManager(self)
         self.tab_manager.create_tabs()
 
@@ -154,22 +157,6 @@ class App(tk.Tk):
         print(f"> [App.register_directory_callback] Registering new directory callback")
         self._directory_callbacks.append(callback)
 
-    # def add_tab(self, tab_name: str, tab_class: type) -> None:
-    #     print(f"> [App.add_tab] Adding tab: {tab_name}")
-    #     # Add a new tab to the notebook
-    #     if tab_name in self.tabs:
-    #         print(f"> Warning: Tab '{tab_name}' already exists.")
-    #         return
-        
-    #     try:
-    #         tab_frame = ttk.Frame(self.tab_control)
-    #         self.tab_control.add(tab_frame, text=tab_name.capitalize())
-    #         tab_instance = tab_class(tab_frame, self)
-    #         tab_instance.frame.pack(expand=True, fill="both")
-    #         self.tabs[tab_name] = tab_instance
-    #     except Exception as e:
-    #         print(f">! Error adding tab '{tab_name}': {str(e)}")
-
     def on_closing(self):
         print("> [App.on_closing] Closing application")
         self._stop_threads = True  # Signal threads to stop
@@ -184,7 +171,7 @@ class App(tk.Tk):
             print("Twisted is not used in this application.")
 
         # Stop listeners for all tabs
-        for tab_name, tab in self.tabs.items():
+        for tab_name, tab in self.tab_manager.tabs.items():
             if hasattr(tab, 'stop_listeners'):
                 print(f"Stopping listeners for tab: {tab_name}")
                 tab.stop_listeners()
@@ -211,22 +198,31 @@ class App(tk.Tk):
 
 class TabManager:
     def __init__(self, app):
+        print("> [TabManager.__init__] Initializing TabManager")
         self.app = app
         self.tab_control = ttk.Notebook(self.app)
+        self.tab_control.pack(expand=1, fill="both")  # Make sure this line is present
         self.tabs = {}
 
     def add_tab(self, name, tab_class):
+        print(f"> [TabManager.add_tab] Adding tab: {name}")
         if name not in self.tabs:
             tab_frame = ttk.Frame(self.tab_control)
             self.tab_control.add(tab_frame, text=name.capitalize())
+            print(f"> [TabManager.add_tab] Creating instance of {tab_class.__name__}")
             tab_instance = tab_class(tab_frame, self.app)
             self.tabs[name] = tab_instance
+            print(f"> [TabManager.add_tab] Tab {name} added successfully")
+        else:
+            print(f"> [TabManager.add_tab] Tab {name} already exists")
 
     def create_tabs(self):
+        print("> [TabManager.create_tabs] Creating tabs")
         self.add_tab("dune", DuneTab)
         self.add_tab("sirius", SiriusTab)
         self.add_tab("settings", SettingsTab)
         self.tab_control.pack(expand=1, fill="both")
+        print("> [TabManager.create_tabs] All tabs created")
 
 if __name__ == "__main__":
     print("> Starting application")
