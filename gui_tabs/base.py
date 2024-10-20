@@ -9,7 +9,7 @@ class TabContent(ABC):
         self.app = app
         self.frame = ttk.Frame(self.parent)
         self._ip = ""
-        self._directory = ""
+        self._directory = app.get_directory()  # Initialize with current directory
         print(f"> [TabContent.__init__] Creating widgets for {self.__class__.__name__}")
         self.create_widgets()
         print(f"> [TabContent.__init__] Creating notification label for {self.__class__.__name__}")

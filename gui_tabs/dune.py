@@ -1,13 +1,15 @@
+import time
 from dune_telemetry_window import DuneTelemetryWindow
 from .base import TabContent
 from dune_fpui import DuneFPUI
 from tkinter import simpledialog, ttk, Toplevel, Checkbutton, IntVar, Button
 import threading
-import socket
 import queue
 from PIL import Image, ImageTk
 import io
-import time
+from connection_handlers import PrinterConnectionManager, ConnectionEvent, ConnectionListener
+import asyncio
+from enum import Enum
 
 # Constants for button text
 CONNECTING = "Connecting..."
@@ -17,14 +19,19 @@ DISCONNECT_UI = "Disconnect from UI"
 CONNECT = "Connect"
 DISCONNECT = "Disconnect"
 
-# TODO:
-# - when running continuous capture, check if disconnected, if so, stop continuous capture
+class UIViewState(Enum):
+    IDLE = 0
+    CONNECTING = 1
+    CAPTURING = 2
+    DISCONNECTING = 3
 
-class DuneTab(TabContent):
+class DuneTab(TabContent, ConnectionListener):
     def __init__(self, parent, app):
         print("> [DuneTab.__init__] Initializing DuneTab")
-        self.is_connected = False
-        self.sock = None
+        self.connection_manager = PrinterConnectionManager()
+        self.connection_manager.add_listener(self)
+        self.connection_manager.start_worker()
+        
         self.dune_fpui = DuneFPUI()
         self.is_viewing_ui = False
         self.ui_update_job = None
@@ -32,18 +39,16 @@ class DuneTab(TabContent):
         self.ui_queue = queue.Queue()
         self.ui_thread = None
         self.is_capturing = False
+        self.is_connected = False
 
-        print("> [DuneTab.__init__] Calling super().__init__()")
+        self.buttons = {}  # Dictionary to store button references
+
+        self.stop_event = threading.Event()
+
         super().__init__(parent, app)
-        # Ensure the frame is packed
+        
         self.frame.pack(fill="both", expand=True)
         
-        print("> [DuneTab.__init__] Setting up task queue and worker thread")
-        self.task_queue = queue.Queue()
-        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
-        self.worker_thread.start()
-
-        print("> [DuneTab.__init__] Getting CDM endpoints")
         self.cdm_options = self.app.dune_fetcher.get_endpoints()
         self.cdm_vars = {option: IntVar() for option in self.cdm_options}
 
@@ -68,6 +73,7 @@ class DuneTab(TabContent):
         # Update the "View UI" button
         self.continuous_ui_button = ttk.Button(self.left_frame, text=CONNECT_UI, command=self.toggle_view_ui, state="disabled")
         self.continuous_ui_button.pack(pady=5, padx=10, anchor="w")
+        print(f"> [create_widgets] 'View UI' button created with initial state: {self.continuous_ui_button['state']}")
 
         # Add a "capture UI" button in the left frame
         self.capture_ui_button = ttk.Button(self.left_frame, text="Capture UI", command=self.queue_save_fpui_image, state="disabled")
@@ -88,6 +94,18 @@ class DuneTab(TabContent):
         self.image_label = ttk.Label(self.image_frame)
         self.image_label.pack(pady=10, padx=10, anchor="center")
 
+        # Store button references in the dictionary
+        self.buttons = {
+            'connect': self.connect_button,
+            'view_ui': self.continuous_ui_button,
+            'capture_ui': self.capture_ui_button,
+            'capture_cdm': self.fetch_json_button,
+            'view_telemetry': self.view_telemetry_button
+        }
+
+        # Initial button state update
+        self.update_button_states()
+
         print(f"> [DuneTab.create_widgets] Widgets created and packed for DuneTab")
 
     def _worker(self):
@@ -106,63 +124,14 @@ class DuneTab(TabContent):
         self.task_queue.put((task, args))
 
     def toggle_printer_connection(self):
-        if not self.is_connected:
-            self.queue_task(self._connect_to_printer)
+        if not self.connection_manager.connection_state.is_socket_connected():
+            print(f"> [DuneTab] Initiating connection to printer at IP: {self.ip}")
+            self.connection_manager.connect_socket(self.ip)
+            self.buttons['connect'].config(state="disabled", text=CONNECTING)
         else:
-            self.queue_task(self._disconnect_from_printer)
-
-    def _connect_to_printer(self):
-        ip = self.ip
-        self.app.after(0, lambda: self.connect_button.config(state="disabled", text=CONNECTING))
-        
-        try:
-            self.sock = socket.create_connection((ip, 80), timeout=2)
-            self.is_connected = True
-            self.app.after(0, lambda: self.connect_button.config(state="normal", text=DISCONNECT))
-            self.app.after(0, lambda: self.capture_ui_button.config(state="normal"))
-            self.app.after(0, lambda: self.continuous_ui_button.config(state="normal"))
-            self.app.after(0, lambda: self.fetch_json_button.config(state="normal"))
-            self.app.after(0, lambda: self.view_telemetry_button.config(state="normal"))  # Enable telemetry button
-            print(f">     [Dune] Successfully connected to printer: {ip}")
-            self.app.after(0, lambda: self.show_notification("Connected to printer", "green"))
-        except Exception as e:
-            error_message = str(e)
-            self.app.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
-            self.is_connected = False
-            self.sock = None
-            print(f"Connection to printer failed: {error_message}")
-            self.app.after(0, lambda: self.show_notification(f"Failed to connect to printer: {error_message}", "red"))
-
-    def _disconnect_from_printer(self):
-        self.app.after(0, lambda: self.connect_button.config(state="disabled", text=DISCONNECTING))
-        
-        try:
-            if self.sock:
-                self.sock.close()
-            self.sock = None
-            self.is_connected = False
-            if hasattr(self, 'remote_control_panel') and self.remote_control_panel:
-                self.remote_control_panel.close()
-
-            self.dune_fpui.disconnect()
-
-            self.app.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
-            self.app.after(0, lambda: self.capture_ui_button.config(state="disabled"))
-            self.app.after(0, lambda: self.continuous_ui_button.config(state="disabled"))
-            self.app.after(0, lambda: self.fetch_json_button.config(state="disabled"))
-            self.app.after(0, lambda: self.view_telemetry_button.config(state="disabled"))  # Disable telemetry button
-            self.app.after(0, lambda: self.image_label.config(image=None))
-            self.app.after(0, lambda: setattr(self.image_label, 'image', None))
-            
-            print(f">     [Dune] Successfully disconnected from printer: {self.ip}")
-        except Exception as e:
-            print(f"An error occurred while disconnecting: {e}")
-        finally:
-            self.app.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
-
-        if self.telemetry_window and self.telemetry_window.winfo_exists():
-            self.telemetry_window.destroy()
-        self.telemetry_window = None
+            print("> [DuneTab] Initiating disconnection from printer")
+            self.connection_manager.disconnect_all()
+            self.buttons['connect'].config(state="disabled", text=DISCONNECTING)
 
     def open_cdm_options(self):
         options_window = Toplevel(self.app)
@@ -194,7 +163,7 @@ class DuneTab(TabContent):
             return
 
         # Disable the button and show the "Capturing CDM..." notification
-        self.app.after(0, lambda: self.fetch_json_button.config(state="disabled"))
+        self.app.after(0, lambda: self.buttons['capture_cdm'].config(state="disabled"))
         self.show_notification("Capturing CDM...", "blue")
         
         self.queue_task(self._save_cdm, selected_endpoints, number)
@@ -216,19 +185,12 @@ class DuneTab(TabContent):
             self.show_notification("Error: Dune fetcher not initialized", "red")
         
         # Re-enable the button
-        self.app.after(0, lambda: self.fetch_json_button.config(state="normal"))
+        self.app.after(0, lambda: self.buttons['capture_cdm'].config(state="normal"))
 
     def queue_save_fpui_image(self):
-        self.queue_task(self._save_fpui_image)
-
-    def _save_fpui_image(self):
-        if not self.dune_fpui.is_connected():
-            if not self.dune_fpui.connect(self.ip):
-                self.show_notification("Failed to connect to Dune FPUI", "red")
-                print("Failed to connect to Dune FPUI")
-                return
-        
-        # Use root.after to ask for the file name in the main thread
+        if not self.connection_manager.connection_state.is_vnc_connected():
+            self.connection_manager.connect_vnc(self.ip)
+        self.dune_fpui.set_vnc_client(self.connection_manager.vnc_handler.client)
         self.app.after(0, self._ask_for_filename)
 
     def _ask_for_filename(self):
@@ -237,10 +199,14 @@ class DuneTab(TabContent):
             self.show_notification("Screenshot capture cancelled", "blue")
             return
         
-        # Continue with the screenshot capture in the background thread
-        self.queue_task(self._continue_save_fpui_image, file_name)
+        # Continue with the screenshot capture
+        self._save_fpui_image(file_name)
 
-    def _continue_save_fpui_image(self, file_name):
+    def _save_fpui_image(self, file_name):
+        # open ssh and vnc connections
+        self.connection_manager.connect_ssh(self.ip, "root", "myroot")
+        self.connection_manager.connect_vnc(self.ip)
+
         # Ensure the file has a .png extension
         if not file_name.lower().endswith('.png'):
             file_name += '.png'
@@ -257,136 +223,154 @@ class DuneTab(TabContent):
         print(f">     [Dune] IP address changed to: {self.ip}")
         if self.is_connected:
             # Disconnect from the current printer
-            self._disconnect_from_printer()
+            self.connection_manager.disconnect_all()
 
     def on_directory_change(self) -> None:
         print(f">     [Dune] Directory changed to: {self.directory}")
         # Add any additional actions you want to perform when the directory changes
 
-    def toggle_view_ui(self):
-        print(f">     [Dune] Toggling UI view: {self.is_viewing_ui}")
-        if not self.is_viewing_ui:
-            self.start_view_ui()
-        else:
-            self.stop_view_ui()
+    async def toggle_view_ui(self):
+        if self.ui_view_state == UIViewState.IDLE:
+            await self.start_view_ui()
+        elif self.ui_view_state == UIViewState.CAPTURING:
+            await self.stop_view_ui()
 
-    def start_view_ui(self):
-        print(f">     [Dune] Starting UI view")
-        self.is_viewing_ui = True
-        self.is_capturing = True
-        self.continuous_ui_button.config(text=DISCONNECT_UI)
-        
-        # Start the background thread for UI capture
-        self.ui_thread = threading.Thread(target=self.capture_ui_thread, daemon=True)
-        self.ui_thread.start()
-        
-        # Start processing the queue in the main thread
-        self.process_ui_queue()
+    async def start_view_ui(self):
+        self.ui_view_state = UIViewState.CONNECTING
+        self.update_button_states()
 
-    def capture_ui_thread(self):
-        while self.is_capturing:
-            if not self.dune_fpui.is_connected():
-                if not self.dune_fpui.connect(self.ip):
-                    self.ui_queue.put(("error", "Failed to connect to Dune FPUI"))
-                    break
-            
-            image_data = self.dune_fpui.capture_ui()
-            if image_data:
-                self.ui_queue.put(("image", image_data))
-            threading.Event().wait(0.1)  # Sleep for 100ms
-
-    def process_ui_queue(self):
         try:
-            message_type, data = self.ui_queue.get_nowait()
-            if message_type == "image":
-                image = Image.open(io.BytesIO(data))
-                photo = ImageTk.PhotoImage(image)
-                self.image_label.config(image=photo)
-                self.image_label.image = photo  # Keep a reference
-            elif message_type == "error":
-                self.show_notification(data, "red")
-                self.stop_view_ui()
-        except queue.Empty:
-            pass
-        
+            self.ui_view_state = UIViewState.CAPTURING
+            self.update_button_states()
+            await self.establish_connections()
+            self.capture_task = asyncio.create_task(self.capture_ui_loop())
+        except Exception as e:
+            self.show_notification(f"Failed to start UI view: {str(e)}", "red")
+            self.ui_view_state = UIViewState.IDLE
+            self.update_button_states()
+
+    async def establish_connections(self):
+        await self.connection_manager.connect_ssh(self.ip, "root", "myroot")
+        await self.connection_manager.connect_vnc(self.ip)
+        self.dune_fpui.set_ssh_client(self.connection_manager.ssh_handler.client)
+        self.dune_fpui.set_vnc_client(self.connection_manager.vnc_handler.client)
+        await self.dune_fpui.start_remote_control_panel()
+
+    async def capture_ui_loop(self):
+        while self.ui_view_state == UIViewState.CAPTURING:
+            try:
+                image_data = await self.dune_fpui.capture_ui()
+                if image_data:
+                    self.update_image(image_data)
+            except Exception as e:
+                self.show_notification(f"Capture error: {str(e)}", "red")
+                break
+            await asyncio.sleep(0.2)
+
+    async def stop_view_ui(self):
+        self.ui_view_state = UIViewState.DISCONNECTING
+        self.update_button_states()
+
+        if self.capture_task:
+            self.capture_task.cancel()
+            try:
+                await self.capture_task
+            except asyncio.CancelledError:
+                pass
+
+        try:
+            await self.dune_fpui.stop_remote_control_panel()
+            await self.connection_manager.disconnect_all()
+        except Exception as e:
+            self.show_notification(f"Error stopping UI view: {str(e)}", "red")
+
+        self.ui_view_state = UIViewState.IDLE
+        self.update_button_states()
+        self.clear_image()
+
+    def update_button_states(self):
+        """
+        Update the state of all buttons based on the current connection state.
+        """
+        if self.is_connected:
+            self.buttons['connect'].config(state="normal", text=DISCONNECT)
+            self.buttons['view_ui'].config(state="normal")
+            self.buttons['capture_ui'].config(state="normal")
+            self.buttons['capture_cdm'].config(state="normal")
+            self.buttons['view_telemetry'].config(state="normal")
+        else:
+            self.buttons['connect'].config(state="normal", text=CONNECT)
+            self.buttons['view_ui'].config(state="disabled")
+            self.buttons['capture_ui'].config(state="disabled")
+            self.buttons['capture_cdm'].config(state="disabled")
+            self.buttons['view_telemetry'].config(state="disabled")
+
+        # Special case for the 'view_ui' button
         if self.is_viewing_ui:
-            self.app.after(100, self.process_ui_queue)
+            self.buttons['view_ui'].config(text=DISCONNECT_UI)
+        else:
+            self.buttons['view_ui'].config(text=CONNECT_UI)
 
-    def stop_view_ui(self):
-        print(f">     [Dune] Stopping UI view")
-        self.is_viewing_ui = False
-        self.is_capturing = False
-        self.continuous_ui_button.config(text=CONNECT_UI)
-        
-        # Clear the image
-        self.image_label.config(image='')
-        self.image_label.image = None  # Remove the reference
+        print(f"> [update_button_states] Button states updated. is_connected: {self.is_connected}, is_viewing_ui: {self.is_viewing_ui}")
 
-        # Wait for the background thread to finish
-        if self.ui_thread:
-            self.ui_thread.join()
-            self.ui_thread = None
+    def on_connection_event(self, event: ConnectionEvent, data: dict = None):
+        if event == ConnectionEvent.SOCKET_CONNECTED:
+            self.is_connected = True
+            self.app.after(0, self.update_button_states)
+        elif event == ConnectionEvent.SOCKET_DISCONNECTED:
+            self.is_connected = False
+            self.app.after(0, self.update_button_states)
+        elif event == ConnectionEvent.CONNECTION_ERROR:
+            self.app.after(0, lambda: self.show_notification(f"Connection error: {data['error']}", "red"))
+
+    def update_image(self, image_data):
+        print(f"> [update_image] Received image data of size: {len(image_data)} bytes")
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            print(f"> [update_image] Image opened successfully. Size: {image.size}, Mode: {image.mode}")
+            photo = ImageTk.PhotoImage(image)
+            print("> [update_image] PhotoImage created successfully")
+            self.image_label.config(image=photo)
+            self.image_label.image = photo  # Keep a reference
+            print("> [update_image] Image label updated")
+        except Exception as e:
+            print(f"> [update_image] Error updating image: {e}")
+            print(f"> [update_image] Error type: {type(e)}")
+            import traceback
+            print(f"> [update_image] Traceback: {traceback.format_exc()}")
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
-        if self.is_connected:
-            print("Disconnecting from printer...")
-            if self.sock:
-                try:
-                    self.sock.settimeout(5)  # 5 seconds timeout
-                    self.sock.shutdown(socket.SHUT_RDWR)
-                    self.sock.close()
-                except socket.timeout:
-                    print("Socket closure timed out")
-                except Exception as e:
-                    print(f"Error closing socket: {e}")
-                finally:
-                    self.sock = None
-            
-            try:
-                is_connected = self.dune_fpui.is_connected()
-                if is_connected:
-                    self.dune_fpui.disconnect()
-            except Exception as e:
-                print(f"Error during DuneFPUI operations: {e}")
+        print("Stopping listeners for DuneTab")
+        
+        self.is_capturing = False
+        self.is_viewing_ui = False
         
         # Stop UI capture thread
-        try:
-            self.is_capturing = False
-            self.is_viewing_ui = False
-            if self.ui_thread and self.ui_thread.is_alive():
-                self.ui_thread.join(timeout=5)
-                if self.ui_thread.is_alive():
-                    print("Warning: UI capture thread did not stop within the timeout period")
-                else:
-                    print("UI capture thread stopped successfully")
-        except Exception as e:
-            print(f"Error stopping UI capture thread: {e}")
+        if self.ui_thread and self.ui_thread.is_alive():
+            self.ui_thread.join(timeout=2)
+            if self.ui_thread.is_alive():
+                print("Warning: UI capture thread did not stop within the timeout period")
+        
+        # Disconnect all connections
+        self.connection_manager.disconnect_all()
+        
+        # Stop the connection manager
+        self.connection_manager.stop()
+        
+        self._clear_queues()
+        
+        print("DuneTab listeners stopped")
 
-        # Stop worker thread
+    def _clear_queues(self):
         try:
-            self.task_queue.put((None, None))  # Sentinel to stop the thread
-            self.worker_thread.join(timeout=5)
-            if self.worker_thread.is_alive():
-                print("Warning: Worker thread did not stop within the timeout period")
-            else:
-                print("Worker thread stopped successfully")
-        except Exception as e:
-            print(f"Error stopping worker thread: {e}")
-
-        # Clear the queues
-        try:
-            while not self.task_queue.empty():
-                self.task_queue.get_nowait()
             while not self.ui_queue.empty():
                 self.ui_queue.get_nowait()
         except Exception as e:
             print(f"Error clearing queues: {e}")
 
-        print("DuneTab listeners stopped")
-
     def open_telemetry_window(self):
-        if self.is_connected:
+        if self.connection_manager.connection_state.is_socket_connected():
             if self.telemetry_window is None or not self.telemetry_window.winfo_exists():
                 self.telemetry_window = Toplevel(self.app)
                 DuneTelemetryWindow(self.telemetry_window, self.ip)
@@ -399,3 +383,8 @@ class DuneTab(TabContent):
     def on_telemetry_window_close(self):
         self.telemetry_window.destroy()
         self.telemetry_window = None
+
+    def clear_image(self):
+        # Clear the displayed image
+        self.image_label.config(image=None)
+        self.image_label.image = None  # Remove the reference
