@@ -11,6 +11,15 @@ from gui_tabs.dune import DuneTab
 from cdm_ledm_fetcher import create_fetcher
 from config_manager import ConfigManager
 import time
+import asyncio
+
+# Create a global event loop
+event_loop = asyncio.new_event_loop()
+
+# Function to run the event loop
+def run_event_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
 
 
 class App(tk.Tk):
@@ -55,6 +64,9 @@ class App(tk.Tk):
         self.tab_manager.create_tabs()
 
         print("> [App.__init__] App initialization complete")
+
+    def get_event_loop(self):
+        return event_loop  # Provide access to the event loop
 
     def create_ip_input(self) -> None:
         print("> [App.create_ip_input] Creating IP input field")
@@ -226,7 +238,16 @@ class TabManager:
 
 if __name__ == "__main__":
     print("> Starting application")
+
+    # Start the event loop in a background thread
+    loop_thread = threading.Thread(target=run_event_loop, args=(event_loop,), daemon=True)
+    loop_thread.start()
+
     app = App()
     print("> Entering main event loop")
     app.mainloop()
     print("> Application closed")
+
+    # Stop the event loop after application closes
+    event_loop.call_soon_threadsafe(event_loop.stop)
+    loop_thread.join()
