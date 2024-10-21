@@ -12,6 +12,7 @@ from cdm_ledm_fetcher import create_fetcher
 from config_manager import ConfigManager
 import time
 import asyncio
+import logging
 
 # Create a global event loop
 event_loop = asyncio.new_event_loop()
@@ -161,50 +162,28 @@ class App(tk.Tk):
         last_three_components = '/'.join(path_components[-3:])
         return f".../{last_three_components}" if len(path_components) > 3 else directory
 
-    def get_directory(self) -> str:
-        print(f"> [App.get_directory] Returning directory: {self._directory}")
-        return self._directory
-
-    def register_directory_callback(self, callback: Callable[[str], None]) -> None:
-        print(f"> [App.register_directory_callback] Registering new directory callback")
-        self._directory_callbacks.append(callback)
-
     def on_closing(self):
-        print("> [App.on_closing] Closing application")
-        self._stop_threads = True  # Signal threads to stop
-
-        # Stop the Twisted Reactor if it's running
-        try:
-            from twisted.internet import reactor
-            if reactor.running:
-                print("Stopping Twisted Reactor...")
-                reactor.callFromThread(reactor.stop)
-        except ImportError:
-            print("Twisted is not used in this application.")
-
+        logging.info("[App.on_closing] Closing application")
+        
         # Stop listeners for all tabs
         for tab_name, tab in self.tab_manager.tabs.items():
             if hasattr(tab, 'stop_listeners'):
-                print(f"Stopping listeners for tab: {tab_name}")
+                logging.info(f"Stopping listeners for tab: {tab_name}")
                 tab.stop_listeners()
-
+        
         # Stop snip tool listeners
-        print("Stopping snip tool listeners...")
+        logging.info("Stopping snip tool listeners...")
         self.keybinding_manager.stop_listeners()
-
-        # Join remaining threads with a timeout
-        timeout = 5  # 5 seconds timeout
-        start_time = time.time()
-        for thread in threading.enumerate():
-            if thread != threading.main_thread():
-                remaining_time = max(0, timeout - (time.time() - start_time))
-                if remaining_time <= 0:
-                    print(f"Timeout reached. Unable to stop thread: {thread.name}")
-                    break
-                print(f"Waiting for thread to stop: {thread.name}")
-                thread.join(timeout=remaining_time)
-
-        print("Closing application...")
+        
+        # Stop the event loop
+        logging.info("Stopping event loop...")
+        event_loop = self.get_event_loop()
+        try:
+            event_loop.call_soon_threadsafe(event_loop.stop)
+        except Exception as e:
+            logging.error(f"Error stopping event loop: {e}")
+        
+        logging.info("Closing application...")
         self.quit()
         self.destroy()
 
@@ -231,8 +210,8 @@ class TabManager:
     def create_tabs(self):
         print("> [TabManager.create_tabs] Creating tabs")
         self.add_tab("dune", DuneTab)
-        self.add_tab("sirius", SiriusTab)
-        self.add_tab("settings", SettingsTab)
+        # self.add_tab("sirius", SiriusTab)
+        # self.add_tab("settings", SettingsTab)
         self.tab_control.pack(expand=1, fill="both")
         print("> [TabManager.create_tabs] All tabs created")
 
@@ -246,6 +225,16 @@ if __name__ == "__main__":
     app = App()
     print("> Entering main event loop")
     app.mainloop()
+    # Stop the event loop thread
+    print("> Stopping event loop thread")
+    event_loop.call_soon_threadsafe(event_loop.stop)
+    loop_thread.join(timeout=5)  # Wait for up to 5 seconds for the thread to stop
+
+    if loop_thread.is_alive():
+        print("> Warning: Event loop thread did not stop within the timeout period")
+    else:
+        print("> Event loop thread stopped successfully")
+
     print("> Application closed")
 
     # Stop the event loop after application closes
