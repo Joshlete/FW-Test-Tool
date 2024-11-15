@@ -26,7 +26,7 @@ class TabContent(ABC):
         self.uistate = UIState
         self._state = self.uistate.DISCONNECTED  # Initialize state
 
-        # self.create_widgets()
+        self.create_widgets()
         self._create_notification_label()
         self._register_callbacks()
         self.logger.debug(f"{self.__class__.__name__} initialization complete")

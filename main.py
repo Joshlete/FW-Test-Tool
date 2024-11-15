@@ -198,7 +198,7 @@ class TabManager:
     def create_tabs(self):
         print("> [TabManager.create_tabs] Creating tabs")
         self.add_tab("dune", DuneTab)
-        # self.add_tab("sirius", SiriusTab)
+        self.add_tab("sirius", SiriusTab)
         # self.add_tab("settings", SettingsTab)
         self.tab_control.pack(expand=1, fill="both")
         print("> [TabManager.create_tabs] All tabs created")
@@ -207,6 +207,7 @@ class TabManager:
         print(f"> [TabManager.add_tab] Adding tab: {name}")
         if name not in self.tabs:
             tab_frame = ttk.Frame(self.tab_control)
+            tab_frame.pack(fill="both", expand=True)
             self.tab_control.add(tab_frame, text=name.capitalize())
             print(f"> [TabManager.add_tab] Creating instance of {tab_class.__name__}")
             tab_instance = tab_class(tab_frame, self.app)

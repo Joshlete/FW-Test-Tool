@@ -19,18 +19,19 @@ class DuneTab(TabContent, ConnectionListener):
         """
         Initialize the DuneTab with the given parent and app.
         """
-        super().__init__(parent, app)
-        self.logger = logging.getLogger(__name__)
-        self.event_loop = app.get_event_loop()  # Access the event loop
+        # Initialize dictionary to store button references before super().__init__()
+        self.buttons = {}
         
-        # Initialize connection manager and add self as listener
+        # Initialize logger
+        self.logger = logging.getLogger(__name__)
+        
+        # Call parent class initialization
+        super().__init__(parent, app)
+        
+        # Get event loop and initialize connection manager
+        self.event_loop = app.get_event_loop()
         self.connection_manager = PrinterConnectionManager(self.event_loop)
         self.connection_manager.add_listener(self)
-
-        # Dictionary to store button references
-        self.buttons = {}
-
-        self.create_widgets()
 
         self.logger.info("DuneTab initialization complete")
 
@@ -56,7 +57,7 @@ class DuneTab(TabContent, ConnectionListener):
 
         # Add other buttons, initially disabled
         self.continuous_ui_button = ttk.Button(
-            self.left_frame, text="Continuous UI", command=self.continuous_ui_action, state=DISABLED)
+            self.left_frame, text="View UI", command=self.continuous_ui_action, state=DISABLED)
         self.continuous_ui_button.pack(pady=5, padx=10, anchor="w")
 
         self.capture_ui_button = ttk.Button(
