@@ -20,12 +20,13 @@ class TabContent(ABC):
         self.parent = parent
         self.app = app
         self.frame = ttk.Frame(self.parent)
+        self.frame.pack(fill="both", expand=True)
         self._ip = app._ip_address
         self._directory = app.get_directory()  # Initialize with current directory
         self.uistate = UIState
         self._state = self.uistate.DISCONNECTED  # Initialize state
 
-        self.create_widgets()
+        # self.create_widgets()
         self._create_notification_label()
         self._register_callbacks()
         self.logger.debug(f"{self.__class__.__name__} initialization complete")

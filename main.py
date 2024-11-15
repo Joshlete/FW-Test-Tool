@@ -195,6 +195,14 @@ class TabManager:
         self.tab_control.pack(expand=1, fill="both")  # Make sure this line is present
         self.tabs = {}
 
+    def create_tabs(self):
+        print("> [TabManager.create_tabs] Creating tabs")
+        self.add_tab("dune", DuneTab)
+        # self.add_tab("sirius", SiriusTab)
+        # self.add_tab("settings", SettingsTab)
+        self.tab_control.pack(expand=1, fill="both")
+        print("> [TabManager.create_tabs] All tabs created")
+
     def add_tab(self, name, tab_class):
         print(f"> [TabManager.add_tab] Adding tab: {name}")
         if name not in self.tabs:
@@ -206,14 +214,6 @@ class TabManager:
             print(f"> [TabManager.add_tab] Tab {name} added successfully")
         else:
             print(f"> [TabManager.add_tab] Tab {name} already exists")
-
-    def create_tabs(self):
-        print("> [TabManager.create_tabs] Creating tabs")
-        self.add_tab("dune", DuneTab)
-        # self.add_tab("sirius", SiriusTab)
-        # self.add_tab("settings", SettingsTab)
-        self.tab_control.pack(expand=1, fill="both")
-        print("> [TabManager.create_tabs] All tabs created")
 
 if __name__ == "__main__":
     print("> Starting application")

@@ -30,6 +30,8 @@ class DuneTab(TabContent, ConnectionListener):
         # Dictionary to store button references
         self.buttons = {}
 
+        self.create_widgets()
+
         self.logger.info("DuneTab initialization complete")
 
     def create_widgets(self):
@@ -38,7 +40,7 @@ class DuneTab(TabContent, ConnectionListener):
         """
         self.logger.debug("Creating widgets for DuneTab")
 
-        # Use pack for widget layout
+        # Pack the main frame into the base frame
         self.main_frame = ttk.Frame(self.frame)
         self.main_frame.pack(fill="both", expand=True)
 
@@ -137,13 +139,21 @@ class DuneTab(TabContent, ConnectionListener):
         except asyncio.TimeoutError:
             self.logger.error("Connection timed out.")
             self.state = UIState.DISCONNECTED
+            self.update_ui()
             self.show_notification("Connection timed out.", "red")
+        except ConnectionError as e:
+            self.logger.error(f"Connection error: {e}")
+            self.state = UIState.DISCONNECTED
+            self.update_ui()
+            self.show_notification("Failed to establish SSH connection.", "red")
         except Exception as e:
             self.logger.error(f"Error during connection: {e}")
             self.state = UIState.DISCONNECTED
+            self.update_ui()
             self.show_notification("Failed to connect to printer.", "red")
         else:
             self.state = UIState.CONNECTED
+            self.update_ui()
             self.show_notification("Connected to printer.", "green")
 
     def on_disconnect_complete(self, future):
@@ -168,10 +178,13 @@ class DuneTab(TabContent, ConnectionListener):
             if not self.ip:
                 raise ValueError("IP address is not set")
             self.logger.info("Connecting to printer via SSH")
-            await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 self.connection_manager.connect_ssh(self.ip, 'root', 'myroot', 2222),
                 timeout=connection_timeout
             )
+            if result is None:
+                raise ConnectionError("SSH connection failed")
+            return result
         except Exception as e:
             self.logger.error(f"Exception in connect_to_printer: {e}")
             raise
@@ -243,3 +256,20 @@ class DuneTab(TabContent, ConnectionListener):
         self.logger.info("Stopping connection manager")
         await self.connection_manager.stop_connections()
         self.logger.info("Connection manager stopped")
+
+    def toggle_connection(self):
+        """
+        Toggles the connection state between connected and disconnected.
+        When disconnected, initiates connection.
+        When connected, initiates disconnection.
+        """
+        self.logger.debug(f"Toggling connection. Current state: {self.state}")
+        
+        if self.state == UIState.DISCONNECTED:
+            self.state = UIState.CONNECTING
+            self.update_ui()
+            self.connect()
+        elif self.state == UIState.CONNECTED:
+            self.state = UIState.DISCONNECTING
+            self.update_ui()
+            self.disconnect()
