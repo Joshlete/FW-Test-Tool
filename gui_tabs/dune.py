@@ -33,6 +33,9 @@ class DuneTab(TabContent, ConnectionListener):
         self.connection_manager = PrinterConnectionManager(self.event_loop)
         self.connection_manager.add_listener(self)
 
+        # Initialize variables
+
+
         self.logger.info("DuneTab initialization complete")
 
     def create_widgets(self):
@@ -115,6 +118,23 @@ class DuneTab(TabContent, ConnectionListener):
                 if key != 'connect':
                     self.buttons[key].config(state=DISABLED)
 
+    def toggle_connection(self):
+        """
+        Toggles the connection state between connected and disconnected.
+        When disconnected, initiates connection.
+        When connected, initiates disconnection.
+        """
+        self.logger.debug(f"Toggling connection. Current state: {self.state}")
+        
+        if self.state == UIState.DISCONNECTED:
+            self.state = UIState.CONNECTING
+            self.update_ui()
+            self.connect()
+        elif self.state == UIState.CONNECTED:
+            self.state = UIState.DISCONNECTING
+            self.update_ui()
+            self.disconnect()
+
     def connect(self):
         """
         Initiates the connection process to the printer.
@@ -123,13 +143,25 @@ class DuneTab(TabContent, ConnectionListener):
         future = asyncio.run_coroutine_threadsafe(self.connect_to_printer(), self.event_loop)
         future.add_done_callback(self.on_connect_complete)
 
-    def disconnect(self):
+    async def connect_to_printer(self):
         """
-        Initiates the disconnection process from the printer.
+        Asynchronously connects to the printer via SSH.
         """
-        self.logger.info("Initiating disconnection from printer")
-        future = asyncio.run_coroutine_threadsafe(self.disconnect_from_printer(), self.event_loop)
-        future.add_done_callback(self.on_disconnect_complete)
+        try:
+            connection_timeout = 5  # seconds
+            if not self.ip:
+                raise ValueError("IP address is not set")
+            self.logger.info("Connecting to printer via SSH")
+            result = await asyncio.wait_for(
+                self.connection_manager.connect_ssh(self.ip, 'root', 'myroot'),
+                timeout=connection_timeout
+            )
+            if result is None:
+                raise ConnectionError("SSH connection failed")
+            return result
+        except Exception as e:
+            self.logger.error(f"Exception in connect_to_printer: {e}")
+            raise
 
     def on_connect_complete(self, future):
         """
@@ -157,6 +189,24 @@ class DuneTab(TabContent, ConnectionListener):
             self.update_ui()
             self.show_notification("Connected to printer.", "green")
 
+    def disconnect(self):
+        """
+        Initiates the disconnection process from the printer.
+        """
+        self.logger.info("Initiating disconnection from printer")
+        future = asyncio.run_coroutine_threadsafe(self.disconnect_from_printer(), self.event_loop)
+        future.add_done_callback(self.on_disconnect_complete)
+
+    async def disconnect_from_printer(self):
+        """
+        Asynchronously disconnects from the printer.
+        """
+        try:
+            await self.connection_manager.disconnect_all()
+        except Exception as e:
+            self.logger.error(f"Exception in disconnect_from_printer: {e}")
+            raise
+
     def on_disconnect_complete(self, future):
         """
         Callback when the disconnection attempt is complete.
@@ -170,35 +220,7 @@ class DuneTab(TabContent, ConnectionListener):
             self.state = UIState.DISCONNECTED
             self.show_notification("Disconnected from printer.", "blue")
 
-    async def connect_to_printer(self):
-        """
-        Asynchronously connects to the printer via SSH.
-        """
-        try:
-            connection_timeout = 5  # seconds
-            if not self.ip:
-                raise ValueError("IP address is not set")
-            self.logger.info("Connecting to printer via SSH")
-            result = await asyncio.wait_for(
-                self.connection_manager.connect_ssh(self.ip, 'root', 'myroot'),
-                timeout=connection_timeout
-            )
-            if result is None:
-                raise ConnectionError("SSH connection failed")
-            return result
-        except Exception as e:
-            self.logger.error(f"Exception in connect_to_printer: {e}")
-            raise
 
-    async def disconnect_from_printer(self):
-        """
-        Asynchronously disconnects from the printer.
-        """
-        try:
-            await self.connection_manager.disconnect_all()
-        except Exception as e:
-            self.logger.error(f"Exception in disconnect_from_printer: {e}")
-            raise
 
     def on_connection_event(self, event: ConnectionEvent, data: dict = None):
         """
@@ -258,19 +280,3 @@ class DuneTab(TabContent, ConnectionListener):
         await self.connection_manager.stop_connections()
         self.logger.info("Connection manager stopped")
 
-    def toggle_connection(self):
-        """
-        Toggles the connection state between connected and disconnected.
-        When disconnected, initiates connection.
-        When connected, initiates disconnection.
-        """
-        self.logger.debug(f"Toggling connection. Current state: {self.state}")
-        
-        if self.state == UIState.DISCONNECTED:
-            self.state = UIState.CONNECTING
-            self.update_ui()
-            self.connect()
-        elif self.state == UIState.CONNECTED:
-            self.state = UIState.DISCONNECTING
-            self.update_ui()
-            self.disconnect()
