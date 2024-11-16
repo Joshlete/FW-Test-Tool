@@ -180,7 +180,7 @@ class DuneTab(TabContent, ConnectionListener):
                 raise ValueError("IP address is not set")
             self.logger.info("Connecting to printer via SSH")
             result = await asyncio.wait_for(
-                self.connection_manager.connect_ssh(self.ip, 'root', 'myroot', 2222),
+                self.connection_manager.connect_ssh(self.ip, 'root', 'myroot'),
                 timeout=connection_timeout
             )
             if result is None:

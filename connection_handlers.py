@@ -62,6 +62,7 @@ class PrinterConnectionManager:
             # Start SSH connection monitoring
             self.ssh_monitor_task = self.loop.create_task(self.monitor_ssh_connection())
             self.logger.info("SSH monitor task started")
+            return True
         except Exception as e:
             self.logger.error(f"SSH connection failed: {e}")
             self.notify_listeners(ConnectionEvent.CONNECTION_ERROR, {"error": "SSH connection failed"})
