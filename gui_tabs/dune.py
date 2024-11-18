@@ -1,5 +1,6 @@
+from dune_telemetry_window import DuneTelemetryWindow
 from .base import TabContent, UIState
-from tkinter import ttk
+from tkinter import Toplevel, ttk
 from tkinter import DISABLED, NORMAL
 import asyncio
 from connection_handlers import PrinterConnectionManager, ConnectionListener, ConnectionEvent
@@ -34,7 +35,9 @@ class DuneTab(TabContent, ConnectionListener):
         self.connection_manager.add_listener(self)
 
         # Initialize variables
-
+        self.telemetry_window = None 
+        self.app = app
+        self.root = parent.winfo_toplevel()  # Get the root window
 
         self.logger.info("DuneTab initialization complete")
 
@@ -261,7 +264,19 @@ class DuneTab(TabContent, ConnectionListener):
         pass
 
     def view_telemetry_action(self):
-        pass
+        if UIState.CONNECTED:
+            if self.telemetry_window is None or not self.telemetry_window.winfo_exists():
+                self.telemetry_window = Toplevel(self.root)
+                DuneTelemetryWindow(self.telemetry_window, self.ip)
+                self.telemetry_window.protocol("WM_DELETE_WINDOW", self.on_telemetry_window_close)
+            else:
+                self.telemetry_window.lift()  # Bring existing window to front
+        else:
+            self._show_notification("Please connect to the printer first", "red")
+
+    def on_telemetry_window_close(self):
+        self.telemetry_window.destroy()
+        self.telemetry_window = None
 
     def stop_listeners(self):
         """

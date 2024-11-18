@@ -1,10 +1,12 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 import threading
 import os
 import json
 import requests
 from dotenv import load_dotenv
+
+# TODO: find a way to delete telemetry. 
 
 class DuneTelemetryWindow:
     def __init__(self, parent, ip):
@@ -66,7 +68,8 @@ class DuneTelemetryWindow:
 
     def _fetch_telemetry_thread(self):
         try:
-            url = f"http://{self.ip}{self.telemetry_endpoint}"
+            url = f"http://{self.ip}/{self.telemetry_endpoint}"
+            print(url)
             response = requests.get(url, timeout=10, verify=False)
             response.raise_for_status()
             # Add event_id to each event
@@ -75,7 +78,7 @@ class DuneTelemetryWindow:
             ]
             self.window.after(0, self.display_files)
         except Exception as e:
-            self.window.after(0, self.update_status, f"Failed to fetch telemetry: {str(e)}")
+            self.window.after(0, self.update_status, f"Failed! Try sending Auth command")
 
     def display_files(self):
         self.file_listbox.delete(0, tk.END)
@@ -101,6 +104,7 @@ class DuneTelemetryWindow:
             self.update_status("No telemetry data available")
 
     def update_status(self, message):
+        print()
         self.status_label.config(text=f"Status: {message}")
 
     def close_window(self):
