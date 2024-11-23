@@ -12,7 +12,7 @@ CONNECTING = "Connecting..."
 DISCONNECTING = "Disconnecting..."
 DISCONNECT = "Disconnect"
 
-class DuneTab(TabContent, ConnectionListener):
+class DuneTab(TabContent):
     """
     Represents the Dune tab in the GUI, handling printer connections and actions.
     """
@@ -31,8 +31,9 @@ class DuneTab(TabContent, ConnectionListener):
         
         # Get event loop and initialize connection manager
         self.event_loop = app.get_event_loop()
-        self.connection_manager = PrinterConnectionManager(self.event_loop)
-        self.connection_manager.add_listener(self)
+        self.connection_manager = PrinterConnectionManager(
+            on_state_change=self.handle_connection_state
+        )
 
         # Initialize variables
         self.telemetry_window = None 
@@ -124,11 +125,9 @@ class DuneTab(TabContent, ConnectionListener):
     def toggle_connection(self):
         """
         Toggles the connection state between connected and disconnected.
-        When disconnected, initiates connection.
-        When connected, initiates disconnection.
         """
         self.logger.debug(f"Toggling connection. Current state: {self.state}")
-        
+
         if self.state == UIState.DISCONNECTED:
             self.state = UIState.CONNECTING
             self.update_ui()
@@ -142,6 +141,9 @@ class DuneTab(TabContent, ConnectionListener):
         """
         Initiates the connection process to the printer.
         """
+        if self.state != UIState.CONNECTING:
+            self.logger.warning("Connect called, but state is not CONNECTING")
+            return
         self.logger.info("Initiating connection to printer")
         future = asyncio.run_coroutine_threadsafe(self.connect_to_printer(), self.event_loop)
         future.add_done_callback(self.on_connect_complete)
@@ -196,6 +198,9 @@ class DuneTab(TabContent, ConnectionListener):
         """
         Initiates the disconnection process from the printer.
         """
+        if self.state != UIState.DISCONNECTING:
+            self.logger.warning("Disconnect called, but state is not DISCONNECTING")
+            return
         self.logger.info("Initiating disconnection from printer")
         future = asyncio.run_coroutine_threadsafe(self.disconnect_from_printer(), self.event_loop)
         future.add_done_callback(self.on_disconnect_complete)
@@ -223,35 +228,24 @@ class DuneTab(TabContent, ConnectionListener):
             self.state = UIState.DISCONNECTED
             self.show_notification("Disconnected from printer.", "blue")
 
+    def handle_connection_state(self, state, error=None):
+        """Handle connection state changes"""
+        # Use after() to ensure UI updates happen on main thread
+        self.frame.after(0, self._update_ui_for_state, state, error)
 
-
-    def on_connection_event(self, event: ConnectionEvent, data: dict = None):
-        """
-        Handles connection events from the PrinterConnectionManager.
-        """
-        self.frame.after(0, self._handle_event, event, data)
-
-    def _handle_event(self, event: ConnectionEvent, data: dict = None):
-        """
-        Updates the UI based on the connection event.
-        """
-        if event == ConnectionEvent.SSH_CONNECTED:
-            self.logger.info("SSH connection established.")
+    def _update_ui_for_state(self, state, error=None):
+        if state == 'connected':
             self.state = UIState.CONNECTED
-            self.show_notification("SSH connected.", "green")
-        elif event == ConnectionEvent.SSH_DISCONNECTED:
-            self.logger.info("SSH connection disconnected.")
+            self.update_ui()
+            self.show_notification("Connected to printer.", "green")
+        elif state == 'disconnected':
             self.state = UIState.DISCONNECTED
-            self.show_notification("SSH disconnected.", "blue")
-        elif event == ConnectionEvent.SSH_CONNECTION_LOST:
-            self.logger.warning("SSH connection lost unexpectedly.")
+            self.update_ui()
+            self.show_notification("Disconnected from printer.", "blue")
+        elif state == 'error':
             self.state = UIState.DISCONNECTED
-            self.show_notification("SSH connection lost.", "red")
-        elif event == ConnectionEvent.CONNECTION_ERROR:
-            error_message = data.get("error", "Connection error occurred.") if data else "Connection error occurred."
-            self.logger.error(error_message)
-            self.state = UIState.DISCONNECTED
-            self.show_notification(error_message, "red")
+            self.update_ui()
+            self.show_notification(f"Connection error: {error}", "red")
 
     # Placeholder methods for other buttons
     def continuous_ui_action(self):
@@ -278,20 +272,26 @@ class DuneTab(TabContent, ConnectionListener):
         self.telemetry_window.destroy()
         self.telemetry_window = None
 
-    def stop_listeners(self):
+    def stop_listeners(self) -> None:
         """
-        Stops listeners and ongoing connections.
+        Non-blocking shutdown initiation with proper timeout
         """
-        self.logger.info("Stopping DuneTab listeners")
-        future = asyncio.run_coroutine_threadsafe(self._stop_connections(), self.event_loop)
-        future.result()
-        self.logger.info("DuneTab listeners stopped")
-
-    async def _stop_connections(self):
-        """
-        Asynchronously stops connections in the connection manager.
-        """
-        self.logger.info("Stopping connection manager")
-        await self.connection_manager.stop_connections()
-        self.logger.info("Connection manager stopped")
+        self.logger.info("Initiating DuneTab shutdown")
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self.disconnect_from_printer(),
+                self.event_loop
+            )
+            # Increase timeout to 5 seconds
+            future.result(timeout=5)
+            self.logger.info("DuneTab shutdown completed")
+        except TimeoutError:
+            self.logger.error("Shutdown timed out")
+            # Force cleanup if timeout occurs
+            if hasattr(self, 'connection_manager'):
+                self.connection_manager.ssh_client = None
+                self.connection_manager.vnc_client = None
+                self.connection_manager.ssh_monitor_task = None
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {e}")
 

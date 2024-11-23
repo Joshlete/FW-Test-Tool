@@ -17,10 +17,31 @@ import logging
 # Create a global event loop
 event_loop = asyncio.new_event_loop()
 
+def setup_logging():
+    """
+    Configure logging with proper formatting and level.
+    Ensures all debug messages are captured and displayed.
+    """
+    # Create a formatter
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    # Create and configure stream handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)  # Ensure handler level is DEBUG
+    console_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)  # Ensure root logger level is DEBUG
+    root_logger.handlers = []  # Clear any existing handlers
+    root_logger.addHandler(console_handler)
+
 # Function to run the event loop
 def run_event_loop(loop):
     asyncio.set_event_loop(loop)
+    logging.debug("Event loop started")
     loop.run_forever()
+    logging.debug("Event loop stopped")
 
 
 class App(tk.Tk):
@@ -198,7 +219,7 @@ class TabManager:
     def create_tabs(self):
         print("> [TabManager.create_tabs] Creating tabs")
         self.add_tab("dune", DuneTab)
-        self.add_tab("sirius", SiriusTab)
+        # self.add_tab("sirius", SiriusTab)
         # self.add_tab("settings", SettingsTab)
         self.tab_control.pack(expand=1, fill="both")
         print("> [TabManager.create_tabs] All tabs created")
@@ -217,27 +238,47 @@ class TabManager:
             print(f"> [TabManager.add_tab] Tab {name} already exists")
 
 if __name__ == "__main__":
-    print("> Starting application")
+    setup_logging()
+    logging.debug("Application startup initiated")
 
-    # Start the event loop in a background thread
+    # Create and start event loop thread
+    logging.debug("Creating event loop thread")
     loop_thread = threading.Thread(target=run_event_loop, args=(event_loop,), daemon=True)
     loop_thread.start()
 
+    # Initialize and run main application
     app = App()
-    print("> Entering main event loop")
     app.mainloop()
-    # Stop the event loop thread
-    print("> Stopping event loop thread")
-    event_loop.call_soon_threadsafe(event_loop.stop)
-    loop_thread.join(timeout=5)  # Wait for up to 5 seconds for the thread to stop
 
-    if loop_thread.is_alive():
-        print("> Warning: Event loop thread did not stop within the timeout period")
-    else:
-        print("> Event loop thread stopped successfully")
+    # Cleanup phase
+    logging.debug("Application mainloop ended, beginning cleanup")
+    
+    try:
+        # Stop all pending tasks first
+        pending = asyncio.all_tasks(loop=event_loop)
+        if pending:
+            logging.debug(f"Cancelling {len(pending)} pending tasks")
+            for task in pending:
+                task.cancel()
+            # Wait for all tasks to complete their cancellation
+            event_loop.call_soon_threadsafe(
+                lambda: asyncio.gather(*pending, return_exceptions=True)
+            )
 
-    print("> Application closed")
+        # Stop the event loop
+        event_loop.call_soon_threadsafe(event_loop.stop)
+        
+        # Wait for thread to finish with timeout
+        loop_thread.join(timeout=5)
+        
+        if loop_thread.is_alive():
+            logging.warning("Event loop thread did not stop cleanly")
+        else:
+            logging.debug("Event loop thread stopped successfully")
+            
+    except Exception as e:
+        logging.error(f"Error during cleanup: {e}")
+    finally:
+        logging.debug("Application shutdown complete")
 
-    # Stop the event loop after application closes
-    event_loop.call_soon_threadsafe(event_loop.stop)
-    loop_thread.join()
+

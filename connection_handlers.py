@@ -1,9 +1,8 @@
 import asyncio
 import asyncssh
-import logging
-from transitions.extensions.asyncio import AsyncMachine
 from typing import Optional, List
 from enum import Enum
+import logging
 
 # Define connection events
 class ConnectionEvent(Enum):
@@ -19,33 +18,29 @@ class ConnectionListener:
     def on_connection_event(self, event: ConnectionEvent, data: dict = None):
         pass
 
+class ConnectionState(Enum):
+    DISCONNECTED = 'disconnected'
+    SSH_CONNECTED = 'ssh_connected'
+    VNC_CONNECTED = 'vnc_connected'
+
 class PrinterConnectionManager:
     """
     Manages SSH and VNC connections to a printer and notifies listeners of connection events.
     """
-    def __init__(self, loop):
-        self.loop = loop
-        self.listeners: List[ConnectionListener] = []
-        self.ssh_client: Optional[asyncssh.SSHClientConnection] = None
-        self.vnc_client: Optional[object] = None  # Replace 'object' with actual VNC client type if available
+    def __init__(self, on_state_change=None):
+        self.on_state_change = on_state_change
+        self.ssh_client = None
+        self.vnc_client = None
+        self.ssh_monitor_task = None
+        # Initialize logger
+        self.logger = logging.getLogger(__name__)
+        
+    def _notify_state_change(self, state, error=None):
+        """Simple callback instead of listener pattern"""
+        if self.on_state_change:
+            self.on_state_change(state, error)
 
-        # Define states and transitions
-        states = ['disconnected', 'ssh_connected', 'vnc_connected']
-        transitions = [
-            {'trigger': 'connect_ssh', 'source': 'disconnected', 'dest': 'ssh_connected', 'before': 'do_connect_ssh'},
-            {'trigger': 'disconnect_ssh', 'source': '*', 'dest': 'disconnected', 'before': 'do_disconnect_ssh'},
-            {'trigger': 'connect_vnc', 'source': 'ssh_connected', 'dest': 'vnc_connected', 'before': 'do_connect_vnc'},
-            {'trigger': 'disconnect_vnc', 'source': '*', 'dest': 'ssh_connected', 'before': 'do_disconnect_vnc'},
-            {'trigger': 'disconnect_all', 'source': '*', 'dest': 'disconnected', 'before': 'do_disconnect_all'},
-        ]
-
-        self.machine = AsyncMachine(model=self, states=states, transitions=transitions, initial='disconnected')
-
-    # Connection methods
-    async def do_connect_ssh(self, ip: str, username: str, password: str, port: int = 22):
-        """
-        Establishes an SSH connection to the printer.
-        """
+    async def connect_ssh(self, ip: str, username: str, password: str, port: int = 22):
         try:
             print(f"Connecting to SSH at {ip}:{port} using username: {username}")
             self.ssh_client = await asyncssh.connect(
@@ -54,76 +49,49 @@ class PrinterConnectionManager:
                 port=port,
                 known_hosts=None
             )
-            self.notify_listeners(ConnectionEvent.SSH_CONNECTED)
-            self.ssh_monitor_task = self.loop.create_task(self.monitor_ssh_connection())
-            print("SSH monitor task started")
+            self._notify_state_change('connected')
             return True
         except Exception as e:
-            print(f"SSH connection failed: {e}")
-            self.notify_listeners(ConnectionEvent.CONNECTION_ERROR, {"error": "SSH connection failed"})
-            await self.machine.set_state('disconnected')
+            self._notify_state_change('error', str(e))
+            return False
 
-    async def do_disconnect_ssh(self):
-        """
-        Disconnects the SSH connection.
-        """
-        print("Disconnecting SSH")        
+    async def disconnect_ssh(self):
         if self.ssh_client:
-            try:
-                self.ssh_client.close()
-                await self.ssh_client.wait_closed()
-                self.ssh_client = None
-            except Exception as e:
-                print(f"Error during SSH disconnection: {e}")
-        else:
-            print("SSH client is already None, skipping disconnection.")
-        if hasattr(self, 'ssh_monitor_task'):
-            self.ssh_monitor_task.cancel()
-            try:
-                await self.ssh_monitor_task
-            except asyncio.CancelledError:
-                pass
-        self.notify_listeners(ConnectionEvent.SSH_DISCONNECTED)
+            self.ssh_client.close()
+            await self.ssh_client.wait_closed()
+            self.ssh_client = None
+            self._notify_state_change('disconnected')
 
-    async def monitor_ssh_connection(self):
+    async def connect_vnc(self, ip: str, port: int = 5900):
         """
-        Periodically checks if the SSH connection is still alive.
+        Public method to establish VNC connection.
         """
-        try:
-            while self.ssh_client and not self.ssh_client._transport.is_closing():
-                await asyncio.sleep(5)
-                try:
-                    await self.ssh_client.run('echo "ping"', check=True)
-                except (asyncssh.DisconnectError, asyncssh.ConnectionLost):
-                    print("SSH connection lost during health check")
-                    self.notify_listeners(ConnectionEvent.SSH_CONNECTION_LOST)
-                    await self.disconnect_ssh()
-                    break
-                except Exception as e:
-                    print(f"Error during SSH health check: {e}")
-        except asyncio.CancelledError:
-            print("SSH monitor task cancelled")
-        except Exception as e:
-            print(f"Exception in monitor_ssh_connection: {e}")
+        await self._connect_vnc(ip, port)
 
-    async def do_connect_vnc(self, ip: str, port: int = 5900):
+    async def disconnect_vnc(self):
+        """
+        Public method to disconnect VNC.
+        """
+        await self._disconnect_vnc()
+
+    async def _connect_vnc(self, ip: str, port: int = 5900):
         """
         Establishes a VNC connection to the printer.
         """
         try:
             print(f"Connecting to VNC at {ip}:{port}")
             self.vnc_client = await self.loop.run_in_executor(None, self.sync_connect_vnc, ip, port)
-            self.notify_listeners(ConnectionEvent.VNC_CONNECTED)
+            self._notify_state_change('vnc_connected')
         except Exception as e:
             print(f"VNC connection failed: {e}")
-            self.notify_listeners(ConnectionEvent.CONNECTION_ERROR, {"error": "VNC connection failed"})
-            await self.machine.set_state('ssh_connected')
+            self._notify_state_change('error', "VNC connection failed")
+            self._notify_state_change('ssh_connected')
 
     def sync_connect_vnc(self, ip: str, port: int):
         from vncdotool import api
         return api.connect(ip, port)
 
-    async def do_disconnect_vnc(self):
+    async def _disconnect_vnc(self):
         """
         Disconnects the VNC connection.
         """
@@ -131,48 +99,45 @@ class PrinterConnectionManager:
         if self.vnc_client:
             await self.loop.run_in_executor(None, self.vnc_client.disconnect)
             self.vnc_client = None
-        self.notify_listeners(ConnectionEvent.VNC_DISCONNECTED)
+        self._notify_state_change('vnc_disconnected')
 
-    async def do_disconnect_all(self):
+    async def disconnect_all(self) -> None:
         """
-        Disconnects all active connections.
-        """
-        print("Disconnecting all connections")
-        if self.state == 'vnc_connected':
-            await self.do_disconnect_vnc()
-        if self.state in ['ssh_connected', 'vnc_connected']:
-            await self.do_disconnect_ssh()
+        Cleanly disconnects all connections.
 
-    # Listener methods
-    def notify_listeners(self, event: ConnectionEvent, data: dict = None):
+        :return: None
         """
-        Notifies all registered listeners of a connection event.
-        """
-        for listener in self.listeners:
-            listener.on_connection_event(event, data)
+        self.logger.debug("Starting disconnect_all")
+        try:
+            # Cancel monitor task if it exists and is still running
+            if self.ssh_monitor_task:
+                if not self.ssh_monitor_task.done():
+                    self.logger.debug("Cancelling SSH monitor task")
+                    self.ssh_monitor_task.cancel()
+                    try:
+                        await self.ssh_monitor_task
+                    except asyncio.CancelledError:
+                        self.logger.debug("SSH monitor task cancelled successfully")
+                    except Exception as e:
+                        self.logger.error(f"Error cancelling SSH monitor task: {e}")
+                self.ssh_monitor_task = None
 
-    def add_listener(self, listener: ConnectionListener):
-        """
-        Adds a listener to receive connection events.
-        """
-        self.listeners.append(listener)
+            # Then disconnect VNC if connected
+            if self.vnc_client:
+                self.logger.debug("Disconnecting VNC")
+                await self._disconnect_vnc()
+                self.vnc_client = None
 
-    def remove_listener(self, listener: ConnectionListener):
-        """
-        Removes a listener.
-        """
-        self.listeners.remove(listener)
-    
-    async def stop_connections(self):
-        """
-        Stops all ongoing connections without shutting down the asyncio event loop.
-        """
-        print("Stopping PrinterConnectionManager")
-        if hasattr(self, 'ssh_monitor_task'):
-            self.ssh_monitor_task.cancel()
-            try:
-                await self.ssh_monitor_task
-            except asyncio.CancelledError:
-                pass
-        await self.do_disconnect_all()
-        print("PrinterConnectionManager stopped")
+            # Finally disconnect SSH if connected
+            if self.ssh_client:
+                self.logger.debug("Disconnecting SSH")
+                await self.disconnect_ssh()
+
+            self._notify_state_change('disconnected')
+            self.logger.debug("disconnect_all completed successfully")
+
+        except Exception as e:
+            self.logger.error(f"Error during disconnect_all: {e}")
+            self._notify_state_change('error', str(e))
+
+
