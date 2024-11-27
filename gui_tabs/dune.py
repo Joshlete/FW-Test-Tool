@@ -1,4 +1,3 @@
-from dune_telemetry_window import DuneTelemetryWindow
 from .base import TabContent, UIState
 from tkinter import Toplevel, ttk
 from tkinter import DISABLED, NORMAL
@@ -40,14 +39,10 @@ class DuneTab(TabContent):
         self.app = app
         self.root = parent.winfo_toplevel()  # Get the root window
 
-        self.logger.info("DuneTab initialization complete")
-
     def create_widgets(self):
         """
         Create and arrange widgets for the DuneTab.
         """
-        self.logger.debug("Creating widgets for DuneTab")
-
         # Pack the main frame into the base frame
         self.main_frame = ttk.Frame(self.frame)
         self.main_frame.pack(fill="both", expand=True)
@@ -62,40 +57,11 @@ class DuneTab(TabContent):
         self.connect_button = ttk.Button(self.left_frame, text=CONNECT, command=self.toggle_connection)
         self.connect_button.pack(pady=5, padx=10, anchor="w")
 
-        # Add other buttons, initially disabled
-        self.continuous_ui_button = ttk.Button(
-            self.left_frame, text="View UI", command=self.continuous_ui_action, state=DISABLED)
-        self.continuous_ui_button.pack(pady=5, padx=10, anchor="w")
-
-        self.capture_ui_button = ttk.Button(
-            self.left_frame, text="Capture UI", command=self.capture_ui_action, state=DISABLED)
-        self.capture_ui_button.pack(pady=5, padx=10, anchor="w")
-
-        self.fetch_json_button = ttk.Button(
-            self.left_frame, text="Capture CDM", command=self.capture_cdm_action, state=DISABLED)
-        self.fetch_json_button.pack(pady=5, padx=10, anchor="w")
-
-        self.view_telemetry_button = ttk.Button(
-            self.left_frame, text="View Telemetry", command=self.view_telemetry_action, state=DISABLED)
-        self.view_telemetry_button.pack(pady=5, padx=10, anchor="w")
-
-        # Add image label to display printer screen
-        self.image_frame = ttk.Frame(self.right_frame, borderwidth=2, relief="solid")
-        self.image_frame.pack(pady=10, padx=10, anchor="w")
-
-        self.image_label = ttk.Label(self.image_frame)
-        self.image_label.pack(pady=10, padx=10, anchor="center")
-
         # Store button references
         self.buttons = {
             'connect': self.connect_button,
-            'continuous_ui': self.continuous_ui_button,
-            'capture_ui': self.capture_ui_button,
-            'fetch_json': self.fetch_json_button,
-            'view_telemetry': self.view_telemetry_button
-        }
 
-        self.logger.debug("Widgets created and packed for DuneTab")
+        }
 
     def update_ui(self):
         """
@@ -247,30 +213,6 @@ class DuneTab(TabContent):
             self.update_ui()
             self.show_notification(f"Connection error: {error}", "red")
 
-    # Placeholder methods for other buttons
-    def continuous_ui_action(self):
-        pass
-
-    def capture_ui_action(self):
-        pass
-
-    def capture_cdm_action(self):
-        pass
-
-    def view_telemetry_action(self):
-        if UIState.CONNECTED:
-            if self.telemetry_window is None or not self.telemetry_window.winfo_exists():
-                self.telemetry_window = Toplevel(self.root)
-                DuneTelemetryWindow(self.telemetry_window, self.ip)
-                self.telemetry_window.protocol("WM_DELETE_WINDOW", self.on_telemetry_window_close)
-            else:
-                self.telemetry_window.lift()  # Bring existing window to front
-        else:
-            self._show_notification("Please connect to the printer first", "red")
-
-    def on_telemetry_window_close(self):
-        self.telemetry_window.destroy()
-        self.telemetry_window = None
 
     def stop_listeners(self) -> None:
         """
