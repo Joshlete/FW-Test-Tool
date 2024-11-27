@@ -57,10 +57,18 @@ class PrinterConnectionManager:
 
     async def disconnect_ssh(self):
         if self.ssh_client:
+            self.logger.debug("Closing SSH client")
             self.ssh_client.close()
-            await self.ssh_client.wait_closed()
+            self.logger.debug("Awaiting SSH client to close")
+            try:
+                await asyncio.wait_for(self.ssh_client.wait_closed(), timeout=3)
+            except asyncio.TimeoutError:
+                self.logger.error("Timeout waiting for SSH client to close")
+            self.logger.debug("SSH client closed")
             self.ssh_client = None
             self._notify_state_change('disconnected')
+        else:
+            self.logger.debug("No SSH client to disconnect")
 
     async def connect_vnc(self, ip: str, port: int = 5900):
         """
@@ -102,11 +110,6 @@ class PrinterConnectionManager:
         self._notify_state_change('vnc_disconnected')
 
     async def disconnect_all(self) -> None:
-        """
-        Cleanly disconnects all connections.
-
-        :return: None
-        """
         self.logger.debug("Starting disconnect_all")
         try:
             # Cancel monitor task if it exists and is still running
@@ -116,22 +119,33 @@ class PrinterConnectionManager:
                     self.ssh_monitor_task.cancel()
                     try:
                         await self.ssh_monitor_task
+                        self.logger.debug("SSH monitor task cancelled")
                     except asyncio.CancelledError:
                         self.logger.debug("SSH monitor task cancelled successfully")
                     except Exception as e:
                         self.logger.error(f"Error cancelling SSH monitor task: {e}")
+                else:
+                    self.logger.debug("SSH monitor task already done")
                 self.ssh_monitor_task = None
+            else:
+                self.logger.debug("No SSH monitor task to cancel")
 
             # Then disconnect VNC if connected
             if self.vnc_client:
                 self.logger.debug("Disconnecting VNC")
                 await self._disconnect_vnc()
                 self.vnc_client = None
+                self.logger.debug("VNC disconnected")
+            else:
+                self.logger.debug("No VNC client to disconnect")
 
             # Finally disconnect SSH if connected
             if self.ssh_client:
                 self.logger.debug("Disconnecting SSH")
                 await self.disconnect_ssh()
+                self.logger.debug("SSH disconnected")
+            else:
+                self.logger.debug("No SSH client to disconnect")
 
             self._notify_state_change('disconnected')
             self.logger.debug("disconnect_all completed successfully")
@@ -139,5 +153,7 @@ class PrinterConnectionManager:
         except Exception as e:
             self.logger.error(f"Error during disconnect_all: {e}")
             self._notify_state_change('error', str(e))
+        
+        self.logger.debug("disconnect_all completed")
 
 

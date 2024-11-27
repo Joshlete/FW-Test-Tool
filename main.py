@@ -34,8 +34,10 @@ def setup_logging():
 def run_event_loop(loop):
     asyncio.set_event_loop(loop)
     logging.debug("Event loop started")
-    loop.run_forever()
-    logging.debug("Event loop stopped")
+    try:
+        loop.run_forever()
+    finally:
+        logging.debug("Event loop stopped")
 
 
 class App(tk.Tk):
@@ -43,6 +45,7 @@ class App(tk.Tk):
 
     def __init__(self) -> None:
         super().__init__()
+        
         self.title("FW Test Tool")
         self.geometry("800x500")
 
@@ -64,6 +67,8 @@ class App(tk.Tk):
         # Create tabs
         self.tab_manager = TabManager(self)
         self.tab_manager.create_tabs()
+
+        self.is_closing = False  # Add this line
 
         print("> [App.__init__] App initialization complete")
 
@@ -144,6 +149,7 @@ class App(tk.Tk):
 
     def on_closing(self):
         logging.info("[App.on_closing] Closing application")
+        self.is_closing = True  # Set the flag to True
         
         # Stop listeners for all tabs
         for tab_name, tab in self.tab_manager.tabs.items():
@@ -152,12 +158,12 @@ class App(tk.Tk):
                 tab.stop_listeners()
         
         # Stop the event loop
-        logging.info("Stopping event loop...")
-        event_loop = self.get_event_loop()
-        try:
-            event_loop.call_soon_threadsafe(event_loop.stop)
-        except Exception as e:
-            logging.error(f"Error stopping event loop: {e}")
+        # logging.info("Stopping event loop...")
+        # event_loop = self.get_event_loop()
+        # try:
+        #     event_loop.call_soon_threadsafe(event_loop.stop)
+        # except Exception as e:
+        #     logging.error(f"Error stopping event loop: {e}")
         
         logging.info("Closing application...")
         self.quit()
@@ -200,24 +206,31 @@ if __name__ == "__main__":
     # Cleanup phase
     logging.debug("Application mainloop ended, beginning cleanup")
     
+
     try:
-        # Stop all pending tasks first
+        # Cancel all pending tasks
         pending = asyncio.all_tasks(loop=event_loop)
         if pending:
             logging.debug(f"Cancelling {len(pending)} pending tasks")
             for task in pending:
+                logging.debug(f"Cancelling task: {task}")
                 task.cancel()
-            # Wait for all tasks to complete their cancellation
-            event_loop.call_soon_threadsafe(
-                lambda: asyncio.gather(*pending, return_exceptions=True)
-            )
+            
+            # Define a coroutine to wait for all tasks to finish
+            async def shutdown():
+                logging.debug("Shutting down event loop")
+                await asyncio.gather(*pending, return_exceptions=True)
+                event_loop.stop()
+            
+            # Schedule the shutdown coroutine to run in the event loop
+            asyncio.run_coroutine_threadsafe(shutdown(), event_loop)
+        else:
+            # No pending tasks, stop the loop
+            event_loop.call_soon_threadsafe(event_loop.stop)
 
-        # Stop the event loop
-        event_loop.call_soon_threadsafe(event_loop.stop)
-        
-        # Wait for thread to finish with timeout
+        # Wait for the event loop thread to finish
         loop_thread.join(timeout=5)
-        
+
         if loop_thread.is_alive():
             logging.warning("Event loop thread did not stop cleanly")
         else:
@@ -227,5 +240,4 @@ if __name__ == "__main__":
         logging.error(f"Error during cleanup: {e}")
     finally:
         logging.debug("Application shutdown complete")
-
 

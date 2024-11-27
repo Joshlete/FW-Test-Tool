@@ -172,11 +172,10 @@ class DuneTab(TabContent):
         future.add_done_callback(self.on_disconnect_complete)
 
     async def disconnect_from_printer(self):
-        """
-        Asynchronously disconnects from the printer.
-        """
+        self.logger.debug("disconnect_from_printer started")
         try:
             await self.connection_manager.disconnect_all()
+            self.logger.debug("disconnect_from_printer completed")
         except Exception as e:
             self.logger.error(f"Exception in disconnect_from_printer: {e}")
             raise
@@ -196,6 +195,9 @@ class DuneTab(TabContent):
 
     def handle_connection_state(self, state, error=None):
         """Handle connection state changes"""
+        if self.app.is_closing:
+            self.logger.debug("Application is shutting down; ignoring connection state change")
+            return
         # Use after() to ensure UI updates happen on main thread
         self.frame.after(0, self._update_ui_for_state, state, error)
 
@@ -216,24 +218,15 @@ class DuneTab(TabContent):
 
     def stop_listeners(self) -> None:
         """
-        Non-blocking shutdown initiation with proper timeout
+        Non-blocking shutdown initiation.
         """
         self.logger.info("Initiating DuneTab shutdown")
         try:
-            future = asyncio.run_coroutine_threadsafe(
+            # Schedule the disconnect coroutine without waiting for the result
+            asyncio.run_coroutine_threadsafe(
                 self.disconnect_from_printer(),
                 self.event_loop
             )
-            # Increase timeout to 5 seconds
-            future.result(timeout=5)
-            self.logger.info("DuneTab shutdown completed")
-        except TimeoutError:
-            self.logger.error("Shutdown timed out")
-            # Force cleanup if timeout occurs
-            if hasattr(self, 'connection_manager'):
-                self.connection_manager.ssh_client = None
-                self.connection_manager.vnc_client = None
-                self.connection_manager.ssh_monitor_task = None
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
 
