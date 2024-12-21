@@ -1,120 +1,105 @@
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog
-from typing import List, Callable
+from typing import Dict, List, Callable
 import ipaddress
+from snip_tool import CaptureManager
+from keybindings import KeybindingManager
+from gui_tabs.sirius import SiriusTab
+from gui_tabs.settings import SettingsTab
 from gui_tabs.dune import DuneTab
-from config_manager import ConfigManager
-import asyncio
-import logging
-
-# Create a global event loop
-event_loop = asyncio.new_event_loop()
-
-def setup_logging():
-    """
-    Configure logging with proper formatting and level.
-    Ensures all debug messages are captured and displayed.
-    """
-    # Create a formatter
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    
-    # Create and configure stream handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)  # Ensure handler level is DEBUG
-    console_handler.setFormatter(formatter)
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)  # Ensure root logger level is DEBUG
-    root_logger.handlers = []  # Clear any existing handlers
-    root_logger.addHandler(console_handler)
-
-# Function to run the event loop
-def run_event_loop(loop):
-    asyncio.set_event_loop(loop)
-    logging.debug("Event loop started")
-    try:
-        loop.run_forever()
-    finally:
-        logging.debug("Event loop stopped")
-
+from gui_tabs.trillium import TrilliumTab
+from cdm_ledm_fetcher import create_fetcher
+import json
+import os
+import time
 
 class App(tk.Tk):
-    # CONFIG_FILE = "config.json"
+    CONFIG_FILE = "config.json"
+    DEFAULT_IP = "15.8.177.148"
+    DEFAULT_DIRECTORY = "."
 
     def __init__(self) -> None:
+        print("> [App.__init__] Initializing App")
         super().__init__()
-        
         self.title("FW Test Tool")
         self.geometry("800x500")
-
-        # Initialize callback lists
+        
+        # Load IP address from config file or use default
+        self._ip_address = self.load_ip_address() or self.DEFAULT_IP
+        self.ip_var = tk.StringVar(value=self._ip_address)
+        self.ip_var.trace_add("write", self._on_ip_change)  # Track changes to IP input
         self._ip_callbacks: List[Callable[[str], None]] = []
-        self._directory_callbacks: List[Callable[[str], None]] = []
-
-        # load config
-        self.config_manager = ConfigManager()
-        self._ip_address = self.config_manager.get("ip_address")
-        self._directory = self.config_manager.get("directory")
-
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        # Load directory from config file or use default
+        self._directory = self.load_directory() or self.DEFAULT_DIRECTORY
+        self.directory_var = tk.StringVar(value=self.shorten_directory(self._directory))
+        self._directory_callbacks: List[Callable[[str], None]] = []
 
         # Create UI components
         self.create_ip_input()
         self.create_directory_input()  # New method call
+        self.capture_manager = CaptureManager(current_directory=".")
 
-        # Create tabs
-        self.tab_manager = TabManager(self)
-        self.tab_manager.create_tabs()
+        self.create_snip_tool()
+        self.keybinding_manager = KeybindingManager(self, self.capture_manager)
 
-        self.is_closing = False  # Add this line
+        # Initialize fetchers
+        self.sirius_fetcher = None
+        self.dune_fetcher = None
+        self.update_fetchers()
+
+        # Create and set up the tab control
+        self.tab_control = ttk.Notebook(self)
+        self.tabs: Dict[str, ttk.Frame] = {}
+        self.create_tabs()
+        self.tab_control.pack(expand=1, fill="both")
+        
+        # Register IP change callback
+        self.register_ip_callback(self.update_fetchers)
 
         print("> [App.__init__] App initialization complete")
 
-    def get_event_loop(self):
-        return event_loop  # Provide access to the event loop
+    def create_snip_tool(self) -> None:
+        print("> [App.create_snip_tool] Creating Snip Tool")
+        # Create a frame and button for the Snip Tool functionality
+        snip_frame = ttk.Frame(self)
+        snip_frame.pack(fill="x", padx=10, pady=10)
+        self.snip_tool_button = ttk.Button(snip_frame, text="Snip Tool", command=self.snip_tool)
+        self.snip_tool_button.pack(side="left", padx=5)
+
+    def snip_tool(self) -> None:
+        print("> [App.snip_tool] Capturing screen region")
+        # Capture a screen region when the Snip Tool button is clicked
+        root = self.winfo_toplevel()
+        self.capture_manager.capture_screen_region(root, "screenshot", ".", None)
 
     def create_ip_input(self) -> None:
-        
-        # Create and configure IP input frame
+        print("> [App.create_ip_input] Creating IP input field")
+        # Create an input field for the IP address
         ip_frame = ttk.Frame(self)
         ip_frame.pack(fill="x", padx=10, pady=10)
-
-        # Add IP label
         ttk.Label(ip_frame, text="IP Address:").pack(side="left")
-
-        # Add IP entry
-        self.ip_entry = ttk.Entry(ip_frame)
+        self.ip_entry = ttk.Entry(ip_frame, textvariable=self.ip_var)
         self.ip_entry.pack(side="left", padx=5)
-        self.ip_entry.insert(0, self._ip_address)
-        self.ip_entry.bind("<FocusOut>", self._on_ip_change)
+        self._on_ip_change()  # Validate initial IP
 
-    def _on_ip_change(self, event=None) -> None:
-        new_ip = self.ip_entry.get()
-        if new_ip != self._ip_address:
-            try:
-                ipaddress.ip_address(new_ip)
-                self._ip_address = new_ip
-                self.config_manager.set("ip_address", new_ip)
-                for callback in self._ip_callbacks:
-                    callback(new_ip)
-            except ValueError:
-                print(f"> [App._on_ip_change] Invalid IP address: {new_ip}")
-                self.ip_entry.delete(0, tk.END)
-                self.ip_entry.insert(0, self._ip_address)
+    def _on_ip_change(self, *args) -> None:
+        # Validate and process IP address changes
+        ip = self.ip_var.get()
+        self._ip_address = ip
+        try:
+            ipaddress.ip_address(ip)
+            self.save_ip_address()  # Save the new IP address
+            for callback in self._ip_callbacks:
+                callback(ip)
+            print(f"> [App._on_ip_change] IP changed to: {self.ip_var.get()}")
+        except ValueError:
+            print(f"> [App._on_ip_change] Invalid IP address: {ip}")
 
-    def register_ip_callback(self, callback: Callable[[str], None]) -> None:
-        self._ip_callbacks.append(callback)
-        # Trigger the callback immediately with the current IP
-        callback(self._ip_address)
-
-    def create_directory_input(self) -> None:     
-        # Initialize directory-related attributes
-        self.directory_var = tk.StringVar(value=self.shorten_directory(self._directory))
-        self._directory_callbacks: List[Callable[[str], None]] = []
-
-        # Create and set up the directory input UI
+    def create_directory_input(self) -> None:
+        print("> [App.create_directory_input] Creating Directory input field")
         dir_frame = ttk.Frame(self)
         dir_frame.pack(fill="x", padx=10, pady=5)
         ttk.Label(dir_frame, text="Directory:").pack(side="left")
@@ -124,6 +109,7 @@ class App(tk.Tk):
         self.dir_button.pack(side="left")
 
     def browse_directory(self) -> None:
+        print("> [App.browse_directory] Opening directory browser")
         directory = filedialog.askdirectory()
         if directory:
             self._directory = directory
@@ -131,15 +117,58 @@ class App(tk.Tk):
 
             # Update the directory display
             self.directory_var.set(shortened_directory)
-            self.config_manager.set("directory", self._directory)
+            self.save_directory()
             for callback in self._directory_callbacks:
                 callback(directory)
 
+    def save_ip_address(self) -> None:
+        """Save the current IP address to the config file."""
+        config = self.load_config()
+        config["ip_address"] = self._ip_address
+        with open(self.CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+
+    def load_ip_address(self) -> str:
+        """Load the IP address from the config file."""
+        config = self.load_config()
+        return config.get("ip_address")
+
+    @classmethod
+    def load_config(cls) -> dict:
+        """Load the entire config file."""
+        if os.path.exists(cls.CONFIG_FILE):
+            with open(cls.CONFIG_FILE, "r") as f:
+                return json.load(f)
+        return {}
+
+    def get_ip_address(self) -> str:
+        # Getter for the current IP address
+        return self._ip_address
+    
     def get_directory(self) -> str:
         return self._directory
 
+    def register_ip_callback(self, callback: Callable[[str], None]) -> None:
+        print(f"> [App.register_ip_callback] Registering new IP callback")
+        # Register callbacks for IP address changes
+        self._ip_callbacks.append(callback)
+
+
     def register_directory_callback(self, callback: Callable[[str], None]) -> None:
+        print(f"> [App.register_directory_callback] Registering new directory callback")
         self._directory_callbacks.append(callback)
+
+    def save_directory(self) -> None:
+        """Save the current directory to the config file."""
+        config = self.load_config()
+        config["directory"] = self._directory
+        with open(self.CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+
+    def load_directory(self) -> str:
+        """Load the directory from the config file."""
+        config = self.load_config()
+        return config.get("directory")
 
     def shorten_directory(self, directory: str) -> str:
         """Shorten the directory path to show only the last 3 components."""
@@ -147,97 +176,85 @@ class App(tk.Tk):
         last_three_components = '/'.join(path_components[-3:])
         return f".../{last_three_components}" if len(path_components) > 3 else directory
 
+    def get_directory(self) -> str:
+        print(f"> [App.get_directory] Returning directory: {self._directory}")
+        return self._directory
+
+    def register_directory_callback(self, callback: Callable[[str], None]) -> None:
+        print(f"> [App.register_directory_callback] Registering new directory callback")
+        self._directory_callbacks.append(callback)
+
+    def create_tabs(self) -> None:
+        print("> [App.create_tabs] Creating tabs")
+        # Directly add tabs without using entry points
+        self.add_tab("Dune", DuneTab)
+        self.add_tab("Sirius", SiriusTab)
+        self.add_tab("Trillium", TrilliumTab)
+        self.add_tab("Settings", SettingsTab)
+
+    def add_tab(self, tab_name: str, tab_class: type) -> None:
+        print(f"> [App.add_tab] Adding tab: {tab_name}")
+        # Add a new tab to the notebook
+        if tab_name in self.tabs:
+            print(f"> Warning: Tab '{tab_name}' already exists.")
+            return
+        
+        try:
+            tab_frame = ttk.Frame(self.tab_control)
+            self.tab_control.add(tab_frame, text=tab_name.capitalize())
+            tab_instance = tab_class(tab_frame, self)
+            tab_instance.frame.pack(expand=True, fill="both")
+            self.tabs[tab_name] = tab_instance
+        except Exception as e:
+            print(f">! Error adding tab '{tab_name}': {str(e)}")
+
+    def update_fetchers(self, *args):
+        ip = self.get_ip_address()
+        self.sirius_fetcher = create_fetcher(ip, "sirius")
+        self.dune_fetcher = create_fetcher(ip, "dune")
+
     def on_closing(self):
-        logging.info("[App.on_closing] Closing application")
-        self.is_closing = True  # Set the flag to True
-        
+        print("> [App.on_closing] Closing application")
+        self._stop_threads = True  # Signal threads to stop
+
+        # Stop the Twisted Reactor if it's running
+        try:
+            from twisted.internet import reactor
+            if reactor.running:
+                print("Stopping Twisted Reactor...")
+                reactor.callFromThread(reactor.stop)
+        except ImportError:
+            print("Twisted is not used in this application.")
+
         # Stop listeners for all tabs
-        for tab_name, tab in self.tab_manager.tabs.items():
+        for tab_name, tab in self.tabs.items():
             if hasattr(tab, 'stop_listeners'):
-                logging.info(f"Stopping listeners for tab: {tab_name}")
+                print(f"Stopping listeners for tab: {tab_name}")
                 tab.stop_listeners()
-        
-        # Stop the event loop
-        # logging.info("Stopping event loop...")
-        # event_loop = self.get_event_loop()
-        # try:
-        #     event_loop.call_soon_threadsafe(event_loop.stop)
-        # except Exception as e:
-        #     logging.error(f"Error stopping event loop: {e}")
-        
-        logging.info("Closing application...")
+
+        # Stop snip tool listeners
+        print("Stopping snip tool listeners...")
+        self.keybinding_manager.stop_listeners()
+
+        # Join remaining threads with a timeout
+        timeout = 5  # 5 seconds timeout
+        start_time = time.time()
+        for thread in threading.enumerate():
+            if thread != threading.main_thread():
+                remaining_time = max(0, timeout - (time.time() - start_time))
+                if remaining_time <= 0:
+                    print(f"Timeout reached. Unable to stop thread: {thread.name}")
+                    break
+                print(f"Waiting for thread to stop: {thread.name}")
+                thread.join(timeout=remaining_time)
+
+        print("Closing application...")
         self.quit()
         self.destroy()
 
-class TabManager:
-    def __init__(self, app):
-        self.app = app
-        self.tab_control = ttk.Notebook(self.app)
-        self.tab_control.pack(expand=1, fill="both")  # Make sure this line is present
-        self.tabs = {}
-
-    def create_tabs(self):
-        self.add_tab("dune", DuneTab)
-        self.tab_control.pack(expand=1, fill="both")
-
-    def add_tab(self, name, tab_class):
-        if name not in self.tabs:
-            tab_frame = ttk.Frame(self.tab_control)
-            tab_frame.pack(fill="both", expand=True)
-            self.tab_control.add(tab_frame, text=name.capitalize())
-            tab_instance = tab_class(tab_frame, self.app)
-            self.tabs[name] = tab_instance
-        else:
-            print(f"> [TabManager.add_tab] Tab {name} already exists")
-
 if __name__ == "__main__":
-    setup_logging()
-    logging.debug("Application startup initiated")
-
-    # Create and start event loop thread
-    logging.debug("Creating event loop thread")
-    loop_thread = threading.Thread(target=run_event_loop, args=(event_loop,), daemon=True)
-    loop_thread.start()
-
-    # Initialize and run main application
+    print("> Starting application")
     app = App()
+    print("> Entering main event loop")
     app.mainloop()
-
-    # Cleanup phase
-    logging.debug("Application mainloop ended, beginning cleanup")
-    
-
-    try:
-        # Cancel all pending tasks
-        pending = asyncio.all_tasks(loop=event_loop)
-        if pending:
-            logging.debug(f"Cancelling {len(pending)} pending tasks")
-            for task in pending:
-                logging.debug(f"Cancelling task: {task}")
-                task.cancel()
-            
-            # Define a coroutine to wait for all tasks to finish
-            async def shutdown():
-                logging.debug("Shutting down event loop")
-                await asyncio.gather(*pending, return_exceptions=True)
-                event_loop.stop()
-            
-            # Schedule the shutdown coroutine to run in the event loop
-            asyncio.run_coroutine_threadsafe(shutdown(), event_loop)
-        else:
-            # No pending tasks, stop the loop
-            event_loop.call_soon_threadsafe(event_loop.stop)
-
-        # Wait for the event loop thread to finish
-        loop_thread.join(timeout=5)
-
-        if loop_thread.is_alive():
-            logging.warning("Event loop thread did not stop cleanly")
-        else:
-            logging.debug("Event loop thread stopped successfully")
-            
-    except Exception as e:
-        logging.error(f"Error during cleanup: {e}")
-    finally:
-        logging.debug("Application shutdown complete")
-
+    print("> Application closed")
