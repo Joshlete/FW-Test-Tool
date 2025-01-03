@@ -23,7 +23,7 @@ class App(tk.Tk):
         print("> [App.__init__] Initializing App")
         super().__init__()
         self.title("FW Test Tool")
-        self.geometry("800x500")
+        self.geometry("800x700")
         
         # Load IP address from config file or use default
         self._ip_address = self.load_ip_address() or self.DEFAULT_IP
