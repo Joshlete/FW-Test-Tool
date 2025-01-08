@@ -99,6 +99,13 @@ class DuneFPUI:
             return False  # Return False if disconnection fails
 
     def save_ui(self, directory, file_name):
+        """
+        Captures the UI and saves it to the specified directory with the given file name.
+
+        :param directory: The directory where the file will be saved.
+        :param file_name: The name of the file to save the UI image as.
+        :return: True if the UI was captured and saved successfully, False otherwise.
+        """
         print(f">     [dune_fpui] Starting UI capture to {directory}/{file_name}")
         if not self.is_connected() or not self.vnc_client:
             logging.error("Not connected to VNC. Cannot capture UI.")
@@ -106,6 +113,13 @@ class DuneFPUI:
         
         try:
             full_path = os.path.join(directory, file_name)
+            
+            # Check if the file already exists
+            if os.path.exists(full_path):
+                logging.warning(f"File already exists at {full_path}. Operation aborted.")
+                print(f">     [dune_fpui] Warning: File already exists at {full_path}.")
+                return False
+            
             print(f">     [dune_fpui] Capturing screen to {full_path}")
             self.vnc_client.captureScreen(full_path)
             

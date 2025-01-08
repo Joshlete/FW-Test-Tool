@@ -344,7 +344,6 @@ class DuneTab(TabContent):
             self.root.after(0, lambda: self.capture_ui_button.config(state="disabled"))
             self.root.after(0, lambda: self.continuous_ui_button.config(state="disabled"))
             self.root.after(0, lambda: self.fetch_json_button.config(state="disabled"))
-            self.root.after(0, lambda: self.clear_cdm_button.config(state="disabled"))
             self.root.after(0, lambda: self.view_telemetry_button.config(state="disabled"))
             self.root.after(0, lambda: self.fetch_alerts_button.config(state="disabled"))
             self.root.after(0, lambda: self.image_label.config(image=None))

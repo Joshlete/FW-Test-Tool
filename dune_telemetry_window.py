@@ -113,16 +113,29 @@ class DuneTelemetryWindow:
 
     def display_json(self, event_id):
         try:
-            print(f"event_id: {event_id}")
-            print(json.dumps(self.telemetry_data[event_id], indent=4))
             event_data = self.telemetry_data[event_id]
-            print(event_data)
             if event_data:
+                # Extract color information safely with fallbacks
+                color_code = event_data.get('eventDetail', {}).get('identityInfo', {}).get('supplyColorCode', '')
+                color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black'}
+                color = color_map.get(color_code, 'Unknown')
+                
+                # Extract stateReasons with safe navigation
+                state_reasons = event_data.get('eventDetail', {}).get('stateInfo', {}).get('stateReasons', [])
+                state_reasons_str = ', '.join(state_reasons) if state_reasons else 'None'
+                
+                # Extract notification trigger from eventDetail
+                notification_trigger = event_data.get('eventDetail', {}).get('notificationTrigger', 'Unknown')
+                
+                # Create detailed event display string
+                sequence_number = event_data.get('sequenceNumber', 'N/A')
+                event_title = f"Telemetry Event {sequence_number} - {color} - Reason: {state_reasons_str} - Trigger: {notification_trigger}"
+
                 pretty_content = json.dumps(event_data, indent=4)
 
                 # Create a new window to display the JSON
                 json_window = tk.Toplevel(self.window)
-                json_window.title(f"JSON Viewer - {event_id}")
+                json_window.title(event_title)  # Use the same format as in display_files
                 json_window.geometry("700x400")
 
                 # Create a Text widget with scrollbar
@@ -219,7 +232,7 @@ class DuneTelemetryWindow:
             notification_trigger = event_data.get('eventDetail', {}).get('notificationTrigger', 'Unknown')
             
             # Create the initial filename
-            initial_filename = f"Telemetry {color} {state_reasons_str} {notification_trigger}"
+            initial_filename = f". Telemetry {color} {state_reasons_str} {notification_trigger}"
             
             file_path = filedialog.asksaveasfilename(
                 defaultextension=".json",
