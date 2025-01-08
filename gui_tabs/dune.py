@@ -8,6 +8,7 @@ from PIL import Image, ImageTk
 import io
 from dune_telemetry_window import DuneTelemetryWindow  # Add this import
 import requests
+import tkinter as tk
 
 # Constants for button text
 CONNECTING = "Connecting..."
@@ -272,6 +273,9 @@ class DuneTab(TabContent):
             alert_text_widget.insert("1.0", alert_text)
             alert_text_widget.configure(state="disabled")  # Make it read-only
             alert_text_widget.pack(side="left", padx=5, fill="x", expand=True)
+
+            # Bind right-click event to the text widget
+            alert_text_widget.bind("<Button-3>", lambda e, a=alert: self.show_alert_context_menu(e, a))
             
             buttons_frame = ttk.Frame(alert_frame)
             buttons_frame.pack(side="right")
@@ -291,6 +295,64 @@ class DuneTab(TabContent):
                         l=action_link: self.handle_alert_action(a, v, l)
                     )
                     btn.pack(side=RIGHT, padx=2)
+
+    def show_alert_context_menu(self, event, alert):
+        """
+        Shows the context menu for an alert.
+        
+        :param event: The event that triggered the context menu
+        :param alert: The alert data dictionary
+        """
+        context_menu = tk.Menu(self.root, tearoff=0)
+        
+        # Create the capture UI menu item
+        context_menu.add_command(
+            label="Capture UI", 
+            command=lambda: self.capture_alert_ui(alert)
+        )
+        
+        # Display the context menu
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
+
+    def capture_alert_ui(self, alert):
+        """
+        Captures the UI with alert information in the filename.
+        
+        :param alert: The alert data dictionary
+        """
+        if not self.dune_fpui.is_connected():
+            if not self.dune_fpui.connect(self.ip):
+                self._show_notification("Failed to connect to Dune FPUI", "red")
+                return
+
+        # Build filename from alert information
+        filename = ". UI "
+        if 'stringId' in alert:
+            filename += str(alert['stringId']) + " "
+        if 'category' in alert:
+            filename += str(alert['category'])
+        
+        # Ask user for number prefix
+        filename = simpledialog.askstring(
+            "File Prefix", "Enter a number for file prefix (optional):", 
+            parent=self.frame,
+            initialvalue=filename
+        )
+        if filename is None:
+            self._show_notification("Screenshot capture cancelled", "blue")
+            return
+        
+        filename += ".png"
+        # Use the existing UI capture functionality
+        captured = self.dune_fpui.save_ui(self.directory, filename)
+        if not captured:
+            self._show_notification("Failed to capture UI", "red")
+            return
+            
+        self._show_notification("Screenshot Captured", "green")
 
     def _worker(self):
         while True:
