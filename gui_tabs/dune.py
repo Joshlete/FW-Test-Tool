@@ -48,6 +48,7 @@ class DuneTab(TabContent):
         self.is_viewing_ui = False
         self.ui_update_job = None
         self.telemetry_window = None
+        self.snip = None  # Add this line to store snip instance
 
     def create_widgets(self) -> None:
         # Create main layout frames
@@ -148,6 +149,15 @@ class DuneTab(TabContent):
         # Create notification label
         self.notification_label = ttk.Label(self.frame, text="", foreground="red")
         self.notification_label.pack(side="bottom", pady=10, padx=10)
+
+        # Add snip buttons to connection frame
+        self.snip_home_button = ttk.Button(self.connection_frame, text="Snip Home",
+                                          command=lambda: self.start_snip(". EWS Home Page"))
+        self.snip_home_button.pack(side="left", pady=5, padx=10)
+
+        self.snip_supplies_button = ttk.Button(self.connection_frame, text="Snip Supplies",
+                                             command=lambda: self.start_snip(". EWS Supplies Page"))
+        self.snip_supplies_button.pack(side="left", pady=5, padx=10)
 
     def create_rest_client_widgets(self):
         """Creates the REST client interface widgets with horizontal and vertical scrolling."""
@@ -344,6 +354,7 @@ class DuneTab(TabContent):
             self.root.after(0, lambda: self.capture_ui_button.config(state="disabled"))
             self.root.after(0, lambda: self.continuous_ui_button.config(state="disabled"))
             self.root.after(0, lambda: self.fetch_json_button.config(state="disabled"))
+            self.root.after(0, lambda: self.clear_cdm_button.config(state="disabled"))
             self.root.after(0, lambda: self.view_telemetry_button.config(state="disabled"))
             self.root.after(0, lambda: self.fetch_alerts_button.config(state="disabled"))
             self.root.after(0, lambda: self.image_label.config(image=None))
@@ -606,3 +617,21 @@ class DuneTab(TabContent):
             self.clear_cdm_button.pack(side="left")
         else:
             self.clear_cdm_button.pack_forget()
+
+    def start_snip(self, default_filename: str) -> None:
+        """
+        Starts the snipping tool with a default filename.
+
+        :param default_filename: The default filename to use when saving
+        """
+        try:
+            from snip_tool import CaptureManager
+            capture_manager = CaptureManager(self.directory)
+            capture_manager.capture_screen_region(
+                self.root, 
+                default_filename, 
+                self.directory, 
+                self.notification_label
+            )
+        except Exception as e:
+            self._show_notification(f"Failed to start snipping tool: {str(e)}", "red")

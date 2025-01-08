@@ -95,6 +95,7 @@ class CaptureManager:
 
             # Save image
             save_path = filedialog.asksaveasfilename(
+                initialfile=file_name,
                 defaultextension=".png",
                 filetypes=[("PNG files", "*.png"), ("All files", "*.*")],
                 title="Save Screenshot As"
