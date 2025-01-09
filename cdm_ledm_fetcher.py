@@ -71,7 +71,15 @@ class BaseFetcher(ABC):
                     endpoint_name = "alert_alerts"
                 
                 # Add step number to the file name if provided
-                file_name = f"{step_num}. {endpoint_name}.json" if step_num is not None else f"{endpoint_name}.json"
+                prefix = ""
+                if step_num is not None:
+                    if isinstance(self, DuneFetcher):
+                        prefix = f"{step_num}. CDM "
+                    elif isinstance(self, SiriusFetcher):
+                        prefix = f"{step_num}. LEDM " # TODO: check if LEDM works
+                    else:
+                        prefix = f"{step_num}. "
+                file_name = f"{prefix}{endpoint_name}.json"
                 file_path = f"{directory}/{file_name}"
 
                 # format the json content to pretty print  

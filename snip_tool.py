@@ -91,7 +91,7 @@ class CaptureManager:
             print(f"> [CaptureManager.capture_screen_region] Capturing region ({x1}, {y1}) to ({x2}, {y2})")
             img = ImageGrab.grab(bbox=(x1, y1, x2, y2), include_layered_windows=False, all_screens=True)
 
-            self.copy_image_to_clipboard(img)
+            # self.copy_image_to_clipboard(img)
 
             # Save image
             save_path = filedialog.asksaveasfilename(
