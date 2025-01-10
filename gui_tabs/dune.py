@@ -58,7 +58,7 @@ class DuneTab(TabContent):
 
         # Create connection frame at the top
         self.connection_frame = ttk.Frame(self.main_frame)
-        self.connection_frame.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="nsew")
+        self.connection_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
         # Add connect button to connection frame
         self.connect_button = ttk.Button(self.connection_frame, text="Connect", 
@@ -72,45 +72,32 @@ class DuneTab(TabContent):
 
         # Add separator line
         separator = ttk.Separator(self.main_frame, orient='horizontal')
-        separator.grid(row=1, column=0, columnspan=3, sticky="ew", padx=10, pady=(5,0))
+        separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5,0))
 
-        # Create frames for the three columns (now in row 2)
-        self.left_frame = ttk.Frame(self.main_frame)
-        self.left_frame.grid(row=2, column=0, padx=10, pady=10, sticky="n")
+        # Create UI frame (top left)
+        self.image_frame = ttk.LabelFrame(self.main_frame, text="UI", width=500, height=500)
+        self.image_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.image_frame.grid_propagate(False)  # Prevent the frame from resizing
 
-        self.middle_frame = ttk.LabelFrame(self.main_frame, text="CDM Endpoints", height=200)
-        self.middle_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nw")
-        self.middle_frame.grid_propagate(False)
-
-        # Create a frame for the buttons at the top of the middle frame
-        self.cdm_buttons_frame = ttk.Frame(self.middle_frame)
-        self.cdm_buttons_frame.pack(pady=5, padx=5, anchor="w")
-
-        # Add Save CDM button to button frame
-        self.fetch_json_button = ttk.Button(self.cdm_buttons_frame, text="Save CDM", 
-                                          command=self.capture_cdm, state="disabled")
-        self.fetch_json_button.pack(side="left", padx=(0, 5))
-
-        # Add Clear button to button frame (initially hidden)
-        self.clear_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Clear", 
-                                          command=self.clear_cdm_checkboxes)
+        # Create REST Client frame (right side, spans both rows)
+        self.rest_frame = ttk.LabelFrame(self.main_frame, text="REST Client")
+        self.rest_frame.grid(row=2, column=1, rowspan=2, padx=10, pady=10, sticky="nsew")
         
-        # Add checkbox trace for each CDM option
-        for option, var in self.cdm_vars.items():
-            var.trace_add('write', self.update_clear_button_visibility)
+        # Create CDM Endpoints frame (bottom left)
+        self.left_frame = ttk.LabelFrame(self.main_frame, text="CDM Endpoints")
+        self.left_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
+        
+        # Configure grid weights for main_frame
+        self.main_frame.grid_columnconfigure(0, weight=2, minsize=400)  # Left column
+        self.main_frame.grid_columnconfigure(1, weight=1, minsize=200)  # Right column
+        self.main_frame.grid_rowconfigure(2, weight=1, minsize=300)     # UI row
+        self.main_frame.grid_rowconfigure(3, weight=2)     # CDM Endpoints row (taller)
 
-        # Add CDM checkboxes to middle frame
-        for option in self.cdm_options:
-            cb = ttk.Checkbutton(self.middle_frame, text=option, variable=self.cdm_vars[option])
-            cb.pack(anchor="w", padx=5, pady=2)
-
-        self.right_frame = ttk.Frame(self.main_frame)
-        self.right_frame.grid(row=2, column=2, padx=10, pady=10, sticky="nsew")
-
-        # REST Client section (top of right frame)
-        self.rest_frame = ttk.LabelFrame(self.right_frame, text="REST Client", height=200)
-        self.rest_frame.pack(pady=(0,10), padx=0, fill="both")
-        self.rest_frame.pack_propagate(False)  # Prevent the frame from shrinking
+        # Configure internal grid weights for frames
+        self.left_frame.grid_columnconfigure(0, weight=1)
+        self.left_frame.grid_rowconfigure(0, weight=1)
+        self.rest_frame.grid_columnconfigure(0, weight=1)
+        self.rest_frame.grid_rowconfigure(0, weight=1)
 
         # Add fetch alerts button
         self.fetch_alerts_button = ttk.Button(self.rest_frame, text="Fetch Alerts", 
@@ -120,11 +107,6 @@ class DuneTab(TabContent):
         # Create scrollable alerts area
         self.create_rest_client_widgets()
 
-        # UI section (bottom of right frame)
-        self.image_frame = ttk.LabelFrame(self.right_frame, text="UI", width=500, height=300)
-        self.image_frame.pack(pady=0, padx=0)
-        self.image_frame.pack_propagate(False)  # Prevent the frame from resizing
-        
         # Create button frame inside UI frame
         self.ui_button_frame = ttk.Frame(self.image_frame)
         self.ui_button_frame.pack(side="top", pady=(5,0), padx=5, anchor="w")
@@ -159,6 +141,49 @@ class DuneTab(TabContent):
         self.snip_supplies_button = ttk.Button(self.connection_frame, text="Snip Supplies",
                                              command=lambda: self.start_snip(". EWS Supplies Page"))
         self.snip_supplies_button.pack(side="left", pady=5, padx=10)
+
+        # Create a frame for the CDM buttons
+        self.cdm_buttons_frame = ttk.Frame(self.left_frame)
+        self.cdm_buttons_frame.pack(pady=5, padx=5, anchor="w")
+
+        # Add Save CDM button
+        self.fetch_json_button = ttk.Button(self.cdm_buttons_frame, text="Save CDM", 
+                                          command=self.capture_cdm, state="disabled")
+        self.fetch_json_button.pack(side="left", padx=(0, 5))
+
+        # Add Clear button (initially hidden)
+        self.clear_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Clear", 
+                                          command=self.clear_cdm_checkboxes)
+
+        # Create a canvas for scrollable checkboxes
+        self.cdm_canvas = Canvas(self.left_frame)
+        self.cdm_scrollbar = ttk.Scrollbar(self.left_frame, orient="vertical", 
+                                          command=self.cdm_canvas.yview)
+        self.cdm_checkbox_frame = ttk.Frame(self.cdm_canvas)
+
+        # Configure scrolling
+        self.cdm_canvas.configure(yscrollcommand=self.cdm_scrollbar.set)
+        self.cdm_checkbox_frame.bind(
+            "<Configure>",
+            lambda e: self.cdm_canvas.configure(scrollregion=self.cdm_canvas.bbox("all"))
+        )
+
+        # Create window inside canvas
+        self.cdm_canvas.create_window((0, 0), window=self.cdm_checkbox_frame, anchor="nw")
+
+        # Pack scrollbar and canvas
+        self.cdm_scrollbar.pack(side="right", fill="y")
+        self.cdm_canvas.pack(side="left", fill="both", expand=True)
+
+        # Add checkbox trace for each CDM option
+        for option, var in self.cdm_vars.items():
+            var.trace_add('write', self.update_clear_button_visibility)
+
+        # Add CDM checkboxes
+        for option in self.cdm_options:
+            cb = ttk.Checkbutton(self.cdm_checkbox_frame, text=option, 
+                                variable=self.cdm_vars[option])
+            cb.pack(anchor="w", padx=5, pady=2)
 
     def create_rest_client_widgets(self):
         """Creates the REST client interface widgets with horizontal and vertical scrolling."""
@@ -326,6 +351,7 @@ class DuneTab(TabContent):
         if not self.dune_fpui.is_connected():
             if not self.dune_fpui.connect(self.ip):
                 self._show_notification("Failed to connect to Dune FPUI", "red")
+                print("Failed to connect to Dune FPUI")
                 return
 
         # Build filename from alert information
@@ -416,7 +442,6 @@ class DuneTab(TabContent):
             self.root.after(0, lambda: self.capture_ui_button.config(state="disabled"))
             self.root.after(0, lambda: self.continuous_ui_button.config(state="disabled"))
             self.root.after(0, lambda: self.fetch_json_button.config(state="disabled"))
-            self.root.after(0, lambda: self.clear_cdm_button.config(state="disabled"))
             self.root.after(0, lambda: self.view_telemetry_button.config(state="disabled"))
             self.root.after(0, lambda: self.fetch_alerts_button.config(state="disabled"))
             self.root.after(0, lambda: self.image_label.config(image=None))

@@ -43,7 +43,17 @@ class EWSScreenshotCapturer:
             with sync_playwright() as p:
                 print("    >> Launching browser")
                 browser = p.chromium.launch()
-                page = browser.new_page(ignore_https_errors=True)
+                
+                # Create context with HTTP credentials
+                context = browser.new_context(
+                    ignore_https_errors=True,
+                    http_credentials={
+                        "username": "admin",  # Default username
+                        "password": "51496134"   # Default password TODO: Make this dynamic
+                    }
+                )
+                
+                page = context.new_page()
                 print(f"    >> Navigating to {url}")
                 page.goto(url, timeout=60000)
                 page.wait_for_load_state('networkidle')
@@ -74,12 +84,17 @@ class EWSScreenshotCapturer:
                 print("    >> Converting image to bytes")
                 cropped_image_bytes = io.BytesIO()
                 cropped_image.save(cropped_image_bytes, format='PNG')
+                
+                # Close context and browser
+                context.close()
+                browser.close()
+                
                 return cropped_image_bytes.getvalue(), description
 
         # Define URLs and crop settings for each page
         urls = [
             (f'https://{self.ip_address}/#hId-pgDevInfo', "EWS Printer Information", (150, 0, 150, 180)),
-            (f'https://{self.ip_address}/#hId-pgConsumables', "EWS Supply Status", (150, 0, 150, 170))
+            (f'https://{self.ip_address}/#hId-pgConsumables', "EWS Supply Status", (150, 0, 150, 230))
         ]
 
         print("    >> Capturing all specified pages concurrently")

@@ -53,62 +53,92 @@ class TrilliumTab(TabContent):
         self.main_frame = ttk.Frame(self.frame)
         self.main_frame.pack(fill="both", expand=True)
 
-        # Create left frame for buttons
-        self.left_frame = ttk.Frame(self.main_frame)
-        self.left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="n")
+        # Create connection frame at the top
+        self.connection_frame = ttk.Frame(self.main_frame)
+        self.connection_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
-        # Add connect button
-        self.connect_button = ttk.Button(self.left_frame, text=CONNECT, command=self.toggle_connection)
-        self.connect_button.pack(pady=5, padx=10, anchor="w")
+        # Add connect button to connection frame
+        self.connect_button = ttk.Button(self.connection_frame, text=CONNECT, command=self.toggle_connection)
+        self.connect_button.pack(side="left", pady=5, padx=10)
 
-        # Add EWS capture button
-        self.capture_ews_button = ttk.Button(self.left_frame, text="Capture EWS", command=self.capture_ews, state="disabled")
-        self.capture_ews_button.pack(pady=5, padx=10, anchor="w")
+        # Add EWS capture button to connection frame
+        self.capture_ews_button = ttk.Button(self.connection_frame, text="Capture EWS", command=self.capture_ews, state="disabled")
+        self.capture_ews_button.pack(side="left", pady=5, padx=10)
 
-        # Add CDM capture button
-        self.capture_cdm_button = ttk.Button(self.left_frame, text="Capture CDM", command=self.capture_cdm, state="disabled")
-        self.capture_cdm_button.pack(pady=5, padx=10, anchor="w")
+        # Add separator line
+        separator = ttk.Separator(self.main_frame, orient='horizontal')
+        separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5,0))
 
-        # Add Telemetry Save Button
-        self.open_text_window_button = ttk.Button(self.left_frame, text="Save Telemetry", 
-                                                 command=self.open_text_window, 
-                                                 state="disabled")
-        self.open_text_window_button.pack(pady=5, padx=10, anchor="w")
+        # Create CDM frame (left side)
+        self.cdm_frame = ttk.LabelFrame(self.main_frame, text="CDM Endpoints", width=200)
+        self.cdm_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.cdm_frame.grid_propagate(False)
 
-        # Create middle frame for CDM checkboxes with fixed height
-        self.middle_frame = ttk.LabelFrame(self.main_frame, text="CDM Endpoints", height=200)
-        self.middle_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nw")
-        self.middle_frame.grid_propagate(False)  # Prevent frame from expanding
+        # Create REST Client frame (right side)
+        self.rest_frame = ttk.LabelFrame(self.main_frame, text="REST Client")
+        self.rest_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
 
-        # Add CDM checkboxes
-        for option in self.cdm_options:
-            cb = ttk.Checkbutton(self.middle_frame, text=option, variable=self.cdm_vars[option])
-            cb.pack(anchor="w", padx=5, pady=2)
+        # Configure grid weights for main_frame
+        self.main_frame.grid_columnconfigure(0, weight=0)  # Left column (CDM)
+        self.main_frame.grid_columnconfigure(1, weight=1)  # Right column (REST)
+        self.main_frame.grid_rowconfigure(2, weight=1)     # Content row
 
-        # Create right frame for REST client with adjustable dimensions
-        self.right_frame = ttk.LabelFrame(self.main_frame, text="REST Client")
-        self.right_frame.grid(row=0, column=2, padx=10, pady=10, sticky="nsew")
+        # Create CDM buttons frame and content
+        self.create_cdm_widgets()
 
-        # Configure column and row weights to allow expansion
-        self.main_frame.columnconfigure(2, weight=1)  # Allow column 2 to expand
-        self.main_frame.rowconfigure(0, weight=1)     # Allow row 0 to expand
-
-        # Add REST client components
+        # Create scrollable alerts area in REST frame
         self.create_rest_client_widgets()
 
-        # Configure grid weights
-        self.main_frame.columnconfigure(2, weight=0)  # Remove expandable weight
-        self.main_frame.rowconfigure(0, weight=0)
-
-        # Create notification label with more padding and place it at the bottom
+        # Create notification label
         self.notification_label = ttk.Label(self.frame, text="", foreground="red")
         self.notification_label.pack(side="bottom", pady=20, padx=10, anchor="center")
 
+    def create_cdm_widgets(self):
+        """Creates the CDM section widgets."""
+        # Create a frame for the CDM buttons
+        self.cdm_buttons_frame = ttk.Frame(self.cdm_frame)
+        self.cdm_buttons_frame.pack(pady=5, padx=5, anchor="w")
+
+        # Add CDM capture button
+        self.capture_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Save CDM", 
+                                           command=self.capture_cdm, state="disabled")
+        self.capture_cdm_button.pack(side="left", padx=(0, 5))
+
+        # Add Clear button (initially hidden)
+        self.clear_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Clear", 
+                                          command=self.clear_cdm_checkboxes)
+
+        # Create canvas for scrollable checkboxes
+        self.cdm_canvas = Canvas(self.cdm_frame, width=250)
+        self.cdm_scrollbar = ttk.Scrollbar(self.cdm_frame, orient="vertical", 
+                                          command=self.cdm_canvas.yview)
+        self.cdm_checkbox_frame = ttk.Frame(self.cdm_canvas)
+
+        # Configure scrolling
+        self.cdm_canvas.configure(yscrollcommand=self.cdm_scrollbar.set)
+        self.cdm_checkbox_frame.bind(
+            "<Configure>",
+            lambda e: self.cdm_canvas.configure(scrollregion=self.cdm_canvas.bbox("all"))
+        )
+
+        # Create window inside canvas
+        self.cdm_canvas.create_window((0, 0), window=self.cdm_checkbox_frame, anchor="nw")
+
+        # Pack scrollbar and canvas
+        self.cdm_scrollbar.pack(side="right", fill="y")
+        self.cdm_canvas.pack(side="left", fill="both", expand=True)
+
+        # Add CDM checkboxes
+        for option in self.cdm_options:
+            cb = ttk.Checkbutton(self.cdm_checkbox_frame, text=option, 
+                                variable=self.cdm_vars[option])
+            cb.pack(anchor="w", padx=5, pady=2)
+
     def create_rest_client_widgets(self):
         """Creates the REST client interface widgets with horizontal and vertical scrolling."""
-        # Add fetch button
+        # Add fetch alerts button
         self.fetch_alerts_button = ttk.Button(
-            self.right_frame,
+            self.rest_frame,
             text="Fetch Alerts",
             command=self.fetch_alerts,
             state="disabled"
@@ -116,7 +146,7 @@ class TrilliumTab(TabContent):
         self.fetch_alerts_button.pack(pady=2, padx=5, anchor="w")
 
         # Create canvas container frame
-        canvas_container = ttk.Frame(self.right_frame)
+        canvas_container = ttk.Frame(self.rest_frame)
         canvas_container.pack(fill="both", expand=True, padx=5, pady=5)
 
         # Create canvas with both scrollbars
@@ -150,9 +180,6 @@ class TrilliumTab(TabContent):
         v_scrollbar.pack(side="right", fill="y")
         h_scrollbar.pack(side="bottom", fill="x")
         self.alerts_canvas.pack(side="left", fill="both", expand=True)
-
-        # Adjust the right frame to be expandable
-        self.right_frame.configure(width=400, height=300)  # Increased initial size
 
     def open_text_window(self):
         # Create a new top-level window
@@ -252,8 +279,7 @@ class TrilliumTab(TabContent):
             self.connect_button.config(state="normal", text="Disconnect")
             self.capture_ews_button.config(state="normal")
             self.capture_cdm_button.config(state="normal")
-            self.open_text_window_button.config(state="normal")
-            self.fetch_alerts_button.config(state="normal")  # Enable fetch button
+            self.fetch_alerts_button.config(state="normal")  # Enable fetch alerts button
             self._show_notification("Connected", "green")
         else:
             self.connect_button.config(state="disabled", text=DISCONNECTING)
@@ -261,8 +287,7 @@ class TrilliumTab(TabContent):
             self.connect_button.config(state="normal", text=CONNECT)
             self.capture_ews_button.config(state="disabled")
             self.capture_cdm_button.config(state="disabled")
-            self.open_text_window_button.config(state="disabled")
-            self.fetch_alerts_button.config(state="disabled")  # Disable fetch button
+            self.fetch_alerts_button.config(state="disabled")  # Disable fetch alerts button
             self._show_notification("Disconnected", "green")
 
     def capture_ews(self):
@@ -500,3 +525,15 @@ class TrilliumTab(TabContent):
         except Exception as e:
             self.root.after(0, lambda: self._show_notification(
                 f"Failed to send action: {str(e)}", "red"))
+
+    def clear_cdm_checkboxes(self):
+        """Clears all selected CDM endpoints."""
+        for var in self.cdm_vars.values():
+            var.set(0)
+
+    def update_clear_button_visibility(self, *args):
+        """Updates the visibility of the Clear button based on checkbox selections."""
+        if any(var.get() for var in self.cdm_vars.values()):
+            self.clear_cdm_button.pack(side="left")
+        else:
+            self.clear_cdm_button.pack_forget()
