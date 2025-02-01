@@ -1,0 +1,16 @@
+TODO:
+Dune:
+* highlight multiple telemetry and save them all using a test step number.
+* make step number more user friendly, potentially add sub steps.
+* create a ssh command sending implementation.
+* when UI has multiple segments, combine them all into one file, so there isn't A, B, C.
+* make sure saves aren't overriding other files.
+* when viewing ui, implement a way to move the screen from GUI.
+* add feature with file list that shows all jsons, and copy to clipboard specific color/colors.
+* see if it is possible to load up the app fast as a base, then slowly load in the background. It takes a while to start up.
+
+Trillium
+* make ews password input dynamic, allow input on GUI.
+
+Both:
+* create a general layout, then have objects fill those layouts. possibly have those objects in different files for organization.
