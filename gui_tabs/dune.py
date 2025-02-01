@@ -146,9 +146,18 @@ class DuneTab(TabContent):
         self.main_frame.columnconfigure(2, weight=1)  # Make the right column expandable
         self.main_frame.rowconfigure(2, weight=1)     # Make the content row expandable
 
-        # Create notification label
-        self.notification_label = ttk.Label(self.frame, text="", foreground="red")
-        self.notification_label.pack(side="bottom", pady=10, padx=10)
+        # Create notification frame at the bottom
+        self.notification_frame = ttk.Frame(self.main_frame)
+        self.notification_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        
+        # Create notification label inside the frame
+        self.notification_label = ttk.Label(self.notification_frame, text="", foreground="red", anchor="center")
+        self.notification_label.pack(fill="x", expand=True)
+
+        # Configure grid row weights
+        self.main_frame.grid_rowconfigure(2, weight=3)  # UI/Telemetry row
+        self.main_frame.grid_rowconfigure(3, weight=2)  # CDM/Telemetry row
+        self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row (fixed height)
 
         # Add snip buttons to connection frame
         self.snip_home_button = ttk.Button(self.connection_frame, text="Snip Home",
@@ -289,10 +298,12 @@ class DuneTab(TabContent):
             
             if not alerts_data:
                 self.root.after(0, self._display_no_alerts)
+                self.root.after(0, lambda: self._show_notification("No alerts found", "blue"))
                 return
             
             # Display alerts
             self.root.after(0, lambda: self._display_alerts(alerts_data))
+            self.root.after(0, lambda: self._show_notification("Alerts fetched successfully", "green"))
             
         except requests.exceptions.RequestException as error:
             error_msg = str(error)
@@ -495,7 +506,7 @@ class DuneTab(TabContent):
                 self.continuous_ui_button.config(state="disabled"),
                 self.fetch_json_button.config(state="disabled"),
                 self.fetch_alerts_button.config(state="disabled"),
-                self.telemetry_update_button.config(state="disabled")  # Disable update button
+                self.telemetry_update_button.config(state="disabled")
             ])
             self.root.after(0, lambda: self.image_label.config(image=None))
             self.root.after(0, lambda: setattr(self.image_label, 'image', None))
@@ -503,11 +514,14 @@ class DuneTab(TabContent):
             # Stop viewing the UI
             self.stop_view_ui()
             
-            print(f">     [Dune] Successfully disconnected from printer: {self.ip}")
-            if hasattr(self, 'telemetry_window'):
-                self.telemetry_window.file_listbox.delete(0, tk.END)  # Clear telemetry on disconnect
+            # Show success notification
+            self.root.after(0, lambda: self._show_notification("Disconnected from printer", "green"))
+            if self.telemetry_window is not None and hasattr(self.telemetry_window, 'file_listbox'):
+                self.telemetry_window.file_listbox.delete(0, tk.END)
         except Exception as e:
             print(f"An error occurred while disconnecting: {e}")
+            # Show error notification
+            self.root.after(0, lambda: self._show_notification(f"Disconnection error: {str(e)}", "red"))
         finally:
             self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
 
@@ -587,15 +601,15 @@ class DuneTab(TabContent):
         
         if not self.dune_fpui.is_connected():
             if not self.dune_fpui.connect(self.ip):
-                self._show_notification("Failed to connect to Dune FPUI", "red")
+                self._show_notification("Failed to connect to Dune FPUI", "red", duration=10000)
                 return
             
         captured = self.dune_fpui.save_ui(directory, filename)
         if not captured:
-            self._show_notification("Failed to capture UI", "red")
+            self._show_notification("Failed to capture UI", "red", duration=10000)
             return
             
-        self._show_notification("Screenshot Captured", "green")
+        self._show_notification("Screenshot Captured", "green", duration=10000)  # 10 seconds
 
     def on_ip_change(self, new_ip):
         self.ip = new_ip
