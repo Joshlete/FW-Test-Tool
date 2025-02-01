@@ -1,6 +1,6 @@
 from .base import TabContent
 from dune_fpui import DuneFPUI
-from tkinter import simpledialog, ttk, Toplevel, Checkbutton, IntVar, Button, Canvas, RIGHT, Text
+from tkinter import simpledialog, ttk, Toplevel, Checkbutton, IntVar, Button, Canvas, RIGHT, Text, filedialog
 import threading
 import socket
 import queue
@@ -9,6 +9,7 @@ import io
 from dune_telemetry_window import DuneTelemetryWindow  # Add this import
 import requests
 import tkinter as tk
+import os
 
 # Constants for button text
 CONNECTING = "Connecting..."
@@ -50,6 +51,7 @@ class DuneTab(TabContent):
         self.ui_update_job = None
         self.telemetry_window = None
         self.snip = None  # Add this line to store snip instance
+        self.current_step = 0  # Add this line to track current step number
 
     def create_widgets(self) -> None:
         # Create main layout frames
@@ -65,11 +67,6 @@ class DuneTab(TabContent):
                                        command=self.toggle_printer_connection)
         self.connect_button.pack(side="left", pady=5, padx=10)
 
-        # Add view telemetry button to connection frame
-        self.view_telemetry_button = ttk.Button(self.connection_frame, text="View Telemetry", 
-                                               command=self.open_telemetry_window, state="disabled")
-        self.view_telemetry_button.pack(side="left", pady=5, padx=10)
-
         # Add separator line
         separator = ttk.Separator(self.main_frame, orient='horizontal')
         separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5,0))
@@ -79,10 +76,30 @@ class DuneTab(TabContent):
         self.image_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
         self.image_frame.grid_propagate(False)  # Prevent the frame from resizing
 
-        # Create REST Client frame (right side, spans both rows)
+        # Create REST Client frame (right side, spans row 2)
         self.rest_frame = ttk.LabelFrame(self.main_frame, text="REST Client")
-        self.rest_frame.grid(row=2, column=1, rowspan=2, padx=10, pady=10, sticky="nsew")
+        self.rest_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
+
+        # Create Telemetry frame (under REST Client)
+        self.telemetry_frame = ttk.LabelFrame(self.main_frame, text="Telemetry")
+        self.telemetry_frame.grid(row=3, column=1, padx=10, pady=10, sticky="nsew")
         
+        # Create telemetry button frame first
+        self.telemetry_button_frame = ttk.Frame(self.telemetry_frame)
+        self.telemetry_button_frame.pack(pady=(5,0), anchor='w', padx=10)
+
+        # Add update button that will create the window when needed
+        self.telemetry_update_button = ttk.Button(
+            self.telemetry_button_frame, 
+            text="Update", 
+            command=self._handle_telemetry_update,
+            state="disabled"
+        )
+        self.telemetry_update_button.pack(side=tk.LEFT)
+        
+        # Initialize telemetry window reference
+        self.telemetry_window = None
+
         # Create CDM Endpoints frame (bottom left)
         self.left_frame = ttk.LabelFrame(self.main_frame, text="CDM Endpoints")
         self.left_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
@@ -135,12 +152,42 @@ class DuneTab(TabContent):
 
         # Add snip buttons to connection frame
         self.snip_home_button = ttk.Button(self.connection_frame, text="Snip Home",
-                                          command=lambda: self.start_snip(". EWS Home Page"))
+                                          command=lambda: self.start_snip("EWS Home Page"))
         self.snip_home_button.pack(side="left", pady=5, padx=10)
 
         self.snip_supplies_button = ttk.Button(self.connection_frame, text="Snip Supplies",
-                                             command=lambda: self.start_snip(". EWS Supplies Page"))
+                                             command=lambda: self.start_snip("EWS Supplies Page"))
         self.snip_supplies_button.pack(side="left", pady=5, padx=10)
+
+        # Add step number control frame
+        self.step_control_frame = ttk.Frame(self.connection_frame)
+        self.step_control_frame.pack(side="left", pady=5, padx=10)
+
+        # Add step number controls
+        self.step_down_button = ttk.Button(
+            self.step_control_frame, 
+            text="-", 
+            width=2, 
+            command=lambda: self.update_filename_prefix(-1)
+        )
+        self.step_down_button.pack(side="left")
+
+        self.step_entry = ttk.Entry(
+            self.step_control_frame, 
+            width=4, 
+            validate="key", 
+            validatecommand=(self.frame.register(self.validate_step_input), '%P')
+        )
+        self.step_entry.pack(side="left", padx=2)
+        self.step_entry.insert(0, "0")
+
+        self.step_up_button = ttk.Button(
+            self.step_control_frame, 
+            text="+", 
+            width=2, 
+            command=lambda: self.update_filename_prefix(1)
+        )
+        self.step_up_button.pack(side="left")
 
         # Create a frame for the CDM buttons
         self.cdm_buttons_frame = ttk.Frame(self.left_frame)
@@ -354,26 +401,29 @@ class DuneTab(TabContent):
                 print("Failed to connect to Dune FPUI")
                 return
 
-        # Build filename from alert information
-        filename = ". UI "
+        # Modified filename construction
+        filename = self.get_step_prefix() + "UI "
         if 'stringId' in alert:
             filename += str(alert['stringId']) + " "
         if 'category' in alert:
             filename += str(alert['category'])
+        filename += ".png"
         
-        # Ask user for number prefix
-        filename = simpledialog.askstring(
-            "File Prefix", "Enter a number for file prefix (optional):", 
+        # Use save as dialog
+        full_path = filedialog.asksaveasfilename(
             parent=self.frame,
-            initialvalue=filename
+            title="Save Screenshot",
+            initialdir=self.directory,
+            initialfile=filename,
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png")]
         )
-        if filename is None:
+        if not full_path:
             self._show_notification("Screenshot capture cancelled", "blue")
             return
         
-        filename += ".png"
         # Use the existing UI capture functionality
-        captured = self.dune_fpui.save_ui(self.directory, filename)
+        captured = self.dune_fpui.save_ui(self.directory, full_path)
         if not captured:
             self._show_notification("Failed to capture UI", "red")
             return
@@ -409,13 +459,14 @@ class DuneTab(TabContent):
         try:
             self.sock = socket.create_connection((ip, 80), timeout=2)
             self.is_connected = True
-            self.root.after(0, lambda: self.connect_button.config(state="normal", text=DISCONNECT))
-            self.root.after(0, lambda: self.capture_ui_button.config(state="normal"))
-            self.root.after(0, lambda: self.continuous_ui_button.config(state="normal"))
-            self.root.after(0, lambda: self.fetch_json_button.config(state="normal"))
-            self.root.after(0, lambda: self.view_telemetry_button.config(state="normal"))
-            self.root.after(0, lambda: self.fetch_alerts_button.config(state="normal"))
-            print(f">     [Dune] Successfully connected to printer: {ip}")
+            self.root.after(0, lambda: [
+                self.connect_button.config(state="normal", text=DISCONNECT),
+                self.capture_ui_button.config(state="normal"),
+                self.continuous_ui_button.config(state="normal"),
+                self.fetch_json_button.config(state="normal"),
+                self.fetch_alerts_button.config(state="normal"),
+                self.telemetry_update_button.config(state="normal")  # Enable update button
+            ])
             self.root.after(0, lambda: self._show_notification("Connected to printer", "green"))
         except Exception as e:
             error_message = str(e)
@@ -438,12 +489,14 @@ class DuneTab(TabContent):
 
             self.dune_fpui.disconnect()
 
-            self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
-            self.root.after(0, lambda: self.capture_ui_button.config(state="disabled"))
-            self.root.after(0, lambda: self.continuous_ui_button.config(state="disabled"))
-            self.root.after(0, lambda: self.fetch_json_button.config(state="disabled"))
-            self.root.after(0, lambda: self.view_telemetry_button.config(state="disabled"))
-            self.root.after(0, lambda: self.fetch_alerts_button.config(state="disabled"))
+            self.root.after(0, lambda: [
+                self.connect_button.config(state="normal", text=CONNECT),
+                self.capture_ui_button.config(state="disabled"),
+                self.continuous_ui_button.config(state="disabled"),
+                self.fetch_json_button.config(state="disabled"),
+                self.fetch_alerts_button.config(state="disabled"),
+                self.telemetry_update_button.config(state="disabled")  # Disable update button
+            ])
             self.root.after(0, lambda: self.image_label.config(image=None))
             self.root.after(0, lambda: setattr(self.image_label, 'image', None))
             
@@ -451,6 +504,8 @@ class DuneTab(TabContent):
             self.stop_view_ui()
             
             print(f">     [Dune] Successfully disconnected from printer: {self.ip}")
+            if hasattr(self, 'telemetry_window'):
+                self.telemetry_window.file_listbox.delete(0, tk.END)  # Clear telemetry on disconnect
         except Exception as e:
             print(f"An error occurred while disconnecting: {e}")
         finally:
@@ -472,8 +527,10 @@ class DuneTab(TabContent):
 
         print(f">     [Dune] Selected endpoints: {selected_endpoints}")
         
+        # Get step number without period for dialog
+        default_number = str(self.current_step) if self.current_step >= 0 else ""
         number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", 
-                                        parent=self.frame)
+                                        parent=self.frame, initialvalue=default_number)
         
         if number is None:
             print(f">     [Dune] CDM capture cancelled by user")
@@ -502,40 +559,42 @@ class DuneTab(TabContent):
 
     def queue_save_fpui_image(self):
         print(f">     [Dune] Capture UI button pressed")
-        self.queue_task(self._save_fpui_image)
-
-    def _save_fpui_image(self):
-        if not self.dune_fpui.is_connected():
-            if not self.dune_fpui.connect(self.ip):
-                self._show_notification("Failed to connect to Dune FPUI", "red")
-                print("Failed to connect to Dune FPUI")
-                return
-        
-        # Use root.after to ask for the file name in the main thread
-        self.root.after(0, self._ask_for_filename)
+        self.queue_task(self._ask_for_filename)
 
     def _ask_for_filename(self):
-        file_name = simpledialog.askstring("Save Screenshot", "Enter a name for the screenshot:")
-        if not file_name:
+        """Handles file saving with a proper save dialog."""
+        # Modified base name
+        base_name = self.get_step_prefix() + "UI"
+        full_path = filedialog.asksaveasfilename(
+            parent=self.frame,
+            title="Save Screenshot",
+            initialdir=self.directory,
+            initialfile=base_name,
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png")]
+        )
+        if not full_path:
             self._show_notification("Screenshot capture cancelled", "blue")
-            # self.dune_fpui.disconnect()
             return
         
         # Continue with the screenshot capture in the background thread
-        self.queue_task(self._continue_save_fpui_image, file_name)
+        self.queue_task(self._continue_save_fpui_image, full_path)
 
-    def _continue_save_fpui_image(self, file_name):
-        # Ensure the file has a .png extension
-        if not file_name.lower().endswith('.png'):
-            file_name += '.png'
-
-        # Capture the UI image
-        captured = self.dune_fpui.save_ui(self.directory, file_name)
+    def _continue_save_fpui_image(self, full_path):
+        """Handles the actual screenshot capture with full path."""
+        directory = os.path.dirname(full_path)
+        filename = os.path.basename(full_path)
+        
+        if not self.dune_fpui.is_connected():
+            if not self.dune_fpui.connect(self.ip):
+                self._show_notification("Failed to connect to Dune FPUI", "red")
+                return
+            
+        captured = self.dune_fpui.save_ui(directory, filename)
         if not captured:
             self._show_notification("Failed to capture UI", "red")
             return
-
-        # self.dune_fpui.disconnect()
+            
         self._show_notification("Screenshot Captured", "green")
 
     def on_ip_change(self, new_ip):
@@ -551,7 +610,7 @@ class DuneTab(TabContent):
         print(f">     [Dune] Directory changed to: {self.directory}")
         # Add any additional actions you want to perform when the directory changes
 
-    def _show_notification(self, message, color, duration=5000):
+    def _show_notification(self, message, color, duration=20000):
         """Display a notification message"""
         self.root.after(0, lambda: self.notification_label.config(text=message, foreground=color))
         self.root.after(duration, lambda: self.notification_label.config(text=""))
@@ -644,7 +703,7 @@ class DuneTab(TabContent):
             if self.telemetry_window is None or not self.telemetry_window.winfo_exists():
                 print(f">     [Dune] Creating new telemetry window")
                 self.telemetry_window = Toplevel(self.root)
-                DuneTelemetryWindow(self.telemetry_window, self.ip)
+                DuneTelemetryWindow(self.telemetry_window, self.ip, self._show_notification)
                 self.telemetry_window.protocol("WM_DELETE_WINDOW", self.on_telemetry_window_close)
             else:
                 print(f">     [Dune] Bringing existing telemetry window to front")
@@ -713,12 +772,51 @@ class DuneTab(TabContent):
         """
         try:
             from snip_tool import CaptureManager
+            # Modified filename handling
+            full_prefix = self.get_step_prefix() + default_filename.lstrip('.')
             capture_manager = CaptureManager(self.directory)
             capture_manager.capture_screen_region(
                 self.root, 
-                default_filename, 
+                full_prefix, 
                 self.directory, 
                 self.notification_label
             )
         except Exception as e:
             self._show_notification(f"Failed to start snipping tool: {str(e)}", "red")
+
+    def validate_step_input(self, value):
+        """Validate that the step entry only contains numbers"""
+        if value == "":
+            return True
+        try:
+            int(value)
+            return True
+        except ValueError:
+            return False
+
+    def update_filename_prefix(self, delta):
+        """Update the current step number with bounds checking"""
+        new_value = self.current_step + delta
+        if new_value >= 0:
+            self.current_step = new_value
+            self.step_entry.delete(0, "end")
+            self.step_entry.insert(0, str(self.current_step))
+            
+
+    def get_step_prefix(self):
+        """Returns the current step prefix if > 0"""
+        return f"{self.current_step}. " if self.current_step >= 0 else ""
+
+    def _handle_telemetry_update(self):
+        """Ensure telemetry window exists before updating"""
+        if not self.telemetry_window:
+            # Create the window if it doesn't exist
+            self.telemetry_window = DuneTelemetryWindow(
+                self.telemetry_frame, 
+                self.ip, 
+                self._show_notification
+            )
+            self.telemetry_window.pack(fill="both", expand=True)
+        
+        # Now safely update
+        self.telemetry_window.fetch_telemetry()
