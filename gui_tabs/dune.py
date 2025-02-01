@@ -97,6 +97,37 @@ class DuneTab(TabContent):
         self.step_control_frame = ttk.Frame(self.connection_frame)
         self.step_control_frame.pack(side="left", pady=5, padx=10)
 
+        # Add step label
+        step_label = ttk.Label(self.step_control_frame, text="STEP:")
+        step_label.pack(side="left", padx=(0, 5))
+
+        # Add step number controls
+        self.step_down_button = ttk.Button(
+            self.step_control_frame, 
+            text="-", 
+            width=2, 
+            command=lambda: self.update_filename_prefix(-1)
+        )
+        self.step_down_button.pack(side="left")
+
+        self.step_entry = ttk.Entry(
+            self.step_control_frame, 
+            width=4, 
+            validate="key", 
+            validatecommand=(self.frame.register(self.validate_step_input), '%P'),
+            textvariable=self.step_var
+        )
+        self.step_entry.pack(side="left", padx=2)
+        self.step_entry.bind('<FocusOut>', self._handle_step_focus_out)
+
+        self.step_up_button = ttk.Button(
+            self.step_control_frame, 
+            text="+", 
+            width=2, 
+            command=lambda: self.update_filename_prefix(1)
+        )
+        self.step_up_button.pack(side="left")
+
         # Add separator line
         separator = ttk.Separator(self.main_frame, orient='horizontal')
         separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5,0))
@@ -188,37 +219,6 @@ class DuneTab(TabContent):
         self.main_frame.grid_rowconfigure(2, weight=3)  # UI/Telemetry row
         self.main_frame.grid_rowconfigure(3, weight=2)  # CDM/Telemetry row
         self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row (fixed height)
-
-        # Add step number control frame
-        self.step_control_frame = ttk.Frame(self.connection_frame)
-        self.step_control_frame.pack(side="left", pady=5, padx=10)
-
-        # Add step number controls
-        self.step_down_button = ttk.Button(
-            self.step_control_frame, 
-            text="-", 
-            width=2, 
-            command=lambda: self.update_filename_prefix(-1)
-        )
-        self.step_down_button.pack(side="left")
-
-        self.step_entry = ttk.Entry(
-            self.step_control_frame, 
-            width=4, 
-            validate="key", 
-            validatecommand=(self.frame.register(self.validate_step_input), '%P'),
-            textvariable=self.step_var
-        )
-        self.step_entry.pack(side="left", padx=2)
-        self.step_entry.bind('<FocusOut>', self._handle_step_focus_out)
-
-        self.step_up_button = ttk.Button(
-            self.step_control_frame, 
-            text="+", 
-            width=2, 
-            command=lambda: self.update_filename_prefix(1)
-        )
-        self.step_up_button.pack(side="left")
 
         # Create a frame for the CDM buttons
         self.cdm_buttons_frame = ttk.Frame(self.left_frame)
@@ -838,22 +838,22 @@ class DuneTab(TabContent):
     def _handle_step_focus_out(self, event):
         """Handle empty input when focus leaves the entry"""
         if self.step_var.get().strip() == "":
-            self.step_var.set("0")
+            self.step_var.set("1")
 
     def update_filename_prefix(self, delta):
         """Update the current step number with bounds checking"""
         try:
             current = int(self.step_var.get())
-            new_value = max(0, current + delta)
+            new_value = max(1, current + delta)
             self.step_var.set(str(new_value))
         except ValueError:
             pass
 
     def get_step_prefix(self):
-        """Returns the current step prefix if > 0"""
+        """Returns the current step prefix if >= 1"""
         try:
             current_step = int(self.step_var.get())
-            return f"{current_step}. " if current_step > 0 else ""
+            return f"{current_step}. " if current_step >= 1 else ""
         except ValueError:
             return ""
 
