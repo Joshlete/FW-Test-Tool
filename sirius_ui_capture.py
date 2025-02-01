@@ -6,13 +6,15 @@ import time
 import urllib3
 
 class SiriusConnection:
-    def __init__(self, ip, on_image_update, on_connection_status):
+    def __init__(self, ip, on_image_update, on_connection_status, username=None, password=None):
         self.ip = ip
         self.is_connected = False
         self.stop_update = threading.Event()
         self.update_thread = None
         self.on_image_update = on_image_update
         self.on_connection_status = on_connection_status
+        self.username = username
+        self.password = password
         # Disable SSL warnings
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -23,9 +25,13 @@ class SiriusConnection:
         self._disconnect_printer()
 
     def _test_connection(self):
-        url = f"http://{self.ip}/TestService/UI/ScreenCapture"
+        url = f"https://{self.ip}/TestService/UI/ScreenCapture"
         try:
-            response = requests.get(url, timeout=5, verify=False)
+            # Create auth tuple only if both username and password are provided
+            if self.username and self.password:
+                print("Using username and password for authentication: ", self.username, self.password)
+            auth = (self.username, self.password) if self.username and self.password else None
+            response = requests.get(url, timeout=5, verify=False, auth=auth)
             if response.status_code == 200:
                 self._connect_printer()
                 self.on_image_update(response.content)
@@ -54,8 +60,12 @@ class SiriusConnection:
     def _update_image_continuously(self):
         while not self.stop_update.is_set():
             try:
-                url = f"http://{self.ip}/TestService/UI/ScreenCapture"
-                response = requests.get(url, timeout=5, verify=False)
+                url = f"https://{self.ip}/TestService/UI/ScreenCapture"
+                # Create auth tuple only if both username and password are provided
+                if self.username and self.password:
+                    print("Using username and password for authentication: ", self.username, self.password)
+                auth = (self.username, self.password) if self.username and self.password else None
+                response = requests.get(url, timeout=5, verify=False, auth=auth)
                 if response.status_code == 200:
                     self.on_image_update(response.content)
                 time.sleep(1)  # Wait for 1 second before the next update

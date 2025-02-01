@@ -140,7 +140,9 @@ class SiriusTab(TabContent):
                     self.ui_connection = SiriusConnection(
                         self.ip,
                         on_image_update=_display_image,
-                        on_connection_status=_update_connection_status
+                        on_connection_status=_update_connection_status,
+                        username="admin",
+                        password="96910141"
                     )
                     self.ui_connection.connect()
                 else:
@@ -226,9 +228,9 @@ class SiriusTab(TabContent):
         def _capture_ui_thread():
             """Thread function to handle UI capture"""
             try:
-                url = f"http://{self.ip}/TestService/UI/ScreenCapture"
+                url = f"https://{self.ip}/TestService/UI/ScreenCapture"
                 print(f"Debug: Fetching screenshot from URL: {url}")
-                response = requests.get(url, timeout=5, verify=False)
+                response = requests.get(url, timeout=5, verify=False, auth=("admin", "96910141"))
                 print(f"Debug: Received response with status code: {response.status_code}")
                 if response.status_code == 200:
                     image_data = response.content
@@ -248,21 +250,32 @@ class SiriusTab(TabContent):
         threading.Thread(target=_capture_ui_thread).start()
 
     def _ask_filename_and_save(self, image_data):
-        """Ask for filename and save the screenshot"""
-        default_filename = f"UI"
-        filename = simpledialog.askstring("", "Enter file name:", 
-                                          initialvalue="")
+        """
+        Open a file save dialog and save the screenshot to the selected location.
         
-        if filename:
-            # Ensure the filename ends with .png
-            if not filename.lower().endswith('.png'):
-                filename += '.png'
-            
-            file_path = os.path.join(self._directory, filename)
-            with open(file_path, 'wb') as file:
-                file.write(image_data)
-            self._show_notification(f"Screenshot saved to {file_path}", "green")
-            print(f"Debug: Screenshot saved successfully to {file_path}")
+        :param image_data: The binary image data to save
+        """
+        # Set up the initial file name and types for the save dialog
+        file_types = [('PNG files', '*.png'), ('All files', '*.*')]
+        initial_file = ". UI"
+        
+        # Open the save file dialog
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self._directory,
+            initialfile=initial_file,
+            defaultextension=".png",
+            filetypes=file_types
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'wb') as file:
+                    file.write(image_data)
+                self._show_notification(f"Screenshot saved to {file_path}", "green")
+                print(f"Debug: Screenshot saved successfully to {file_path}")
+            except Exception as e:
+                self._show_notification(f"Error saving screenshot: {str(e)}", "red")
+                print(f"Debug: Error saving screenshot: {str(e)}")
         else:
             self._show_notification("Screenshot capture cancelled", "blue")
             print("Debug: Screenshot capture cancelled by user")

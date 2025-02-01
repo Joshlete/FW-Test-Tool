@@ -460,11 +460,21 @@ class TrilliumTab(TabContent):
             alert_frame = ttk.Frame(self.alerts_frame)
             alert_frame.pack(fill="x", pady=2, padx=5)
             
-            alert_text = (f"ID: {alert['id']} - Category: {alert['category']}"
-                         f"\nSeverity: {alert['severity']}")
+            # Extract color from data array
+            color = next((
+                item['value']['seValue'] 
+                for item in alert.get('data', [])
+                if item['propertyPointer'].endswith('/colors')
+            ), 'Unknown')
+            
+            alert_text = (f"ID: {alert['stringId']}"
+                          f"\nCategory: {alert['category']}"
+                          f"\nColor: {color}"
+                          f"\nSeverity: {alert['severity']}"
+                          f"\nPriority: {alert['priority']}")
             
             # Use Text widget instead of Label for better text wrapping
-            alert_text_widget = Text(alert_frame, wrap="word", height=2, 
+            alert_text_widget = Text(alert_frame, wrap="word", height=4, 
                                    width=40, borderwidth=0)
             alert_text_widget.insert("1.0", alert_text)
             alert_text_widget.configure(state="disabled")  # Make it read-only
