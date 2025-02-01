@@ -37,8 +37,8 @@ class DuneTab(TabContent):
         self.cdm_vars = {option: IntVar() for option in self.cdm_options}
         
         # Initialize step_var before parent class
-        self.step_var = tk.StringVar(value="0")
-        self.current_step = 0
+        self.step_var = tk.StringVar(value="1")
+        self.current_step = 1
 
         super().__init__(parent)
         
@@ -68,6 +68,34 @@ class DuneTab(TabContent):
         self.connect_button = ttk.Button(self.connection_frame, text="Connect", 
                                        command=self.toggle_printer_connection)
         self.connect_button.pack(side="left", pady=5, padx=10)
+
+        # Add styled EWS dropdown menu button
+        ews_menu_button = ttk.Menubutton(
+            self.connection_frame, 
+            text="Capture EWS", 
+            style='TButton'
+        )
+        ews_menu = tk.Menu(ews_menu_button, tearoff=0)
+        ews_menu.add_command(label="Home Page", 
+                           command=lambda: self.start_snip("EWS Home Page"))
+        
+        # color-specific supplies pages
+        ews_menu.add_separator()
+        ews_menu.add_command(label="Supplies Page Cyan", 
+                           command=lambda: self.start_snip("EWS Supplies Page Cyan"))
+        ews_menu.add_command(label="Supplies Page Magenta", 
+                           command=lambda: self.start_snip("EWS Supplies Page Magenta"))
+        ews_menu.add_command(label="Supplies Page Yellow", 
+                           command=lambda: self.start_snip("EWS Supplies Page Yellow"))
+        ews_menu.add_command(label="Supplies Page Black", 
+                           command=lambda: self.start_snip("EWS Supplies Page Black"))
+        
+        ews_menu_button["menu"] = ews_menu
+        ews_menu_button.pack(side="left", pady=5, padx=10)
+
+        # Remove original snip buttons and add step control frame
+        self.step_control_frame = ttk.Frame(self.connection_frame)
+        self.step_control_frame.pack(side="left", pady=5, padx=10)
 
         # Add separator line
         separator = ttk.Separator(self.main_frame, orient='horizontal')
@@ -160,15 +188,6 @@ class DuneTab(TabContent):
         self.main_frame.grid_rowconfigure(2, weight=3)  # UI/Telemetry row
         self.main_frame.grid_rowconfigure(3, weight=2)  # CDM/Telemetry row
         self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row (fixed height)
-
-        # Add snip buttons to connection frame
-        self.snip_home_button = ttk.Button(self.connection_frame, text="Snip Home",
-                                          command=lambda: self.start_snip("EWS Home Page"))
-        self.snip_home_button.pack(side="left", pady=5, padx=10)
-
-        self.snip_supplies_button = ttk.Button(self.connection_frame, text="Snip Supplies",
-                                             command=lambda: self.start_snip("EWS Supplies Page"))
-        self.snip_supplies_button.pack(side="left", pady=5, padx=10)
 
         # Add step number control frame
         self.step_control_frame = ttk.Frame(self.connection_frame)
