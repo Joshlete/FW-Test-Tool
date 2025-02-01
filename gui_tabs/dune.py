@@ -36,7 +36,10 @@ class DuneTab(TabContent):
         self.cdm_options = self.app.dune_fetcher.get_endpoints()
         self.cdm_vars = {option: IntVar() for option in self.cdm_options}
         
-        # Initialize parent class after setting up necessary variables
+        # Initialize step_var before parent class
+        self.step_var = tk.StringVar(value="0")
+        self.current_step = 0
+
         super().__init__(parent)
         
         self.task_queue = queue.Queue()
@@ -51,7 +54,6 @@ class DuneTab(TabContent):
         self.ui_update_job = None
         self.telemetry_window = None
         self.snip = None  # Add this line to store snip instance
-        self.current_step = 0  # Add this line to track current step number
 
     def create_widgets(self) -> None:
         # Create main layout frames
@@ -185,10 +187,11 @@ class DuneTab(TabContent):
             self.step_control_frame, 
             width=4, 
             validate="key", 
-            validatecommand=(self.frame.register(self.validate_step_input), '%P')
+            validatecommand=(self.frame.register(self.validate_step_input), '%P'),
+            textvariable=self.step_var
         )
         self.step_entry.pack(side="left", padx=2)
-        self.step_entry.insert(0, "0")
+        self.step_entry.bind('<FocusOut>', self._handle_step_focus_out)
 
         self.step_up_button = ttk.Button(
             self.step_control_frame, 
@@ -653,6 +656,9 @@ class DuneTab(TabContent):
                 print("Failed to connect to Dune FPUI")
                 self.stop_view_ui()  # Stop viewing UI if connection fails
                 return
+            else:
+                self._show_notification("Connected to Dune FPUI", "green")
+
 
         if self.is_viewing_ui:
             image_data = self.dune_fpui.capture_ui()
@@ -689,6 +695,8 @@ class DuneTab(TabContent):
         if self.ui_update_job:
             self.root.after_cancel(self.ui_update_job)
             self.ui_update_job = None
+        
+        self._show_notification("Disconnected from Dune FPUI", "green") 
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
@@ -801,25 +809,34 @@ class DuneTab(TabContent):
     def validate_step_input(self, value):
         """Validate that the step entry only contains numbers"""
         if value == "":
-            return True
+            return True  # Allow empty input during editing
         try:
             int(value)
             return True
         except ValueError:
             return False
 
+    def _handle_step_focus_out(self, event):
+        """Handle empty input when focus leaves the entry"""
+        if self.step_var.get().strip() == "":
+            self.step_var.set("0")
+
     def update_filename_prefix(self, delta):
         """Update the current step number with bounds checking"""
-        new_value = self.current_step + delta
-        if new_value >= 0:
-            self.current_step = new_value
-            self.step_entry.delete(0, "end")
-            self.step_entry.insert(0, str(self.current_step))
-            
+        try:
+            current = int(self.step_var.get())
+            new_value = max(0, current + delta)
+            self.step_var.set(str(new_value))
+        except ValueError:
+            pass
 
     def get_step_prefix(self):
         """Returns the current step prefix if > 0"""
-        return f"{self.current_step}. " if self.current_step >= 0 else ""
+        try:
+            current_step = int(self.step_var.get())
+            return f"{current_step}. " if current_step > 0 else ""
+        except ValueError:
+            return ""
 
     def _handle_telemetry_update(self):
         """Ensure telemetry window exists before updating"""
