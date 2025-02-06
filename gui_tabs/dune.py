@@ -128,6 +128,33 @@ class DuneTab(TabContent):
         )
         self.step_up_button.pack(side="left")
 
+        # Add SSH dropdown menu button next to step controls
+        self.ssh_menu_button = ttk.Menubutton(
+            self.connection_frame,
+            text="Commands",
+            style='TButton',
+            state="disabled"
+        )
+        ssh_menu = tk.Menu(self.ssh_menu_button, tearoff=0)
+
+        # Add common SSH commands
+        ssh_commands = [
+            ("AUTH", '/core/bin/runUw mainApp "OAuth2Standard PUB_testEnableTokenAuth false"'),
+            ("Clear Telemetry", '/core/bin/runUw mainApp "EventingAdapter PUB_deleteAllEvents"'),
+            ("Print 10-Tap", 'curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data \'{"reportId":"diagnosticsReport","state":"processing"}\''),
+            ("Print PSR", 'curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data \'{"reportId":"printerStatusReport","state":"processing"}\'')
+        ]
+
+
+        for label, cmd in ssh_commands:
+            ssh_menu.add_command(
+                label=label,
+                command=lambda c=cmd: self.queue_task(self._execute_ssh_command, c)
+            )
+
+        self.ssh_menu_button["menu"] = ssh_menu
+        self.ssh_menu_button.pack(side="left", pady=5, padx=10)
+
         # Add separator line
         separator = ttk.Separator(self.main_frame, orient='horizontal')
         separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5,0))
@@ -199,6 +226,37 @@ class DuneTab(TabContent):
                                            command=self.queue_save_fpui_image, state="disabled")
         self.capture_ui_button.pack(side="left", pady=0, padx=5)
         
+        # Add ECL capture dropdown menu button
+        self.ecl_menu_button = ttk.Menubutton(
+            self.ui_button_frame,
+            text="Capture ECL",
+            style='TButton',
+            state="disabled"  # Initial disabled state
+        )
+        ecl_menu = tk.Menu(self.ecl_menu_button, tearoff=0)
+        
+        # Add main ECL entry
+        ecl_menu.add_command(
+            label="Estimated Cartridge Level", 
+            command=lambda: self.queue_save_fpui_image("Estimated Cartridge Level")
+        )
+        
+        # Add color-specific entries
+        colors = ["Cyan", "Magenta", "Yellow", "Black"]
+        suffixes = ["A", "B", "C"]
+        for color in colors:
+            ecl_menu.add_separator()
+            for suffix in suffixes:
+                label = f"{color} {suffix}"
+                filename = f"Estimated Cartridge Level {label}"
+                ecl_menu.add_command(
+                    label=label,
+                    command=lambda f=filename: self.queue_save_fpui_image(f)
+                )
+        
+        self.ecl_menu_button["menu"] = ecl_menu
+        self.ecl_menu_button.pack(side="left", pady=0, padx=5)
+
         # Add image label below buttons
         self.image_label = ttk.Label(self.image_frame)
         self.image_label.pack(pady=(0,10), padx=10, expand=True, fill="both")
@@ -415,6 +473,22 @@ class DuneTab(TabContent):
             label="Capture UI", 
             command=lambda: self.capture_alert_ui(alert)
         )
+        context_menu.add_command(
+            label="Capture UI A", 
+            command=lambda: self.capture_alert_ui(alert, 'A')
+        )
+        context_menu.add_command(
+            label="Capture UI B", 
+            command=lambda: self.capture_alert_ui(alert, 'B')
+        )
+        context_menu.add_command(
+            label="Capture UI C", 
+            command=lambda: self.capture_alert_ui(alert, 'C')
+        )
+        context_menu.add_command(
+            label="Capture UI D", 
+            command=lambda: self.capture_alert_ui(alert, 'D')
+        )
         
         # Display the context menu
         try:
@@ -422,11 +496,12 @@ class DuneTab(TabContent):
         finally:
             context_menu.grab_release()
 
-    def capture_alert_ui(self, alert):
+    def capture_alert_ui(self, alert, suffix: str = ""):
         """
         Captures the UI with alert information in the filename.
         
         :param alert: The alert data dictionary
+        :param suffix: Optional suffix to add to filename
         """
         if not self.dune_fpui.is_connected():
             if not self.dune_fpui.connect(self.ip):
@@ -440,6 +515,8 @@ class DuneTab(TabContent):
             filename += str(alert['stringId']) + " "
         if 'category' in alert:
             filename += str(alert['category'])
+        if suffix:  # Add suffix if provided
+            filename += f" {suffix}"
         filename += ".png"
         
         # Use save as dialog
@@ -498,7 +575,9 @@ class DuneTab(TabContent):
                 self.continuous_ui_button.config(state="normal"),
                 self.fetch_json_button.config(state="normal"),
                 self.fetch_alerts_button.config(state="normal"),
-                self.telemetry_update_button.config(state="normal")  # Enable update button
+                self.telemetry_update_button.config(state="normal"),  # Enable update button
+                self.ecl_menu_button.config(state="normal"),  # Enable ECL menu button
+                self.ssh_menu_button.config(state="normal")  # Enable SSH menu button
             ])
             self.root.after(0, lambda: self._show_notification("Connected to printer", "green"))
         except Exception as e:
@@ -528,7 +607,9 @@ class DuneTab(TabContent):
                 self.continuous_ui_button.config(state="disabled"),
                 self.fetch_json_button.config(state="disabled"),
                 self.fetch_alerts_button.config(state="disabled"),
-                self.telemetry_update_button.config(state="disabled")
+                self.telemetry_update_button.config(state="disabled"),
+                self.ecl_menu_button.config(state="disabled"),
+                self.ssh_menu_button.config(state="disabled")
             ])
             self.root.after(0, lambda: self.image_label.config(image=None))
             self.root.after(0, lambda: setattr(self.image_label, 'image', None))
@@ -552,7 +633,7 @@ class DuneTab(TabContent):
         self.telemetry_window = None
 
     def capture_cdm(self):
-        """Capture CDM data for selected endpoints asynchronously"""
+        """Capture CDM data for endpoints asynchronously"""
         print(f">     [Dune] CDM Capture button pressed")
         selected_endpoints = [option for option, var in self.cdm_vars.items() if var.get()]
         
@@ -563,8 +644,8 @@ class DuneTab(TabContent):
 
         print(f">     [Dune] Selected endpoints: {selected_endpoints}")
         
-        # Get step number without period for dialog
-        default_number = str(self.current_step) if self.current_step >= 0 else ""
+        # Get step number from the entry field
+        default_number = self.step_var.get()
         number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", 
                                         parent=self.frame, initialvalue=default_number)
         
@@ -593,14 +674,14 @@ class DuneTab(TabContent):
         
         self.root.after(0, lambda: self.fetch_json_button.config(state="normal"))
 
-    def queue_save_fpui_image(self):
+    def queue_save_fpui_image(self, base_name="UI"):
         print(f">     [Dune] Capture UI button pressed")
-        self.queue_task(self._ask_for_filename)
+        self.queue_task(self._ask_for_filename, base_name)
 
-    def _ask_for_filename(self):
+    def _ask_for_filename(self, base_name):
         """Handles file saving with a proper save dialog."""
         # Modified base name
-        base_name = self.get_step_prefix() + "UI"
+        base_name = self.get_step_prefix() + base_name
         full_path = filedialog.asksaveasfilename(
             parent=self.frame,
             title="Save Screenshot",
@@ -738,25 +819,6 @@ class DuneTab(TabContent):
         
         print(f"DuneTab listeners stopped")
 
-    def open_telemetry_window(self):
-        print(f">     [Dune] Telemetry button pressed")
-        if self.is_connected:
-            if self.telemetry_window is None or not self.telemetry_window.winfo_exists():
-                print(f">     [Dune] Creating new telemetry window")
-                self.telemetry_window = Toplevel(self.root)
-                DuneTelemetryWindow(self.telemetry_window, self.ip, self._show_notification)
-                self.telemetry_window.protocol("WM_DELETE_WINDOW", self.on_telemetry_window_close)
-            else:
-                print(f">     [Dune] Bringing existing telemetry window to front")
-                self.telemetry_window.lift()
-        else:
-            print(f">     [Dune] Telemetry window creation failed - printer not connected")
-            self._show_notification("Please connect to the printer first", "red")
-
-    def on_telemetry_window_close(self):
-        self.telemetry_window.destroy()
-        self.telemetry_window = None
-
     def handle_alert_action(self, alert_id, action_value, action_link):
         """Initiates asynchronous alert action."""
         print(f">     [Dune] Alert action button pressed - Alert ID: {alert_id}, Action: {action_value}")
@@ -864,9 +926,33 @@ class DuneTab(TabContent):
             self.telemetry_window = DuneTelemetryWindow(
                 self.telemetry_frame, 
                 self.ip, 
-                self._show_notification
+                self._show_notification,
+                get_step_prefix=self.get_step_prefix
             )
             self.telemetry_window.pack(fill="both", expand=True)
         
         # Now safely update
         self.telemetry_window.fetch_telemetry()
+
+    def _execute_ssh_command(self, command: str) -> None:
+        """Executes an SSH command on the connected printer."""
+        try:
+            if not self.dune_fpui.is_connected():
+                if not self.dune_fpui.connect(self.ip):
+                    self._show_notification("SSH connection failed", "red")
+                    return
+
+            # Execute command via existing DuneFPUI connection
+            stdin, stdout, stderr = self.dune_fpui.ssh_client.exec_command(command)
+            exit_status = stdout.channel.recv_exit_status()
+            
+            if exit_status == 0:
+                output = stdout.read().decode()
+                self._show_notification(f"Command executed successfully", "green")
+                print(f"SSH Command Output:\n{output}")
+            else:
+                error = stderr.read().decode()
+                self._show_notification(f"Command failed: {error}", "red")
+            
+        except Exception as e:
+            self._show_notification(f"SSH Error: {str(e)}", "red")

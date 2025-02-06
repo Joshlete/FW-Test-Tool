@@ -6,11 +6,12 @@ import json
 import requests
 
 class DuneTelemetryWindow(ttk.Frame):
-    def __init__(self, parent, ip, show_notification_callback):
+    def __init__(self, parent, ip, show_notification_callback, get_step_prefix):
         super().__init__(parent)
         self.window = parent  # Use the parent frame
         self.ip = ip
         self._show_notification = show_notification_callback
+        self.get_step_prefix = get_step_prefix
         
         listbox_frame = ttk.Frame(self)
         listbox_frame.pack(pady=(5,10), padx=10, fill=tk.BOTH, expand=True)
@@ -195,8 +196,8 @@ class DuneTelemetryWindow(ttk.Frame):
             # Extract notification trigger
             notification_trigger = event_data.get('eventDetail', {}).get('notificationTrigger', 'Unknown')
             
-            # Create the initial filename
-            initial_filename = f". Telemetry {color} {state_reasons_str} {notification_trigger}"
+            # Create the initial filename with step prefix from main window
+            initial_filename = f"{self.get_step_prefix()}Telemetry {color} {state_reasons_str} {notification_trigger}"
             
             file_path = filedialog.asksaveasfilename(
                 defaultextension=".json",
