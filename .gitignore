@@ -34,3 +34,5 @@ dist/
 # Other project-specific ignores
 # Add any other files or directories specific to your project here
 .aider*
+*.spec
+dune_ews/

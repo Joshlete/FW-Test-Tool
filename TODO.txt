@@ -8,6 +8,7 @@ Dune:
 * when viewing ui, implement a way to move the screen from GUI.
 * add feature with file list that shows all jsons, and copy to clipboard specific color/colors.
 * see if it is possible to load up the app fast as a base, then slowly load in the background. It takes a while to start up.
+* figure out why the program freezes when viewing ui and printer turns off or connection is lost.
 
 Trillium
 * make ews password input dynamic, allow input on GUI.

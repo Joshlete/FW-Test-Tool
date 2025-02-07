@@ -13,6 +13,15 @@ from cdm_ledm_fetcher import create_fetcher
 import json
 import os
 import time
+import sys
+from pathlib import Path
+from config_manager import ConfigManager
+
+# Playwright browser path handling for PyInstaller
+if getattr(sys, 'frozen', False):
+    browser_path = Path(sys._MEIPASS) / "ms-playwright"
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browser_path)
+    os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://playwright.azureedge.net"
 
 class App(tk.Tk):
     CONFIG_FILE = "config.json"
@@ -24,6 +33,9 @@ class App(tk.Tk):
         super().__init__()
         self.title("FW Test Tool")
         self.geometry("900x800")
+        
+        # Add this line before any config accesses
+        self.config_manager = ConfigManager()  # Initialize config manager first
         
         # Load IP address from config file or use default
         self._ip_address = self.load_ip_address() or self.DEFAULT_IP

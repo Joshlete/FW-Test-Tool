@@ -72,14 +72,17 @@ class BaseFetcher(ABC):
                 
                 # Add step number to the file name if provided
                 prefix = ""
+                extension = ".json"  # Default to .json
                 if step_num is not None:
                     if isinstance(self, DuneFetcher):
                         prefix = f"{step_num}. CDM "
+                        extension = ".json"
                     elif isinstance(self, SiriusFetcher):
-                        prefix = f"{step_num}. LEDM " # TODO: check if LEDM works
+                        prefix = f"{step_num}. LEDM "
+                        extension = ".xml"
                     else:
                         prefix = f"{step_num}. "
-                file_name = f"{prefix}{endpoint_name}.json"
+                file_name = f"{prefix}{endpoint_name}{extension}"
                 file_path = f"{directory}/{file_name}"
 
                 # format the json content to pretty print  

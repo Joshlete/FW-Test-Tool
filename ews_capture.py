@@ -8,10 +8,11 @@ import concurrent.futures
 from playwright.sync_api import sync_playwright
 
 class EWSScreenshotCapturer:
-    def __init__(self, parent_frame, ip_address, directory):
+    def __init__(self, parent_frame, ip_address, directory, password=""):
         self.parent_frame = parent_frame
         self.ip_address = ip_address
         self.directory = directory
+        self.password = password
         print(f"    >> Initializing EWSScreenshotCapturer for IP: {ip_address}")
 
     def capture_screenshots(self, number):
@@ -48,8 +49,8 @@ class EWSScreenshotCapturer:
                 context = browser.new_context(
                     ignore_https_errors=True,
                     http_credentials={
-                        "username": "admin",  # Default username
-                        "password": "51496134"   # Default password TODO: Make this dynamic
+                        "username": "admin",
+                        "password": self.password  # Use instance password
                     }
                 )
                 
@@ -94,7 +95,7 @@ class EWSScreenshotCapturer:
         # Define URLs and crop settings for each page
         urls = [
             (f'https://{self.ip_address}/#hId-pgDevInfo', "EWS Printer Information", (150, 0, 150, 180)),
-            (f'https://{self.ip_address}/#hId-pgConsumables', "EWS Supply Status", (150, 0, 150, 230))
+            (f'https://{self.ip_address}/#hId-pgConsumables', "EWS Supply Status", (150, 0, 150, 170))
         ]
 
         print("    >> Capturing all specified pages concurrently")

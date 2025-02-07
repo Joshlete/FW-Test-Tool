@@ -3,13 +3,14 @@ from ews_capture import EWSScreenshotCapturer
 from sirius_ui_capture import SiriusConnection
 from sirius_telemetry_window import TelemetryWindow
 from .base import TabContent
-from tkinter import ttk, filedialog, simpledialog
+from tkinter import ttk, filedialog, simpledialog, Tk
 from PIL import Image, ImageTk
 import requests
 import io
 import urllib3
 import os
 import datetime
+import tkinter as tk
 
 # Suppress InsecureRequestWarning
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -27,6 +28,9 @@ DISCONNECT = "Disconnect from UI"
 class SiriusTab(TabContent):
     def __init__(self, parent, app):
         self.app = app
+        self.show_password_var = tk.BooleanVar(value=False)
+        self.password_var = tk.StringVar()
+        self.password_var.trace_add("write", self._save_password_to_config)
         super().__init__(parent)
         self._ip = self.get_current_ip()
         self.is_connected = False
@@ -34,12 +38,13 @@ class SiriusTab(TabContent):
         self.stop_update = threading.Event()
         self.ui_connection = None
         self.telemetry_windows = []
-        self._directory = self.app.get_directory()  # Get initial directory from app
-
-        # Register callback for IP changes
-        self.app.register_ip_callback(self.update_ip)
+        self._directory = self.app.get_directory()
         
-        # Register callback for directory changes
+        # Load saved password
+        self.password = self.app.config_manager.get("password") or ""
+        
+        # Register callbacks
+        self.app.register_ip_callback(self.update_ip)
         self.app.register_directory_callback(self.update_directory)
 
     @property
@@ -96,6 +101,14 @@ class SiriusTab(TabContent):
         self.right_frame = ttk.Frame(self.main_frame)
         self.right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="n")
 
+        # Add password input field
+        self.password_frame = ttk.Frame(self.left_frame)
+        self.password_frame.pack(pady=10, padx=10, anchor="w", fill="x")
+        
+        ttk.Label(self.password_frame, text="Password:").pack(side="left")
+        self.password_entry = ttk.Entry(self.password_frame, width=15, textvariable=self.password_var)
+        self.password_entry.pack(side="left", padx=5)
+
         # Add "Connect To Printer" button in the left frame
         self.connect_button = ttk.Button(self.left_frame, text=CONNECT, command=self.toggle_ui_connection)
         self.connect_button.pack(pady=5, padx=10, anchor="w")
@@ -126,12 +139,29 @@ class SiriusTab(TabContent):
         
         self.image_label = ttk.Label(self.image_frame)
         self.image_label.pack(pady=10, padx=10, anchor="center")
+        
+    @property
+    def password(self):
+        """Get current password from Entry widget"""
+        return self.password_var.get()
+
+    @password.setter
+    def password(self, value):
+        """Set password in Entry widget"""
+        self.password_var.set(value)
+
+    def _save_password_to_config(self, *args):
+        self.app.config_manager.set("password", self.password_var.get())
 
     def toggle_ui_connection(self):
         """Toggle printer connection state and update UI"""
+        if not self.password:
+            print(f"> [SiriusTab.toggle_ui_connection] Password is required: {self.password}")
+            self._show_notification("Password is required", "red")
+            return
+
         self.connect_button.config(state="disabled", text=CONNECTING if not self.is_connected else DISCONNECTING)
         
-
         def _handle_connection():
             """Handle the connection/disconnection process"""
             self.ip = self.get_current_ip()
@@ -142,7 +172,7 @@ class SiriusTab(TabContent):
                         on_image_update=_display_image,
                         on_connection_status=_update_connection_status,
                         username="admin",
-                        password="96910141"
+                        password=self.password  # Use current password
                     )
                     self.ui_connection.connect()
                 else:
@@ -223,14 +253,21 @@ class SiriusTab(TabContent):
 
     def capture_ui(self):
         """Capture the latest screenshot and save it to the _directory"""
+        if not self.password:
+            self._show_notification("Password is required", "red")
+            return
+
         self.capture_ui_button.config(text="Capturing...", state="disabled")
 
         def _capture_ui_thread():
             """Thread function to handle UI capture"""
             try:
-                url = f"https://{self.ip}/TestService/UI/ScreenCapture"
-                print(f"Debug: Fetching screenshot from URL: {url}")
-                response = requests.get(url, timeout=5, verify=False, auth=("admin", "96910141"))
+                response = requests.get(
+                    f"https://{self.ip}/TestService/UI/ScreenCapture",
+                    timeout=5,
+                    verify=False,
+                    auth=("admin", self.password)  # Use current password
+                )
                 print(f"Debug: Received response with status code: {response.status_code}")
                 if response.status_code == 200:
                     image_data = response.content
@@ -282,6 +319,10 @@ class SiriusTab(TabContent):
 
     def capture_ews(self):
         """Capture EWS screenshots in a separate thread"""
+        if not self.password:
+            self._show_notification("Password is required", "red")
+            return
+
         self.capture_screenshot_button.config(text="Capturing...", state="disabled")
 
         # Ask the user for an optional number prefix
@@ -296,7 +337,12 @@ class SiriusTab(TabContent):
         def _capture_screenshot_background():
             """Capture EWS screenshots in the background"""
             try:
-                capturer = EWSScreenshotCapturer(self.frame, self.ip, self._directory)
+                capturer = EWSScreenshotCapturer(
+                    self.frame, 
+                    self.ip, 
+                    self._directory,
+                    password=self.password  # Pass current password
+                )
                 success, message = capturer.capture_screenshots(number)
                 self.frame.after(0, lambda: self._show_notification(message, "green" if success else "red"))
             except Exception as e:
