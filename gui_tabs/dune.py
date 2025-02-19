@@ -165,7 +165,7 @@ class DuneTab(TabContent):
         self.image_frame.grid_propagate(False)  # Prevent the frame from resizing
 
         # Create REST Client frame (right side, spans row 2)
-        self.rest_frame = ttk.LabelFrame(self.main_frame, text="REST Client")
+        self.rest_frame = ttk.LabelFrame(self.main_frame, text="Alerts")
         self.rest_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
 
         # Create Telemetry frame (under REST Client)
@@ -205,7 +205,7 @@ class DuneTab(TabContent):
         self.rest_frame.grid_rowconfigure(0, weight=1)
 
         # Add fetch alerts button
-        self.fetch_alerts_button = ttk.Button(self.rest_frame, text="Fetch Alerts", 
+        self.fetch_alerts_button = ttk.Button(self.rest_frame, text="Refresh", 
                                              command=self.fetch_alerts, state="disabled")
         self.fetch_alerts_button.pack(pady=2, padx=5, anchor="w")
 

@@ -15,3 +15,4 @@ Trillium
 
 Both:
 * create a general layout, then have objects fill those layouts. possibly have those objects in different files for organization.
+* add a .log file that logs all messages to the console or message box.
