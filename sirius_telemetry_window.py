@@ -11,12 +11,13 @@ class TelemetryWindow:
     A Tkinter-based window for listing, viewing, and managing telemetry files over SSH.
     """
 
-    def __init__(self, parent, ip: str) -> None:
+    def __init__(self, parent, ip: str, get_step_prefix: callable = lambda: "") -> None:
         """
         Initializes the TelemetryWindow.
 
         :param parent: The Tkinter parent window.
         :param ip: The IP address of the remote device.
+        :param get_step_prefix: A callable to get the step prefix.
         :return: None
         """
         # Set up the Tkinter window
@@ -75,6 +76,8 @@ class TelemetryWindow:
         self.context_menu = tk.Menu(self.window, tearoff=0)
         self.context_menu.add_command(label="Save", command=self.save_selected_file)
         self.context_menu.add_command(label="Delete", command=self.delete_selected_files)
+
+        self.get_step_prefix = get_step_prefix
 
     def connect_ssh(self) -> None:
         """
@@ -226,16 +229,14 @@ class TelemetryWindow:
 
     def build_local_filename(self, file_info: dict) -> str:
         """
-        Constructs a suggested local filename for the user to save the telemetry file.
-
-        :param file_info: Dictionary containing file details (original filename, color code, etc.).
-        :return: A string representing a recommended local filename (e.g. ". Telemetry ABC123 low_supply supply_low.json").
+        Constructs a suggested local filename with step prefix.
         """
+        step_prefix = self.get_step_prefix()
         color_code = file_info['color_code'] or "Unknown"
         state_reasons = " ".join(file_info['state_reasons']) if file_info['state_reasons'] else "None"
         trigger = file_info['trigger'] or "Unknown"
         
-        return f". Telemetry {color_code} {state_reasons} {trigger}.json"
+        return f"{step_prefix}. Telemetry {color_code} {state_reasons} {trigger}.json"
 
     def update_status(self, message: str) -> None:
         """

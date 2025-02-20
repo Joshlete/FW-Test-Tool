@@ -3,13 +3,12 @@ from ews_capture import EWSScreenshotCapturer
 from sirius_ui_capture import SiriusConnection
 from sirius_telemetry_window import TelemetryWindow
 from .base import TabContent
-from tkinter import ttk, filedialog, simpledialog, Tk
+from tkinter import ttk, filedialog, Canvas, IntVar, simpledialog
 from PIL import Image, ImageTk
 import requests
 import io
 import urllib3
 import os
-import datetime
 import tkinter as tk
 import xml.etree.ElementTree as ET
 
@@ -35,7 +34,14 @@ class SiriusTab(TabContent):
         self.step_var = tk.StringVar(value=str(self.app.config_manager.get("step_number", 1)))
         self.step_var.trace_add("write", self._save_step_to_config)
         self.current_step = 1
+
+        # Initialize LEDM components FIRST
+        self.ledm_options = self.app.sirius_fetcher.get_endpoints()
+        self.ledm_vars = {option: IntVar() for option in self.ledm_options}
+
+        # THEN call parent constructor
         super().__init__(parent)
+        
         self._ip = self.get_current_ip()
         self.is_connected = False
         self.update_thread = None
@@ -88,7 +94,8 @@ class SiriusTab(TabContent):
         return self.app.get_ip_address()
     
     def _show_notification(self, message, color, duration=5000):
-        """Display a notification message"""
+        """Display a notification message with debug logging"""
+        print(f"[Notification] {color.upper()}: {message}")
         self.notification_label.config(text=message, foreground=color)
         self.frame.after(duration, lambda: self.notification_label.config(text=""))
 
@@ -148,7 +155,6 @@ class SiriusTab(TabContent):
         self.button_frame.pack(side="left", padx=10)
         
         buttons = [
-            ("Capture LEDM", self.capture_ledm),
             ("Capture EWS", self.capture_ews),
             ("Capture Telemetry", self.capture_telemetry)
         ]
@@ -172,7 +178,9 @@ class SiriusTab(TabContent):
         # Configure grid weights for resizing
         self.main_frame.grid_columnconfigure(0, weight=1, minsize=400)  # UI column
         self.main_frame.grid_columnconfigure(1, weight=1, minsize=400)  # Alerts column
-        self.main_frame.grid_rowconfigure(2, weight=1)
+        self.main_frame.grid_rowconfigure(2, weight=1)  # UI/Alerts row
+        self.main_frame.grid_rowconfigure(3, weight=0)  # LEDM endpoints row
+        self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row (new)
 
         # Add UI control buttons at the top of the UI frame
         self.ui_control_frame = ttk.Frame(self.ui_frame)
@@ -215,9 +223,9 @@ class SiriusTab(TabContent):
         self.image_label = ttk.Label(self.ui_frame)
         self.image_label.pack(pady=10, padx=10, expand=True, fill="both")
 
-        # Notification label
+        # Notification label - move to bottom of main frame
         self.notification_label = ttk.Label(self.main_frame, text="", foreground="red")
-        self.notification_label.grid(row=3, column=0, columnspan=2, pady=10, sticky="ew")
+        self.notification_label.grid(row=4, column=0, columnspan=2, pady=10, sticky="ew")
 
         # Modified alerts frame layout
         self.alerts_frame = ttk.LabelFrame(self.main_frame, text="Alerts")
@@ -266,6 +274,93 @@ class SiriusTab(TabContent):
         
         # Bind right-click event
         self.alerts_tree.bind("<Button-3>", self._show_alert_menu)
+
+        # Create modern style for LEDM section
+        style = ttk.Style()
+        style.configure('LEDM.TLabelframe', borderwidth=2, relief="groove")
+        style.configure('LEDM.TCheckbutton', 
+                      font=('Segoe UI', 9), 
+                      padding=5,
+                      focuswidth=0)
+        style.map('LEDM.TCheckbutton',
+                background=[('active', '#f0f0f0'), ('!active', 'white')],
+                foreground=[('active', 'black')])
+
+        # Create LEDM Endpoints frame
+        self.ledm_frame = ttk.LabelFrame(self.main_frame, 
+                                       text="LEDM", 
+                                       style='LEDM.TLabelframe')
+        self.ledm_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
+        
+        # Add button panel above the LEDM list
+        self.ledm_button_frame = ttk.Frame(self.ledm_frame)
+        self.ledm_button_frame.pack(fill='x', pady=5)
+        
+        # Add Save button
+        save_btn = ttk.Button(
+            self.ledm_button_frame,
+            text="Save Selected",
+            command=self.capture_ledm
+        )
+        save_btn.pack(side='left', padx=5)
+        
+        # Add Clear button
+        self.clear_ledm_button = ttk.Button(
+            self.ledm_button_frame,
+            text="Clear All",
+            command=self.clear_ledm_checkboxes
+        )
+        self.clear_ledm_button.pack(side='left', padx=5)
+        
+        # Configure canvas and scrollbar
+        self.ledm_canvas = Canvas(self.ledm_frame, highlightthickness=0)
+        self.ledm_scrollbar = ttk.Scrollbar(self.ledm_frame, 
+                                          orient="vertical", 
+                                          command=self.ledm_canvas.yview)
+        self.ledm_checkbox_frame = ttk.Frame(self.ledm_canvas, style='LEDM.TFrame')
+
+        # Improved scrolling configuration
+        self.ledm_canvas.configure(yscrollcommand=self.ledm_scrollbar.set)
+        self.ledm_checkbox_frame.bind("<Configure>", 
+                                   lambda e: self.ledm_canvas.configure(
+                                       scrollregion=self.ledm_canvas.bbox("all"))
+                                   )
+
+        # Create alternating row colors
+        for idx, option in enumerate(self.ledm_options):
+            display_name = os.path.basename(option).replace('.xml', '')
+            
+            frame = ttk.Frame(self.ledm_checkbox_frame, 
+                            style='LEDM.TFrame', 
+                            padding=(5, 2, 5, 2))
+            frame.pack(fill='x', expand=True)
+            
+            cb = ttk.Checkbutton(frame,
+                               text=display_name,
+                               variable=self.ledm_vars[option],
+                               style='LEDM.TCheckbutton')
+            cb.pack(side='left', anchor='w')
+            
+            # Update hover effect binding to use style-only colors
+            cb.bind("<Enter>", lambda e, c=frame: c.configure(style='Hover.TFrame'))
+            cb.bind("<Leave>", lambda e, c=frame: c.configure(style='LEDM.TFrame'))
+
+        # Create window inside canvas
+        self.ledm_canvas.create_window((0, 0), 
+                                     window=self.ledm_checkbox_frame, 
+                                     anchor="nw",
+                                     tags="frame")
+
+        # Pack scrollbar and canvas
+        self.ledm_scrollbar.pack(side="right", fill="y")
+        self.ledm_canvas.pack(side="left", fill="both", expand=True)
+
+        # Update style for light gray background
+        style.configure('Hover.TFrame', background='#e0e0e0')  # Darker gray on hover
+
+        # Add checkbox trace
+        for option, var in self.ledm_vars.items():
+            var.trace_add('write', self.update_clear_button_visibility)
 
     @property
     def password(self):
@@ -349,35 +444,43 @@ class SiriusTab(TabContent):
         threading.Thread(target=_handle_connection).start()
 
     def capture_ledm(self):
-        """Fetch LEDM data using json_fetcher"""
-        directory = self._directory
-
-        # Ask the user for an optional number prefix
-        number = self.step_var.get()
+        """Fetch LEDM data for selected endpoints"""
+        selected_endpoints = [option for option, var in self.ledm_vars.items() if var.get()]
         
-        # If user clicks the X to close the dialog, don't proceed
-        if number is None:
+        if not selected_endpoints:
+            self._show_notification("No endpoints selected", "red")
+            return
+
+        # Get step number with confirmation dialog
+        step_identifier = simpledialog.askstring(
+            "Step Number",
+            "Enter step number:",
+            parent=self.frame,
+            initialvalue=self.step_var.get()
+        )
+        
+        if not step_identifier:  # User clicked cancel
             self._show_notification("LEDM capture cancelled", "blue")
             return
 
-        def _fetch_cdm_thread():
-            """Thread function to fetch LEDM data"""
-            try:
-                
+
+        def _fetch_ledm_thread():
+            try:    
                 self._show_notification("Fetching LEDM data...", "blue")
-                
-                # Use the Sirius fetcher from the app
                 fetcher = self.app.sirius_fetcher
                 if fetcher:
-                    fetcher.save_to_file(directory, step_num=number)
+                    fetcher.save_to_file(
+                        self._directory, 
+                        selected_endpoints=selected_endpoints, 
+                        step_num=step_identifier  # Use the input directly
+                    )
                     self._show_notification("LEDM data fetched successfully", "green")
                 else:
                     raise ValueError("Sirius fetcher not initialized")
             except Exception as e:
                 self._show_notification(f"Error fetching LEDM data: {str(e)}", "red")
 
-        threading.Thread(target=_fetch_cdm_thread).start()
-
+        threading.Thread(target=_fetch_ledm_thread).start()
 
     def capture_telemetry(self):
         """Capture telemetry data using json_fetcher"""
@@ -611,3 +714,15 @@ class SiriusTab(TabContent):
             # Generate filename format: "{step}. UI {alert_id} {string_id} {color}"
             description = f"{alert_id} {string_id} {color}"
             self.capture_ui(description)
+
+    def clear_ledm_checkboxes(self):
+        """Clears all selected LEDM endpoints"""
+        for var in self.ledm_vars.values():
+            var.set(0)
+
+    def update_clear_button_visibility(self, *args):
+        """Updates visibility of Clear button based on selections"""
+        if any(var.get() for var in self.ledm_vars.values()):
+            self.clear_ledm_button.pack(side="left")
+        else:
+            self.clear_ledm_button.pack_forget()

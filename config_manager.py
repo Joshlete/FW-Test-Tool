@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Any
 
 class ConfigManager:
     CONFIG_FILE = "config.json"
@@ -23,11 +24,15 @@ class ConfigManager:
             self.config["ip_address"] = self.DEFAULT_IP
         if "directory" not in self.config:
             self.config["directory"] = self.DEFAULT_DIRECTORY
+        if "step_number" not in self.config:
+            self.config["step_number"] = 1
+        if "dune_step_number" not in self.config:
+            self.config["dune_step_number"] = 1
         self._save_config()  # Save the updated config with defaults
 
-    def get(self, key: str):
-        """Get a value from the config."""
-        return self.config.get(key)
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a config value with optional default"""
+        return self.config.get(key, default)
 
     def set(self, key: str, value) -> None:
         """Set a value in the config and save it."""

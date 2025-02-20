@@ -37,7 +37,8 @@ class DuneTab(TabContent):
         self.cdm_vars = {option: IntVar() for option in self.cdm_options}
         
         # Initialize step_var before parent class
-        self.step_var = tk.StringVar(value="1")
+        self.step_var = tk.StringVar(value=str(self.app.config_manager.get("dune_step_number", 1)))
+        self.step_var.trace_add("write", self._save_step_to_config)
         self.current_step = 1
 
         super().__init__(parent)
@@ -189,7 +190,7 @@ class DuneTab(TabContent):
         self.telemetry_window = None
 
         # Create CDM Endpoints frame (bottom left)
-        self.left_frame = ttk.LabelFrame(self.main_frame, text="CDM Endpoints")
+        self.left_frame = ttk.LabelFrame(self.main_frame, text="CDM")
         self.left_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
         
         # Configure grid weights for main_frame
@@ -956,3 +957,11 @@ class DuneTab(TabContent):
             
         except Exception as e:
             self._show_notification(f"SSH Error: {str(e)}", "red")
+
+    def _save_step_to_config(self, *args):
+        """Save current Dune step number to configuration"""
+        try:
+            step_num = int(self.step_var.get())
+            self.app.config_manager.set("dune_step_number", step_num)
+        except ValueError:
+            pass
