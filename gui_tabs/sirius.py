@@ -346,6 +346,11 @@ class SiriusTab(TabContent):
                                style='LEDM.TCheckbutton')
             cb.pack(side='left', anchor='w')
             
+            # Add right-click binding to both frame and checkbox
+            for widget in [frame, cb]:
+                widget.bind("<Button-3>", 
+                          lambda e, opt=option: self.show_ledm_context_menu(e, opt))
+            
             # Update hover effect binding to use style-only colors
             cb.bind("<Enter>", lambda e, c=frame: c.configure(style='Hover.TFrame'))
             cb.bind("<Leave>", lambda e, c=frame: c.configure(style='LEDM.TFrame'))
@@ -1018,3 +1023,74 @@ class SiriusTab(TabContent):
         if item:
             self.telemetry_tree.selection_set(item)
             self.telemetry_menu.tk_popup(event.x_root, event.y_root)
+
+    def show_ledm_context_menu(self, event, endpoint: str):
+        """Show context menu for LEDM items"""
+        menu = tk.Menu(self.frame, tearoff=0)
+        menu.add_command(label="View Data", 
+                       command=lambda: self.view_ledm_data(endpoint))
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def view_ledm_data(self, endpoint: str):
+        """Display LEDM data in a viewer window"""
+        try:
+            data = self.app.sirius_fetcher.fetch_data([endpoint])[endpoint]
+            self._show_xml_viewer(endpoint, data)
+        except Exception as e:
+            self._show_notification(f"Failed to fetch {endpoint}: {str(e)}", "red")
+
+    def _show_xml_viewer(self, endpoint: str, xml_data: str):
+        """Create a window to display XML data with syntax highlighting"""
+        viewer = Toplevel(self.frame)
+        viewer.title(f"LEDM Data Viewer - {os.path.basename(endpoint)}")
+        
+        text_frame = ttk.Frame(viewer)
+        text_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        text = Text(text_frame, wrap='none', font=('Consolas', 10))
+        scroll_y = ttk.Scrollbar(text_frame, orient='vertical', command=text.yview)
+        scroll_x = ttk.Scrollbar(text_frame, orient='horizontal', command=text.xview)
+        text.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+        
+        # Basic XML syntax highlighting
+        text.tag_configure('tag', foreground='blue')
+        text.tag_configure('attrib', foreground='red')
+        text.tag_configure('value', foreground='green')
+        
+        # Format XML with indentation and highlighting
+        self._format_xml(text, xml_data)
+        
+        text.config(state='disabled')
+        text.grid(row=0, column=0, sticky='nsew')
+        scroll_y.grid(row=0, column=1, sticky='ns')
+        scroll_x.grid(row=1, column=0, sticky='ew')
+        
+        # Add copy button
+        btn_frame = ttk.Frame(viewer)
+        btn_frame.pack(pady=5)
+        ttk.Button(btn_frame, text="Copy to Clipboard", 
+                 command=lambda: self.frame.clipboard_append(xml_data)).pack()
+
+    def _format_xml(self, text_widget: Text, xml_data: str):
+        """Format XML data with indentation and syntax highlighting"""
+        try:
+            root = ET.fromstring(xml_data)
+            ET.indent(root)
+            formatted_xml = ET.tostring(root, encoding='unicode')
+        except ET.ParseError:
+            formatted_xml = xml_data  # Fallback to raw data if invalid XML
+
+        # Simple syntax highlighting
+        for line in formatted_xml.split('\n'):
+            if '<' in line and '>' in line:
+                parts = line.split('<')
+                for part in parts:
+                    if '>' in part:
+                        tag, rest = part.split('>', 1)
+                        text_widget.insert('end', '<', ('tag',))
+                        text_widget.insert('end', tag, ('tag',))
+                        text_widget.insert('end', '>' + rest + '\n')
+                    else:
+                        text_widget.insert('end', part + '\n')
+            else:
+                text_widget.insert('end', line + '\n')
