@@ -1,9 +1,8 @@
 import threading
 from ews_capture import EWSScreenshotCapturer
 from sirius_ui_capture import SiriusConnection
-from sirius_telemetry_window import TelemetryWindow
 from .base import TabContent
-from tkinter import ttk, filedialog, Canvas, IntVar, simpledialog
+from tkinter import ttk, filedialog, Canvas, IntVar, simpledialog, Toplevel, Text, messagebox
 from PIL import Image, ImageTk
 import requests
 import io
@@ -11,6 +10,8 @@ import urllib3
 import os
 import tkinter as tk
 import xml.etree.ElementTree as ET
+import json
+from telemetry_manager import TelemetryManager
 
 # Suppress InsecureRequestWarning
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -57,6 +58,8 @@ class SiriusTab(TabContent):
         self.app.register_ip_callback(self.update_ip)
         self.app.register_directory_callback(self.update_directory)
 
+        self.telemetry_mgr = TelemetryManager(self.ip)
+
     @property
     def ip(self):
         return self._ip
@@ -69,6 +72,8 @@ class SiriusTab(TabContent):
         self._ip = new_ip
         if self.ui_connection:
             self.ui_connection.update_ip(new_ip)
+        self.telemetry_mgr.ip = new_ip
+        self.telemetry_mgr.disconnect()
 
     def update_directory(self, new_directory: str) -> None:
         print(f"> [SiriusTab.update_directory] Updating directory to: {new_directory}")
@@ -154,13 +159,9 @@ class SiriusTab(TabContent):
         self.button_frame = ttk.Frame(self.connection_frame)
         self.button_frame.pack(side="left", padx=10)
         
-        buttons = [
-            ("Capture EWS", self.capture_ews),
-            ("Capture Telemetry", self.capture_telemetry)
-        ]
-        
-        for text, cmd in buttons:
-            ttk.Button(self.button_frame, text=text, command=cmd).pack(side="left", padx=5)
+        # Create EWS button as instance variable
+        self.ews_button = ttk.Button(self.button_frame, text="Capture EWS", command=self.capture_ews)
+        self.ews_button.pack(side="left", padx=5)
 
         # Add separator line
         separator = ttk.Separator(self.main_frame, orient='horizontal')
@@ -180,7 +181,10 @@ class SiriusTab(TabContent):
         self.main_frame.grid_columnconfigure(1, weight=1, minsize=400)  # Alerts column
         self.main_frame.grid_rowconfigure(2, weight=1)  # UI/Alerts row
         self.main_frame.grid_rowconfigure(3, weight=0)  # LEDM endpoints row
-        self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row (new)
+        self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row
+        self.main_frame.grid_rowconfigure(5, weight=0)  # Center alignment
+        self.main_frame.grid_columnconfigure(0, weight=1)  # Center alignment
+        self.main_frame.grid_columnconfigure(1, weight=1)  # Center alignment
 
         # Add UI control buttons at the top of the UI frame
         self.ui_control_frame = ttk.Frame(self.ui_frame)
@@ -190,8 +194,9 @@ class SiriusTab(TabContent):
         self.connect_button = ttk.Button(self.ui_control_frame, text=CONNECT, command=self.toggle_ui_connection)
         self.connect_button.pack(side="left", padx=5)
         
-        # Add Capture UI button to UI frame
-        ttk.Button(self.ui_control_frame, text="Capture UI", command=self.capture_ui).pack(side="left", padx=5)
+        # Add Capture UI button as instance variable
+        self.capture_ui_button = ttk.Button(self.ui_control_frame, text="Capture UI", command=self.capture_ui)
+        self.capture_ui_button.pack(side="left", padx=5)
 
         # Add ECL capture dropdown menu button
         self.ecl_menu_button = ttk.Menubutton(
@@ -224,8 +229,8 @@ class SiriusTab(TabContent):
         self.image_label.pack(pady=10, padx=10, expand=True, fill="both")
 
         # Notification label - move to bottom of main frame
-        self.notification_label = ttk.Label(self.main_frame, text="", foreground="red")
-        self.notification_label.grid(row=4, column=0, columnspan=2, pady=10, sticky="ew")
+        self.notification_label = ttk.Label(self.main_frame, text="", foreground="red", anchor="center")
+        self.notification_label.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew")
 
         # Modified alerts frame layout
         self.alerts_frame = ttk.LabelFrame(self.main_frame, text="Alerts")
@@ -236,12 +241,12 @@ class SiriusTab(TabContent):
         button_panel.pack(fill='x', pady=5)
         
         # Add refresh button aligned left
-        refresh_btn = ttk.Button(
+        self.refresh_btn = ttk.Button(
             button_panel,
             text="Refresh",
             command=self.load_alerts
         )
-        refresh_btn.pack(side='left', padx=5)
+        self.refresh_btn.pack(side='left', padx=5)
 
         # Treeview below button panel
         tree_container = ttk.Frame(self.alerts_frame)
@@ -299,7 +304,7 @@ class SiriusTab(TabContent):
         # Add Save button
         save_btn = ttk.Button(
             self.ledm_button_frame,
-            text="Save Selected",
+            text="Save",
             command=self.capture_ledm
         )
         save_btn.pack(side='left', padx=5)
@@ -361,6 +366,76 @@ class SiriusTab(TabContent):
         # Add checkbox trace
         for option, var in self.ledm_vars.items():
             var.trace_add('write', self.update_clear_button_visibility)
+
+        # Create Telemetry frame next to LEDM
+        self.telemetry_frame = ttk.LabelFrame(self.main_frame, text="Telemetry", style='LEDM.TLabelframe')
+        self.telemetry_frame.grid(row=3, column=1, padx=10, pady=10, sticky="nsew")
+
+        # Telemetry button panel
+        self.telemetry_button_frame = ttk.Frame(self.telemetry_frame)
+        self.telemetry_button_frame.pack(fill='x', pady=5)
+        
+        # Telemetry control buttons
+        self.telemetry_refresh_btn = ttk.Button(
+            self.telemetry_button_frame,
+            text="Refresh",
+            command=self.load_telemetry
+        )
+        self.telemetry_refresh_btn.pack(side='left', padx=5)
+        
+        ttk.Button(
+            self.telemetry_button_frame,
+            text="Save",
+            command=self.save_selected_telemetry
+        ).pack(side='left', padx=5)
+        
+        ttk.Button(
+            self.telemetry_button_frame,
+            text="Delete",
+            command=self.delete_selected_telemetry
+        ).pack(side='left', padx=5)
+
+        # Telemetry list container
+        telemetry_container = ttk.Frame(self.telemetry_frame)
+        telemetry_container.pack(fill='both', expand=True, padx=5, pady=(0,5))
+        
+        # Treeview for telemetry events
+        self.telemetry_tree = ttk.Treeview(telemetry_container, 
+                                          columns=('sequenceNumber', 'color', 'reasons', 'trigger'), 
+                                          show='headings')
+        self.telemetry_tree.heading('sequenceNumber', text="Number")
+        self.telemetry_tree.heading('color', text='Color')
+        self.telemetry_tree.heading('reasons', text='Reasons')
+        self.telemetry_tree.heading('trigger', text='Trigger')
+        
+        # Configure columns
+        self.telemetry_tree.column('sequenceNumber', width=100, anchor='center')
+        self.telemetry_tree.column('color', width=80, anchor='center')
+        self.telemetry_tree.column('reasons', width=150)
+        self.telemetry_tree.column('trigger', width=100)
+        
+        scrollbar = ttk.Scrollbar(telemetry_container, orient="vertical", command=self.telemetry_tree.yview)
+        self.telemetry_tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.telemetry_tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        # Right-click menu for telemetry
+        self.telemetry_menu = tk.Menu(self.frame, tearoff=0)
+        self.telemetry_menu.add_command(label="Save", command=self.save_selected_telemetry)
+        self.telemetry_menu.add_command(label="Delete", command=self.delete_selected_telemetry)
+        self.telemetry_menu.add_separator()
+        self.telemetry_menu.add_command(label="View Details", command=self.view_telemetry_details)
+        
+        # Add right-click binding for telemetry
+        self.telemetry_tree.bind("<Button-3>", self.show_telemetry_menu)
+
+        # Add double-click binding
+        self.telemetry_tree.bind("<Double-1>", lambda e: self.view_telemetry_details())
+
+        # Adjust grid layout to accommodate new telemetry frame
+        self.main_frame.grid_columnconfigure(1, weight=1, minsize=400)  # Telemetry column
+        self.main_frame.grid_rowconfigure(3, weight=1)  # LEDM/Telemetry row
 
     @property
     def password(self):
@@ -469,10 +544,21 @@ class SiriusTab(TabContent):
                 self._show_notification("Fetching LEDM data...", "blue")
                 fetcher = self.app.sirius_fetcher
                 if fetcher:
+                    # Add overwrite check before saving
+                    if fetcher.check_files_exist(self._directory, selected_endpoints, step_identifier):
+                        confirm = messagebox.askyesno(
+                            "Files Exist",
+                            "Some files already exist. Overwrite?",
+                            parent=self.frame
+                        )
+                        if not confirm:
+                            self._show_notification("LEDM capture cancelled", "blue")
+                            return
+                    
                     fetcher.save_to_file(
                         self._directory, 
                         selected_endpoints=selected_endpoints, 
-                        step_num=step_identifier  # Use the input directly
+                        step_num=step_identifier
                     )
                     self._show_notification("LEDM data fetched successfully", "green")
                 else:
@@ -482,52 +568,67 @@ class SiriusTab(TabContent):
 
         threading.Thread(target=_fetch_ledm_thread).start()
 
-    def capture_telemetry(self):
-        """Capture telemetry data using json_fetcher"""
-        telemetry_window = TelemetryWindow(
-            self.frame, 
-            self.ip,
-            get_step_prefix=self.get_step_prefix
-        )
-        self.telemetry_windows.append(telemetry_window)
-
     def capture_ui(self, description: str = ""):
-        """Capture the latest screenshot with optional alert description"""
+        """Capture the latest screenshot first, then handle filename"""
         if not self.password:
             self._show_notification("Password is required", "red")
             return
 
+        # Disable both UI and ECL buttons during capture
+        self.capture_ui_button.config(state="disabled", text="Capturing...")
+        self.ecl_menu_button.config(state="disabled", text="Capturing...")
+
         def _capture_ui_thread():
             try:
-                # First get the filename
-                file_path = self._ask_filename(description)
-                if not file_path:
-                    self._show_notification("Capture cancelled", "blue")
-                    return
-                
-                if os.path.exists(file_path):
-                    self._show_notification("File already exists - not saved", "red")
-                    return
-
-                # Then attempt capture
+                # attempt capture
                 response = requests.get(
                     f"https://{self.ip}/TestService/UI/ScreenCapture",
                     timeout=5,
                     verify=False,
                     auth=("admin", self.password)
                 )
-                print(f"Debug: Received response with status code: {response.status_code}")
-                if response.status_code == 200:
-                    with open(file_path, 'wb') as file:
-                        file.write(response.content)
-                    self._show_notification(f"Screenshot saved!", "green")
-                else:
-                    self._show_notification(f"Failed to capture screenshot: {response.status_code}", "red")
-                    print(f"Debug: Failed to capture screenshot, status code: {response.status_code}")
+                
+                if response.status_code != 200:
+                    self._show_notification(f"Capture failed: {response.status_code}", "red")
+                    return
+
+                # Capture successful, now get filename
+                file_path = self._ask_filename(description)
+                if not file_path:
+                    self._show_notification("Capture cancelled", "blue")
+                    return
+                
+                if os.path.exists(file_path):
+                    confirm = messagebox.askyesno(
+                        "File Exists",
+                        f"'{os.path.basename(file_path)}' already exists.\nOverwrite?",
+                        parent=self.frame
+                    )
+                    if not confirm:
+                        self._show_notification("Save cancelled", "blue")
+                        return
+
+                # Save the already captured image
+                with open(file_path, 'wb') as file:
+                    file.write(response.content)
+                self._show_notification("Screenshot saved!", "green")
+
             except requests.RequestException as e:
-                self._show_notification(f"Error capturing screenshot: {str(e)}", "red")
+                self._show_notification(f"Capture error: {str(e)}", "red")
             except Exception as e:
-                self._show_notification(f"Error saving screenshot: {str(e)}", "red")
+                self._show_notification(f"Save error: {str(e)}", "red")
+            finally:
+                # Re-enable buttons when done
+                self.frame.after(0, lambda: [
+                    self.capture_ui_button.config(
+                        state="normal", 
+                        text="Capture UI"
+                    ),
+                    self.ecl_menu_button.config(
+                        state="normal", 
+                        text="Capture ECL"
+                    )
+                ])
 
         threading.Thread(target=_capture_ui_thread).start()
 
@@ -553,6 +654,9 @@ class SiriusTab(TabContent):
             self._show_notification("Password is required", "red")
             return
 
+        # Disable button during capture
+        self.ews_button.config(state="disabled", text="Capturing...")
+        
         # Ask the user for an optional number prefix
         number = self.step_var.get()
         
@@ -575,6 +679,12 @@ class SiriusTab(TabContent):
                 self.frame.after(0, lambda: self._show_notification(message, "green" if success else "red"))
             except Exception as e:
                 self.frame.after(0, lambda: self._show_notification(f"Error capturing EWS screenshot: {str(e)}", "red"))
+            finally:
+                # Re-enable button when done
+                self.frame.after(0, lambda: self.ews_button.config(
+                    state="normal", 
+                    text="Capture EWS"
+                ))
 
         threading.Thread(target=_capture_screenshot_background).start()
 
@@ -617,12 +727,15 @@ class SiriusTab(TabContent):
     def load_alerts(self):
         """Load alerts into the treeview"""
         try:
+            self.refresh_btn.config(text="Updating...", state="disabled")
             xml_data = self.fetch_product_status_dyn()
             alerts = self.parse_status_dyn_xml(xml_data)
             self._populate_tree(self.alerts_tree, alerts)
             self._show_notification("Alerts refreshed successfully", "green")
         except Exception as e:
             self._show_notification(f"Error loading alerts: {str(e)}", "red")
+        finally:
+            self.refresh_btn.config(text="Refresh", state="normal")
 
     def fetch_product_status_dyn(self) -> str:
         """
@@ -726,3 +839,182 @@ class SiriusTab(TabContent):
             self.clear_ledm_button.pack(side="left")
         else:
             self.clear_ledm_button.pack_forget()
+
+    def load_telemetry(self):
+        """Initiate telemetry refresh in a background thread"""
+        self.telemetry_refresh_btn.config(text="Updating...", state="disabled")
+        
+        # Clear existing data immediately for better UX
+        self.telemetry_tree.delete(*self.telemetry_tree.get_children())
+        self._show_notification("Refreshing telemetry data...", "blue")
+        
+        def _background_refresh():
+            """Background thread worker for telemetry refresh"""
+            try:
+                # Check if we need to reconnect due to IP change
+                current_ip = self.get_current_ip()
+                if self.telemetry_mgr.ip != current_ip:
+                    print(f"IP changed from {self.telemetry_mgr.ip} to {current_ip}, reinitializing...")
+                    self.telemetry_mgr.disconnect()
+                    self.telemetry_mgr = TelemetryManager(current_ip)
+                
+                # Reuse existing connection or establish new one
+                if not self.telemetry_mgr.ssh_client:
+                    self.telemetry_mgr.connect()
+                
+                # Perform the actual data fetching
+                self.telemetry_mgr.fetch_telemetry()
+                
+                # Schedule UI update on main thread
+                self.frame.after(0, self._update_telemetry_ui)
+                
+            except Exception as e:
+                error_msg = f"Telemetry error: {str(e)}"
+                self.frame.after(0, lambda: self._show_notification(error_msg, "red"))
+            finally:
+                # Always reset button state even if errors occur
+                self.frame.after(0, lambda: self.telemetry_refresh_btn.config(text="Refresh", state="normal"))
+
+        # Start the background thread
+        threading.Thread(target=_background_refresh, daemon=True).start()
+
+    def _update_telemetry_ui(self):
+        """Update the Treeview with fresh data (main thread only)"""
+        self.telemetry_tree.delete(*self.telemetry_tree.get_children())
+        
+        # Sort telemetry data numerically by sequenceNumber in descending order
+        sorted_data = sorted(
+            self.telemetry_mgr.file_data,
+            key=lambda x: int(x.get('sequenceNumber', 0)),
+            reverse=True
+        )
+        
+        for item in sorted_data:
+            values = (
+                item.get('sequenceNumber', 'N/A'),
+                item.get('color', ''),
+                " ".join(item.get('reasons', [])),
+                item.get('trigger', 'Unknown')
+            ) if 'error' not in item else (
+                item.get('sequenceNumber', 'Error'),
+                'Error',
+                item['error'],
+                ''
+            )
+            
+            self.telemetry_tree.insert('', 'end', values=values)
+        
+        # Restore button state
+        self.telemetry_refresh_btn.config(text="Refresh", state="normal")
+        self._show_notification("Telemetry data updated", "green")
+
+    def save_selected_telemetry(self):
+        """Save selected telemetry files with descriptive default filename"""
+        selected = self.telemetry_tree.selection()
+        if not selected:
+            self._show_notification("No telemetry files selected", "red")
+            return
+            
+        try:
+            # Get selected item data (convert display index to data index)
+            tree_index = int(self.telemetry_tree.index(selected[0]))
+            data_index = len(self.telemetry_mgr.file_data) - 1 - tree_index
+            telemetry_data = self.telemetry_mgr.file_data[data_index]
+            
+            # Build default filename components
+            step_prefix = self.get_step_prefix()
+            color = telemetry_data.get('color', 'Unknown').replace(" ", "_")
+            reasons = "_".join(telemetry_data.get('reasons', [])).replace("/", "_")
+            trigger = telemetry_data.get('trigger', 'Unknown').replace(" ", "_")
+            
+            # Construct default filename
+            default_name = f"{step_prefix}Telemetry {color} {reasons} {trigger}.json"
+
+            save_path = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json")],
+                initialfile=default_name
+            )
+            if save_path:
+                self.telemetry_mgr.save_telemetry_file(data_index, save_path)
+                self._show_notification("File saved successfully", "green")
+                
+        except Exception as e:
+            self._show_notification(f"Save failed: {str(e)}", "red")
+
+    def delete_selected_telemetry(self):
+        """Delete multiple selected telemetry files from device after confirmation"""
+        selected = self.telemetry_tree.selection()
+        if not selected:
+            self._show_notification("No telemetry files selected", "red")
+            return
+        
+        # Confirm deletion with user
+        confirm = messagebox.askyesno(
+            "Confirm Delete",
+            f"Delete {len(selected)} selected telemetry file(s)?\nThis action cannot be undone!",
+            parent=self.frame
+        )
+        if not confirm:
+            return
+
+        try:
+            # Get indices in reverse order to avoid shifting issues
+            indices = sorted([int(self.telemetry_tree.index(item)) for item in selected], reverse=True)
+            deleted_count = 0
+            
+            for idx in indices:
+                try:
+                    print(f"Deleting file at index {idx}")
+                    self.telemetry_mgr.delete_telemetry_file(idx)
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"Error deleting file at index {idx}: {str(e)}")
+            
+            if deleted_count > 0:
+                self.load_telemetry()  # Single refresh after all deletions
+                msg = f"Deleted {deleted_count}/{len(selected)} files successfully"
+                self._show_notification(msg, "green")
+            else:
+                self._show_notification("No files were deleted", "red")
+            
+        except Exception as e:
+            self._show_notification(f"Delete failed: {str(e)}", "red")
+
+    def view_telemetry_details(self):
+        """Show JSON details of selected telemetry"""
+        selected = self.telemetry_tree.selection()
+        if not selected:
+            return
+            
+        try:
+            # Convert display index to data index
+            tree_index = int(self.telemetry_tree.index(selected[0]))
+            data_index = len(self.telemetry_mgr.file_data) - 1 - tree_index
+            item = self.telemetry_mgr.file_data[data_index]
+            
+            # Create JSON viewer window
+            json_window = Toplevel(self.frame)
+            json_window.title(f"Telemetry Details - {item['filename']}")
+            
+            text = Text(json_window, wrap="none")
+            scroll_y = ttk.Scrollbar(json_window, orient="vertical", command=text.yview)
+            scroll_x = ttk.Scrollbar(json_window, orient="horizontal", command=text.xview)
+            text.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+            
+            text.insert("end", json.dumps(item['raw_data'], indent=4))
+            text.config(state="disabled")
+            
+            text.grid(row=0, column=0, sticky="nsew")
+            scroll_y.grid(row=0, column=1, sticky="ns")
+            scroll_x.grid(row=1, column=0, sticky="ew")
+            
+        except Exception as e:
+            self._show_notification(f"Details error: {str(e)}", "red")
+
+    def show_telemetry_menu(self, event):
+        """Show context menu for telemetry items"""
+        item = self.telemetry_tree.identify_row(event.y)
+        if item:
+            self.telemetry_tree.selection_set(item)
+            self.telemetry_menu.tk_popup(event.x_root, event.y_root)

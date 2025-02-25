@@ -123,6 +123,23 @@ class EWSScreenshotCapturer:
             filename = f"{number}. {description}.png" if number else f"{description}.png"
             filepath = os.path.join(self.directory, filename)
             
+            # Check if file exists and prompt for overwrite
+            if os.path.exists(filepath):
+                # Use Tkinter's main thread for the dialog
+                self.parent_frame.after(0, lambda: [
+                    self.parent_frame.focus_force(),
+                    self.parent_frame.grab_set()
+                ])
+                
+                confirm = tk.messagebox.askyesno(
+                    "File Exists",
+                    f"File '{filename}' already exists.\nOverwrite?",
+                    parent=self.parent_frame
+                )
+                if not confirm:
+                    print(f"    >> Skipping existing file: {filename}")
+                    continue
+
             try:
                 print(f"    >> Saving file: {filepath}")
                 with open(filepath, 'wb') as f:

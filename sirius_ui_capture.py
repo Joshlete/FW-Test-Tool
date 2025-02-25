@@ -62,8 +62,6 @@ class SiriusConnection:
             try:
                 url = f"https://{self.ip}/TestService/UI/ScreenCapture"
                 # Create auth tuple only if both username and password are provided
-                if self.username and self.password:
-                    print("Using username and password for authentication: ", self.username, self.password)
                 auth = (self.username, self.password) if self.username and self.password else None
                 response = requests.get(url, timeout=5, verify=False, auth=auth)
                 if response.status_code == 200:
