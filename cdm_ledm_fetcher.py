@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import messagebox
 from requests.packages.urllib3.exceptions import InsecureRequestWarning # type: ignore
 from abc import ABC, abstractmethod
+import os
 
 # Disable SSL warnings
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -121,6 +122,38 @@ class BaseFetcher(ABC):
     @abstractmethod
     def get_url(self, endpoint):
         pass
+
+    def check_files_exist(self, directory, selected_endpoints, step_num=None):
+        """Check if any of the selected endpoint files already exist in the directory."""
+        existing_files = []
+        
+        for endpoint in selected_endpoints:
+            # Generate the expected filename using the same logic as save_to_file
+            endpoint_name = endpoint.split('/')[-1].split('.')[0]
+            
+            if "rtp" in endpoint:
+                endpoint_name = "rtp_alerts"
+            elif "cdm/alert" in endpoint:
+                endpoint_name = "alert_alerts"
+
+            prefix = ""
+            extension = ".json"
+            if step_num is not None:
+                if isinstance(self, DuneFetcher):
+                    prefix = f"{step_num}. CDM "
+                elif isinstance(self, SiriusFetcher):
+                    prefix = f"{step_num}. LEDM "
+                    extension = ".xml"
+                else:
+                    prefix = f"{step_num}. "
+
+            filename = f"{prefix}{endpoint_name}{extension}"
+            file_path = os.path.join(directory, filename)
+            
+            if os.path.exists(file_path):
+                existing_files.append(file_path)
+
+        return len(existing_files) > 0
 
 class DuneFetcher(BaseFetcher):
     def __init__(self, ip_address):
