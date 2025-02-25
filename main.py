@@ -71,6 +71,9 @@ class App(tk.Tk):
         # Register IP change callback
         self.register_ip_callback(self.update_fetchers)
 
+        # After creating tabs
+        self._setup_tab_persistence()
+
         print("> [App.__init__] App initialization complete")
 
     def create_snip_tool(self) -> None:
@@ -263,6 +266,26 @@ class App(tk.Tk):
         print("Closing application...")
         self.quit()
         self.destroy()
+
+    def _setup_tab_persistence(self) -> None:
+        """Initialize tab persistence functionality"""
+        self.tab_control.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+        self._load_last_tab()
+
+    def _on_tab_changed(self, event) -> None:
+        """Handle tab change events"""
+        current_tab = self.tab_control.select()
+        tab_name = self.tab_control.tab(current_tab, "text")
+        self.config_manager.set("last_active_tab", tab_name)
+
+    def _load_last_tab(self) -> None:
+        """Load the last active tab from config"""
+        last_tab = self.config_manager.get("last_active_tab")
+        if last_tab:
+            for tab_id in self.tab_control.tabs():
+                if self.tab_control.tab(tab_id, "text") == last_tab:
+                    self.tab_control.select(tab_id)
+                    break
 
 if __name__ == "__main__":
     print("> Starting application")
