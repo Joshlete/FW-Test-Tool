@@ -6,7 +6,6 @@ import socket
 import queue
 from PIL import Image, ImageTk
 import io
-from dune_telemetry_window import DuneTelemetryWindow  # Add this import
 import requests
 import tkinter as tk
 import os
@@ -56,27 +55,60 @@ class DuneTab(TabContent):
         self.telemetry_window = None
         self.snip = None  # Add this line to store snip instance
 
+    def get_layout_config(self) -> tuple:
+        """
+        Define the layout for Dune tab with:
+        - UI in upper left
+        - Alerts in upper right
+        - CDM in lower left
+        - Telemetry in lower right
+        """
+        return (
+            {
+                "top_left": {"title": "UI"},
+                "top_right": {"title": "Alerts"},
+                "bottom_left": {"title": "CDM"},
+                "bottom_right": {"title": "Telemetry"}
+            },  # quadrants with titles
+            {0: 2, 1: 1},  # column weights - ratio 2:1 (left takes 2/3, right takes 1/3)
+            {0: 2, 1: 1}   # row weights - ratio 2:1 (top takes 2/3, bottom takes 1/3)
+        )
+
     def create_widgets(self) -> None:
-        # Create main layout frames
-        self.main_frame = ttk.Frame(self.frame)
-        self.main_frame.pack(fill="both", expand=True)
+        """Creates the widgets for the Dune tab."""
+        print("\n=== Creating DuneTab widgets ===")
+        
+        # Connection buttons
+        self.create_connection_controls()
+        
+        # Create UI widgets (top left)
+        self.create_ui_widgets()
+        
+        # Create alerts widgets (top right)
+        self.create_rest_client_widgets()
+        
+        # Create CDM widgets (bottom left)
+        self.create_cdm_widgets()
+        
+        # Create telemetry widgets (bottom right)
+        self.create_telemetry_widgets()
 
-        # Create connection frame at the top
-        self.connection_frame = ttk.Frame(self.main_frame)
-        self.connection_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
-
-        # Add connect button to connection frame
-        self.connect_button = ttk.Button(self.connection_frame, text="Connect", 
-                                       command=self.toggle_printer_connection)
+    def create_connection_controls(self):
+        """Creates the connection control buttons."""
+        # Main connect button
+        self.connect_button = ttk.Button(self.connection_frame, text=CONNECT, 
+                                        command=self.toggle_printer_connection)
         self.connect_button.pack(side="left", pady=5, padx=10)
-
-        # Add styled EWS dropdown menu button
+        
+        # Create EWS menu dropdown
         ews_menu_button = ttk.Menubutton(
-            self.connection_frame, 
-            text="Capture EWS", 
+            self.connection_frame,
+            text="EWS Snips",
             style='TButton'
         )
         ews_menu = tk.Menu(ews_menu_button, tearoff=0)
+        
+        # Add snip options - restoring all original options
         ews_menu.add_command(label="Home Page", 
                            command=lambda: self.start_snip("EWS Home Page"))
         
@@ -94,7 +126,7 @@ class DuneTab(TabContent):
         ews_menu_button["menu"] = ews_menu
         ews_menu_button.pack(side="left", pady=5, padx=10)
 
-        # Remove original snip buttons and add step control frame
+        # Add step control frame
         self.step_control_frame = ttk.Frame(self.connection_frame)
         self.step_control_frame.pack(side="left", pady=5, padx=10)
 
@@ -146,7 +178,6 @@ class DuneTab(TabContent):
             ("Print PSR", 'curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data \'{"reportId":"printerStatusReport","state":"processing"}\'')
         ]
 
-
         for label, cmd in ssh_commands:
             ssh_menu.add_command(
                 label=label,
@@ -156,65 +187,13 @@ class DuneTab(TabContent):
         self.ssh_menu_button["menu"] = ssh_menu
         self.ssh_menu_button.pack(side="left", pady=5, padx=10)
 
-        # Add separator line
-        separator = ttk.Separator(self.main_frame, orient='horizontal')
-        separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5,0))
-
-        # Create UI frame (top left)
-        self.image_frame = ttk.LabelFrame(self.main_frame, text="UI", width=500, height=500)
-        self.image_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-        self.image_frame.grid_propagate(False)  # Prevent the frame from resizing
-
-        # Create REST Client frame (right side, spans row 2)
-        self.rest_frame = ttk.LabelFrame(self.main_frame, text="Alerts")
-        self.rest_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
-
-        # Create Telemetry frame (under REST Client)
-        self.telemetry_frame = ttk.LabelFrame(self.main_frame, text="Telemetry")
-        self.telemetry_frame.grid(row=3, column=1, padx=10, pady=10, sticky="nsew")
+    def create_ui_widgets(self):
+        """Creates the UI section widgets."""
+        # Access the UI frame from quadrants
+        ui_frame = self.quadrants["top_left"]
         
-        # Create telemetry button frame first
-        self.telemetry_button_frame = ttk.Frame(self.telemetry_frame)
-        self.telemetry_button_frame.pack(pady=(5,0), anchor='w', padx=10)
-
-        # Add update button that will create the window when needed
-        self.telemetry_update_button = ttk.Button(
-            self.telemetry_button_frame, 
-            text="Update", 
-            command=self._handle_telemetry_update,
-            state="disabled"
-        )
-        self.telemetry_update_button.pack(side=tk.LEFT)
-        
-        # Initialize telemetry window reference
-        self.telemetry_window = None
-
-        # Create CDM Endpoints frame (bottom left)
-        self.left_frame = ttk.LabelFrame(self.main_frame, text="CDM")
-        self.left_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
-        
-        # Configure grid weights for main_frame
-        self.main_frame.grid_columnconfigure(0, weight=2, minsize=400)  # Left column
-        self.main_frame.grid_columnconfigure(1, weight=1, minsize=200)  # Right column
-        self.main_frame.grid_rowconfigure(2, weight=1, minsize=300)     # UI row
-        self.main_frame.grid_rowconfigure(3, weight=2)     # CDM Endpoints row (taller)
-
-        # Configure internal grid weights for frames
-        self.left_frame.grid_columnconfigure(0, weight=1)
-        self.left_frame.grid_rowconfigure(0, weight=1)
-        self.rest_frame.grid_columnconfigure(0, weight=1)
-        self.rest_frame.grid_rowconfigure(0, weight=1)
-
-        # Add fetch alerts button
-        self.fetch_alerts_button = ttk.Button(self.rest_frame, text="Refresh", 
-                                             command=self.fetch_alerts, state="disabled")
-        self.fetch_alerts_button.pack(pady=2, padx=5, anchor="w")
-
-        # Create scrollable alerts area
-        self.create_rest_client_widgets()
-
         # Create button frame inside UI frame
-        self.ui_button_frame = ttk.Frame(self.image_frame)
+        self.ui_button_frame = ttk.Frame(ui_frame)
         self.ui_button_frame.pack(side="top", pady=(5,0), padx=5, anchor="w")
         
         # Add View UI button to UI frame
@@ -259,28 +238,25 @@ class DuneTab(TabContent):
         self.ecl_menu_button.pack(side="left", pady=0, padx=5)
 
         # Add image label below buttons
-        self.image_label = ttk.Label(self.image_frame)
-        self.image_label.pack(pady=(0,10), padx=10, expand=True, fill="both")
+        self.image_label = ttk.Label(ui_frame)
+        self.image_label.pack(pady=(5,5), padx=10, expand=True, fill="both")
 
-        # Configure column weights
-        self.main_frame.columnconfigure(2, weight=1)  # Make the right column expandable
-        self.main_frame.rowconfigure(2, weight=1)     # Make the content row expandable
+    def create_rest_client_widgets(self):
+        """Creates the REST client interface with a Treeview table"""
+        # Use the base class method to create standardized alerts widget
+        self.fetch_alerts_button, self.alerts_tree, self.alert_items = self.create_alerts_widget(
+            self.quadrants["top_right"],
+            self.fetch_alerts,
+            allow_acknowledge=True
+        )
 
-        # Create notification frame at the bottom
-        self.notification_frame = ttk.Frame(self.main_frame)
-        self.notification_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+    def create_cdm_widgets(self):
+        """Creates the CDM widgets."""
+        # Access the CDM frame from quadrants
+        cdm_frame = self.quadrants["bottom_left"]
         
-        # Create notification label inside the frame
-        self.notification_label = ttk.Label(self.notification_frame, text="", foreground="red", anchor="center")
-        self.notification_label.pack(fill="x", expand=True)
-
-        # Configure grid row weights
-        self.main_frame.grid_rowconfigure(2, weight=3)  # UI/Telemetry row
-        self.main_frame.grid_rowconfigure(3, weight=2)  # CDM/Telemetry row
-        self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row (fixed height)
-
         # Create a frame for the CDM buttons
-        self.cdm_buttons_frame = ttk.Frame(self.left_frame)
+        self.cdm_buttons_frame = ttk.Frame(cdm_frame)
         self.cdm_buttons_frame.pack(pady=5, padx=5, anchor="w")
 
         # Add Save CDM button
@@ -293,8 +269,8 @@ class DuneTab(TabContent):
                                           command=self.clear_cdm_checkboxes)
 
         # Create a canvas for scrollable checkboxes
-        self.cdm_canvas = Canvas(self.left_frame)
-        self.cdm_scrollbar = ttk.Scrollbar(self.left_frame, orient="vertical", 
+        self.cdm_canvas = Canvas(cdm_frame)
+        self.cdm_scrollbar = ttk.Scrollbar(cdm_frame, orient="vertical", 
                                           command=self.cdm_canvas.yview)
         self.cdm_checkbox_frame = ttk.Frame(self.cdm_canvas)
 
@@ -322,43 +298,13 @@ class DuneTab(TabContent):
                                 variable=self.cdm_vars[option])
             cb.pack(anchor="w", padx=5, pady=2)
 
-    def create_rest_client_widgets(self):
-        """Creates the REST client interface widgets with horizontal and vertical scrolling."""
-        # Create canvas container frame
-        canvas_container = ttk.Frame(self.rest_frame)
-        canvas_container.pack(fill="both", expand=True, padx=5, pady=5)
-
-        # Create canvas with both scrollbars
-        self.alerts_canvas = Canvas(canvas_container)
-        v_scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", 
-                                   command=self.alerts_canvas.yview)
-        h_scrollbar = ttk.Scrollbar(canvas_container, orient="horizontal", 
-                                   command=self.alerts_canvas.xview)
-        
-        # Create the frame that will contain the alerts
-        self.alerts_frame = ttk.Frame(self.alerts_canvas)
-        
-        # Configure scrolling
-        self.alerts_frame.bind(
-            "<Configure>",
-            lambda e: self.alerts_canvas.configure(
-                scrollregion=self.alerts_canvas.bbox("all")
-            )
+    def create_telemetry_widgets(self):
+        """Creates telemetry section widgets using base class implementation"""
+        # Use the base class method to create standardized telemetry widget
+        self.telemetry_update_button, self.telemetry_tree, self.telemetry_items = self.create_telemetry_widget(
+            self.quadrants["bottom_right"],
+            self.fetch_telemetry
         )
-        
-        # Configure canvas
-        self.alerts_canvas.configure(
-            yscrollcommand=v_scrollbar.set,
-            xscrollcommand=h_scrollbar.set
-        )
-        
-        # Create window inside canvas
-        self.alerts_canvas.create_window((0, 0), window=self.alerts_frame, anchor="nw")
-        
-        # Pack scrollbars and canvas
-        v_scrollbar.pack(side="right", fill="y")
-        h_scrollbar.pack(side="bottom", fill="x")
-        self.alerts_canvas.pack(side="left", fill="both", expand=True)
 
     def fetch_alerts(self):
         """Initiates asynchronous fetch of alerts."""
@@ -370,176 +316,82 @@ class DuneTab(TabContent):
         """Asynchronous operation to fetch and display alerts."""
         try:
             # Clear previous alerts
-            self.root.after(0, self._clear_alerts_frame)
+            self.root.after(0, lambda: self.alerts_tree.delete(*self.alerts_tree.get_children()))
+            self.root.after(0, lambda: self.alert_items.clear())
 
-            url = f"https://{self.ip}/cdm/supply/v1/alerts"
-            response = requests.get(url, verify=False)
-            response.raise_for_status()
-            alerts_data = response.json().get("alerts", [])
+            # Use the DuneFetcher to get alerts
+            alerts_data = self.app.dune_fetcher.fetch_alerts()
             
             if not alerts_data:
-                self.root.after(0, self._display_no_alerts)
                 self.root.after(0, lambda: self._show_notification("No alerts found", "blue"))
                 return
             
-            # Display alerts
-            self.root.after(0, lambda: self._display_alerts(alerts_data))
+            # Display alerts using the base class method
+            self.root.after(0, lambda: self.populate_alerts_tree(self.alerts_tree, self.alert_items, alerts_data))
             self.root.after(0, lambda: self._show_notification("Alerts fetched successfully", "green"))
             
-        except requests.exceptions.RequestException as error:
+        except Exception as error:
             error_msg = str(error)
             self.root.after(0, lambda: self._show_notification(
                 f"Failed to fetch alerts: {error_msg}", "red"))
-        except Exception as error:
-            error_msg = str(error)
-            self.root.after(0, lambda: self._show_notification(error_msg, "red"))
         finally:
             self.root.after(0, lambda: self.fetch_alerts_button.config(
                 state="normal", text="Fetch Alerts"))
 
-    def _clear_alerts_frame(self):
-        """Clears all widgets from the alerts frame."""
-        for widget in self.alerts_frame.winfo_children():
-            widget.destroy()
+    def _get_telemetry_data(self):
+        """Implementation of abstract method from parent class - fetches telemetry data"""
+        # Use the DuneFetcher instance to get telemetry data with refresh=True
+        return self.app.dune_fetcher.get_telemetry_data(refresh=True)
 
-    def _display_no_alerts(self):
-        """Displays a message when no alerts are found."""
-        no_alerts_label = ttk.Label(self.alerts_frame, text="NO ALERTS")
-        no_alerts_label.pack(pady=10)
-
-    def _display_alerts(self, alerts_data):
-        """
-        Displays the fetched alerts in the UI with proper text wrapping.
-        
-        :param alerts_data: List of alert dictionaries to display
-        """
-        for alert in alerts_data:
-            alert_frame = ttk.Frame(self.alerts_frame)
-            alert_frame.pack(fill="x", pady=2, padx=5)
-            
-            # Build alert text with checks for each field
-            alert_text = []
-            if 'stringId' in alert and 'category' in alert:
-                alert_text.append(f"{alert['stringId']} - {alert['category']}")
-            if 'visibility' in alert:
-                alert_text.append(f"Visibility: {alert['visibility']}")
-            if 'severity' in alert:
-                alert_text.append(f"Severity: {alert['severity']}")
-            if 'priority' in alert:
-                alert_text.append(f"Priority: {alert['priority']}")
-            
-            # Join all available fields with newlines
-            alert_text = '\n'.join(alert_text) or "No alert details available"
-            
-            # Use Text widget instead of Label for better text wrapping
-            alert_text_widget = Text(alert_frame, wrap="word", height=3, 
-                                   width=30, borderwidth=0)
-            alert_text_widget.insert("1.0", alert_text)
-            alert_text_widget.configure(state="disabled")  # Make it read-only
-            alert_text_widget.pack(side="left", padx=5, fill="x", expand=True)
-
-            # Bind right-click event to the text widget
-            alert_text_widget.bind("<Button-3>", lambda e, a=alert: self.show_alert_context_menu(e, a))
-            
-            buttons_frame = ttk.Frame(alert_frame)
-            buttons_frame.pack(side="right")
-            
-            action_link = next((link['href'] for link in 
-                              alert.get('actions', {}).get('links', [])
-                              if link['rel'] == 'alertAction'), None)
-            
-            if (action_link and 'actions' in alert and 
-                'supported' in alert['actions']):
-                for action in alert['actions']['supported']:
-                    action_value = action['value']['seValue']
-                    btn = ttk.Button(
-                        buttons_frame,
-                        text=action_value.capitalize(),
-                        command=lambda a=alert['id'], v=action_value, 
-                        l=action_link: self.handle_alert_action(a, v, l)
-                    )
-                    btn.pack(side=RIGHT, padx=2)
-
-    def show_alert_context_menu(self, event, alert):
-        """
-        Shows the context menu for an alert.
-        
-        :param event: The event that triggered the context menu
-        :param alert: The alert data dictionary
-        """
-        context_menu = tk.Menu(self.root, tearoff=0)
-        
-        # Create the capture UI menu item
-        context_menu.add_command(
-            label="Capture UI", 
-            command=lambda: self.capture_alert_ui(alert)
-        )
-        context_menu.add_command(
-            label="Capture UI A", 
-            command=lambda: self.capture_alert_ui(alert, 'A')
-        )
-        context_menu.add_command(
-            label="Capture UI B", 
-            command=lambda: self.capture_alert_ui(alert, 'B')
-        )
-        context_menu.add_command(
-            label="Capture UI C", 
-            command=lambda: self.capture_alert_ui(alert, 'C')
-        )
-        context_menu.add_command(
-            label="Capture UI D", 
-            command=lambda: self.capture_alert_ui(alert, 'D')
-        )
-        
-        # Display the context menu
+    def _acknowledge_alert(self, alert_id):
+        """Implementation of abstract method from parent class - acknowledges an alert"""
         try:
-            context_menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            context_menu.grab_release()
-
-    def capture_alert_ui(self, alert, suffix: str = ""):
-        """
-        Captures the UI with alert information in the filename.
-        
-        :param alert: The alert data dictionary
-        :param suffix: Optional suffix to add to filename
-        """
-        if not self.dune_fpui.is_connected():
-            if not self.dune_fpui.connect(self.ip):
-                self._show_notification("Failed to connect to Dune FPUI", "red")
-                print("Failed to connect to Dune FPUI")
-                return
-
-        # Modified filename construction
-        filename = self.get_step_prefix() + "UI "
-        if 'stringId' in alert:
-            filename += str(alert['stringId']) + " "
-        if 'category' in alert:
-            filename += str(alert['category'])
-        if suffix:  # Add suffix if provided
-            filename += f" {suffix}"
-        filename += ".png"
-        
-        # Use save as dialog
-        full_path = filedialog.asksaveasfilename(
-            parent=self.frame,
-            title="Save Screenshot",
-            initialdir=self.directory,
-            initialfile=filename,
-            defaultextension=".png",
-            filetypes=[("PNG files", "*.png")]
-        )
-        if not full_path:
-            self._show_notification("Screenshot capture cancelled", "blue")
-            return
-        
-        # Use the existing UI capture functionality
-        captured = self.dune_fpui.save_ui(self.directory, full_path)
-        if not captured:
-            self._show_notification("Failed to capture UI", "red")
-            return
+            # Use the DuneFetcher for acknowledgment
+            success, message = self.app.dune_fetcher.acknowledge_alert(alert_id)
             
-        self._show_notification("Screenshot Captured", "green")
+            if success:
+                self._show_notification(message, "green")
+                # Refresh alerts after acknowledgment
+                self.frame.after(1000, self.fetch_alerts)
+                return True
+            else:
+                self._show_notification(message, "red")
+                return False
+                
+        except Exception as e:
+            self._show_notification(f"Error acknowledging alert: {str(e)}", "red")
+            return False
+
+    def fetch_telemetry(self):
+        """Initiates asynchronous fetch of telemetry data."""
+        print(f">     [Dune] Fetch Telemetry button pressed")
+        self.telemetry_update_button.config(state="disabled", text="Fetching...")
+        self.queue_task(self._fetch_telemetry_async)
+    
+    def _fetch_telemetry_async(self):
+        """Asynchronous operation to fetch and display telemetry data."""
+        try:
+            # Clear previous telemetry
+            self.root.after(0, lambda: self.telemetry_tree.delete(*self.telemetry_tree.get_children()))
+            self.root.after(0, lambda: self.telemetry_items.clear())
+            
+            # Get telemetry data using the abstract method
+            telemetry_data = self._get_telemetry_data()
+            
+            if not telemetry_data:
+                self.root.after(0, lambda: self._show_notification("No telemetry data found", "blue"))
+                return
+            
+            # Display telemetry using the base class method
+            self.root.after(0, lambda: self.populate_telemetry_tree(self.telemetry_tree, self.telemetry_items, telemetry_data))
+            self.root.after(0, lambda: self._show_notification("Telemetry fetched successfully", "green"))
+            
+        except Exception as error:
+            error_msg = str(error)
+            self.root.after(0, lambda: self._show_notification(f"Failed to fetch telemetry: {error_msg}", "red"))
+        finally:
+            self.root.after(0, lambda: self.telemetry_update_button.config(
+                state="normal", text="Update Telemetry"))
 
     def _worker(self):
         while True:
@@ -645,35 +497,68 @@ class DuneTab(TabContent):
 
         print(f">     [Dune] Selected endpoints: {selected_endpoints}")
         
-        # Get step number from the entry field
-        default_number = self.step_var.get()
-        number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", 
-                                        parent=self.frame, initialvalue=default_number)
+        # Get current step prefix
+        step_prefix = self.get_step_prefix()
         
-        if number is None:
-            print(f">     [Dune] CDM capture cancelled by user")
-            self._show_notification("CDM capture cancelled", "blue")
-            return
-
-        print(f">     [Dune] Starting CDM capture with prefix: {number}")
+        print(f">     [Dune] Starting CDM capture with prefix: {step_prefix}")
         self.fetch_json_button.config(state="disabled")
         self._show_notification("Capturing CDM...", "blue")
         
-        self.queue_task(self._save_cdm, selected_endpoints, number)
+        # Queue the CDM save task
+        self.queue_task(self._save_cdm_async, selected_endpoints)
 
-    def _save_cdm(self, selected_endpoints, number):
-        """Save CDM data for selected endpoints"""
-        fetcher = self.app.dune_fetcher
-        if fetcher:
-            try:
-                fetcher.save_to_file(self.directory, selected_endpoints, number)
-                self._show_notification("CDM data saved for selected endpoints", "green")
-            except Exception as e:
-                self._show_notification(f"Error saving CDM data: {str(e)}", "red")
-        else:
-            self._show_notification("Error: Dune fetcher not initialized", "red")
-        
-        self.root.after(0, lambda: self.fetch_json_button.config(state="normal"))
+    def _save_cdm_async(self, selected_endpoints):
+        """Asynchronous function to save CDM data"""
+        try:
+            # Fetch data from endpoints
+            data = self.app.dune_fetcher.fetch_data(selected_endpoints)
+            
+            # Save the data using the base class save methods
+            save_results = []
+            for endpoint, content in data.items():
+                # Skip error responses
+                if content.startswith("Error:"):
+                    if "401" in content or "Unauthorized" in content:
+                        self.root.after(0, lambda: self._show_notification(
+                            "Error: Authentication required - Send Auth command", "red"))
+                    else:
+                        self.root.after(0, lambda: self._show_notification(
+                            f"Error fetching {endpoint}: {content}", "red"))
+                    save_results.append((False, endpoint, None))
+                    continue
+                    
+                # Extract endpoint name for filename
+                endpoint_name = endpoint.split('/')[-1].split('.')[0]
+                if "rtp" in endpoint:
+                    endpoint_name = "rtp_alerts"
+                if "cdm/alert" in endpoint:
+                    endpoint_name = "alert_alerts"
+                    
+                # Save with CDM prefix
+                filename = f"CDM {endpoint_name}"
+                success, filepath = self.save_json_data(content, filename)
+                save_results.append((success, endpoint, filepath))
+            
+            # Notify about results
+            total = len(save_results)
+            success_count = sum(1 for res in save_results if res[0])
+            
+            if success_count == 0:
+                self.root.after(0, lambda: self._show_notification(
+                    "Failed to save any CDM data", "red"))
+            elif success_count < total:
+                self.root.after(0, lambda: self._show_notification(
+                    f"Partially saved CDM data ({success_count}/{total} files)", "yellow"))
+            else:
+                self.root.after(0, lambda: self._show_notification(
+                    "CDM data saved successfully", "green"))
+            
+        except Exception as e:
+            error_msg = str(e)
+            self.root.after(0, lambda: self._show_notification(
+                f"Error in CDM capture: {error_msg}", "red"))
+        finally:
+            self.root.after(0, lambda: self.fetch_json_button.config(state="normal"))
 
     def queue_save_fpui_image(self, base_name="UI"):
         print(f">     [Dune] Capture UI button pressed")
@@ -727,11 +612,6 @@ class DuneTab(TabContent):
         self.directory = new_directory
         print(f">     [Dune] Directory changed to: {self.directory}")
         # Add any additional actions you want to perform when the directory changes
-
-    def _show_notification(self, message, color, duration=20000):
-        """Display a notification message"""
-        self.root.after(0, lambda: self.notification_label.config(text=message, foreground=color))
-        self.root.after(duration, lambda: self.notification_label.config(text=""))
 
     def toggle_view_ui(self):
         print(f">     [Dune] View UI button pressed. Current state: {'Viewing' if self.is_viewing_ui else 'Not viewing'}")
@@ -801,13 +681,17 @@ class DuneTab(TabContent):
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
-        print(f"Stopping listeners for DuneTab")
+        # Delegate to base class cleanup, which will call _additional_cleanup
+        super().cleanup()
+
+    def _additional_cleanup(self):
+        """Additional cleanup specific to DuneTab"""
+        print(f"Additional cleanup for DuneTab")
         if self.is_connected:
             print("Disconnecting from printer...")
             if self.sock:
                 self.sock.close()
             
-            # Add this block to disconnect DuneFPUI
             if self.dune_fpui.is_connected():
                 print("Disconnecting DuneFPUI...")
                 self.dune_fpui.disconnect()
@@ -817,8 +701,6 @@ class DuneTab(TabContent):
         self.worker_thread.join(timeout=5)  # Add a timeout to prevent hanging
         if self.worker_thread.is_alive():
             print("Warning: Worker thread did not stop within the timeout period")
-        
-        print(f"DuneTab listeners stopped")
 
     def handle_alert_action(self, alert_id, action_value, action_link):
         """Initiates asynchronous alert action."""
@@ -870,23 +752,40 @@ class DuneTab(TabContent):
 
     def start_snip(self, default_filename: str) -> None:
         """
-        Starts the snipping tool with a default filename.
+        Captures a screen region and saves it using the TabContent's save mechanism.
 
-        :param default_filename: The default filename to use when saving
+        :param default_filename: Base filename to use for saving
         """
         try:
+            # Import here to avoid circular imports
             from snip_tool import CaptureManager
-            # Modified filename handling
-            full_prefix = self.get_step_prefix() + default_filename.lstrip('.')
+            
+            # Create capture manager
             capture_manager = CaptureManager(self.directory)
-            capture_manager.capture_screen_region(
-                self.root, 
-                full_prefix, 
-                self.directory, 
-                self.notification_label
-            )
+            
+            # Capture image
+            image = capture_manager.capture_screen_region_and_return(self.root)
+            
+            # Process the captured image
+            if image:
+                # Copy to clipboard
+                capture_manager._copy_to_clipboard(image)
+                
+                # Save using TabContent's mechanism
+                success, filepath = self.save_image_data(image, default_filename)
+                
+                # Show result notification
+                if success:
+                    filename = os.path.basename(filepath)
+                    self._show_notification(f"Screenshot saved: {filename}", "green")
+                else:
+                    self._show_notification("Failed to save screenshot", "red")
+                
         except Exception as e:
-            self._show_notification(f"Failed to start snipping tool: {str(e)}", "red")
+            # Handle any unexpected errors
+            error_msg = f"Failed to capture screenshot: {str(e)}"
+            print(f"> [DuneTab.start_snip] {error_msg}")
+            self._show_notification(error_msg, "red")
 
     def validate_step_input(self, value):
         """Validate that the step entry only contains numbers"""
@@ -922,18 +821,11 @@ class DuneTab(TabContent):
 
     def _handle_telemetry_update(self):
         """Ensure telemetry window exists before updating"""
-        if not self.telemetry_window:
-            # Create the window if it doesn't exist
-            self.telemetry_window = DuneTelemetryWindow(
-                self.telemetry_frame, 
-                self.ip, 
-                self._show_notification,
-                get_step_prefix=self.get_step_prefix
-            )
-            self.telemetry_window.pack(fill="both", expand=True)
+        # This will now be handled by fetch_telemetry()
+        self.fetch_telemetry()
         
-        # Now safely update
-        self.telemetry_window.fetch_telemetry()
+    # The fetch_telemetry method is inherited from the base class
+    # No need to implement it as it will call _get_telemetry_data
 
     def _execute_ssh_command(self, command: str) -> None:
         """Executes an SSH command on the connected printer."""

@@ -32,10 +32,7 @@ class SiriusTab(TabContent):
         self.show_password_var = tk.BooleanVar(value=False)
         self.password_var = tk.StringVar()
         self.password_var.trace_add("write", self._save_password_to_config)
-        self.step_var = tk.StringVar(value=str(self.app.config_manager.get("step_number", 1)))
-        self.step_var.trace_add("write", self._save_step_to_config)
-        self.current_step = 1
-
+        
         # Initialize LEDM components FIRST
         self.ledm_options = self.app.sirius_fetcher.get_endpoints()
         self.ledm_vars = {option: IntVar() for option in self.ledm_options}
@@ -99,10 +96,20 @@ class SiriusTab(TabContent):
         return self.app.get_ip_address()
     
     def _show_notification(self, message, color, duration=5000):
-        """Display a notification message with debug logging"""
-        print(f"[Notification] {color.upper()}: {message}")
-        self.notification_label.config(text=message, foreground=color)
-        self.frame.after(duration, lambda: self.notification_label.config(text=""))
+        """Display notification using base class implementation"""
+        super()._show_notification(message, color, duration)
+
+    def get_layout_config(self):
+        return (
+            {
+                "top_left": {"title": "UI"},
+                "top_right": {"title": "Alerts"},
+                "bottom_left": {"title": "LEDM"},
+                "bottom_right": {"title": "Telemetry"}
+            },
+            {0: 1, 1: 1},  # Equal column weights
+            {0: 3, 1: 2}    # Row weights (3:2 ratio vertically)
+        )
 
     def create_widgets(self) -> None:
         # Create main layout frames
@@ -113,84 +120,28 @@ class SiriusTab(TabContent):
         self.connection_frame = ttk.Frame(self.main_frame)
         self.connection_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
-        # Add step controls
-        self.step_control_frame = ttk.Frame(self.connection_frame)
-        self.step_control_frame.pack(side="left", padx=10)
-        
-        # Add step label
-        step_label = ttk.Label(self.step_control_frame, text="STEP:")
-        step_label.pack(side="left", padx=(0, 5))
-
-        # Add step number controls
-        self.step_down_button = ttk.Button(
-            self.step_control_frame, 
-            text="-", 
-            width=2, 
-            command=lambda: self.update_filename_prefix(-1)
-        )
-        self.step_down_button.pack(side="left")
-
-        self.step_entry = ttk.Entry(
-            self.step_control_frame, 
-            width=4, 
-            validate="key", 
-            validatecommand=(self.frame.register(self.validate_step_input), '%P'),
-            textvariable=self.step_var
-        )
-        self.step_entry.pack(side="left", padx=2)
-        self.step_entry.bind('<FocusOut>', self._handle_step_focus_out)
-
-        self.step_up_button = ttk.Button(
-            self.step_control_frame, 
-            text="+", 
-            width=2, 
-            command=lambda: self.update_filename_prefix(1)
-        )
-        self.step_up_button.pack(side="left")
-
-        # Add password field
-        self.password_frame = ttk.Frame(self.connection_frame)
+        # Add password field to step control frame
+        self.password_frame = ttk.Frame(self.step_control_frame)
         self.password_frame.pack(side="left", padx=10)
         ttk.Label(self.password_frame, text="Password:").pack(side="left")
         self.password_entry = ttk.Entry(self.password_frame, width=15, textvariable=self.password_var)
         self.password_entry.pack(side="left", padx=5)
 
-        # Add action buttons
-        self.button_frame = ttk.Frame(self.connection_frame)
-        self.button_frame.pack(side="left", padx=10)
-        
-        # Create EWS button as instance variable
-        self.ews_button = ttk.Button(self.button_frame, text="Capture EWS", command=self.capture_ews)
+        # Create EWS button in step control frame after password
+        self.ews_button = ttk.Button(self.step_control_frame, text="Capture EWS", command=self.capture_ews)
         self.ews_button.pack(side="left", padx=5)
 
         # Add separator line
         separator = ttk.Separator(self.main_frame, orient='horizontal')
         separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
 
-        # Create UI display frame
-        self.ui_frame = ttk.LabelFrame(self.main_frame, text="UI Display")
-        self.ui_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-        self.ui_frame.grid_propagate(False)
+        # Create UI display in top_left quadrant
+        self.ui_frame = self.quadrants["top_left"]
         
-        # Create alerts frame next to UI display
-        self.alerts_frame = ttk.LabelFrame(self.main_frame, text="Active Alerts")
-        self.alerts_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
-        
-        # Configure grid weights for resizing
-        self.main_frame.grid_columnconfigure(0, weight=1, minsize=400)  # UI column
-        self.main_frame.grid_columnconfigure(1, weight=1, minsize=400)  # Alerts column
-        self.main_frame.grid_rowconfigure(2, weight=1)  # UI/Alerts row
-        self.main_frame.grid_rowconfigure(3, weight=0)  # LEDM endpoints row
-        self.main_frame.grid_rowconfigure(4, weight=0)  # Notification row
-        self.main_frame.grid_rowconfigure(5, weight=0)  # Center alignment
-        self.main_frame.grid_columnconfigure(0, weight=1)  # Center alignment
-        self.main_frame.grid_columnconfigure(1, weight=1)  # Center alignment
-
-        # Add UI control buttons at the top of the UI frame
+        # Add UI control buttons
         self.ui_control_frame = ttk.Frame(self.ui_frame)
         self.ui_control_frame.pack(pady=5, fill="x")
         
-        # Add connect button to UI frame
         self.connect_button = ttk.Button(self.ui_control_frame, text=CONNECT, command=self.toggle_ui_connection)
         self.connect_button.pack(side="left", padx=5)
         
@@ -224,20 +175,22 @@ class SiriusTab(TabContent):
         self.ecl_menu_button["menu"] = ecl_menu
         self.ecl_menu_button.pack(side="left", padx=5)
 
-        # Add image display below the buttons
+        # Add image display
         self.image_label = ttk.Label(self.ui_frame)
         self.image_label.pack(pady=10, padx=10, expand=True, fill="both")
 
-        # Notification label - move to bottom of main frame
-        self.notification_label = ttk.Label(self.main_frame, text="", foreground="red", anchor="center")
-        self.notification_label.grid(row=4, column=0, columnspan=2, pady=10, sticky="nsew")
-
-        # Modified alerts frame layout
-        self.alerts_frame = ttk.LabelFrame(self.main_frame, text="Alerts")
-        self.alerts_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
+        # ALERTS in top_right quadrant
+        self.alerts_container = self.quadrants["top_right"]
         
-        # Create top button panel
-        button_panel = ttk.Frame(self.alerts_frame)
+        # LEDM in bottom_left quadrant
+        self.ledm_container = self.quadrants["bottom_left"]
+        
+        # TELEMETRY in bottom_right quadrant  
+        self.telemetry_container = self.quadrants["bottom_right"]
+
+        # Update all component parents:
+        # 1. Alerts components
+        button_panel = ttk.Frame(self.alerts_container)
         button_panel.pack(fill='x', pady=5)
         
         # Add refresh button aligned left
@@ -249,7 +202,7 @@ class SiriusTab(TabContent):
         self.refresh_btn.pack(side='left', padx=5)
 
         # Treeview below button panel
-        tree_container = ttk.Frame(self.alerts_frame)
+        tree_container = ttk.Frame(self.alerts_container)
         tree_container.pack(fill='both', expand=True, padx=5, pady=(0,5))
         
         self.alerts_tree = ttk.Treeview(tree_container, columns=('id', 'string_id',  'color', 'severity', 'priority'), show='headings')
@@ -280,25 +233,8 @@ class SiriusTab(TabContent):
         # Bind right-click event
         self.alerts_tree.bind("<Button-3>", self._show_alert_menu)
 
-        # Create modern style for LEDM section
-        style = ttk.Style()
-        style.configure('LEDM.TLabelframe', borderwidth=2, relief="groove")
-        style.configure('LEDM.TCheckbutton', 
-                      font=('Segoe UI', 9), 
-                      padding=5,
-                      focuswidth=0)
-        style.map('LEDM.TCheckbutton',
-                background=[('active', '#f0f0f0'), ('!active', 'white')],
-                foreground=[('active', 'black')])
-
-        # Create LEDM Endpoints frame
-        self.ledm_frame = ttk.LabelFrame(self.main_frame, 
-                                       text="LEDM", 
-                                       style='LEDM.TLabelframe')
-        self.ledm_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
-        
-        # Add button panel above the LEDM list
-        self.ledm_button_frame = ttk.Frame(self.ledm_frame)
+        # 2. LEDM components
+        self.ledm_button_frame = ttk.Frame(self.ledm_container)
         self.ledm_button_frame.pack(fill='x', pady=5)
         
         # Add Save button
@@ -318,8 +254,8 @@ class SiriusTab(TabContent):
         self.clear_ledm_button.pack(side='left', padx=5)
         
         # Configure canvas and scrollbar
-        self.ledm_canvas = Canvas(self.ledm_frame, highlightthickness=0)
-        self.ledm_scrollbar = ttk.Scrollbar(self.ledm_frame, 
+        self.ledm_canvas = Canvas(self.ledm_container, highlightthickness=0)
+        self.ledm_scrollbar = ttk.Scrollbar(self.ledm_container, 
                                           orient="vertical", 
                                           command=self.ledm_canvas.yview)
         self.ledm_checkbox_frame = ttk.Frame(self.ledm_canvas, style='LEDM.TFrame')
@@ -366,18 +302,15 @@ class SiriusTab(TabContent):
         self.ledm_canvas.pack(side="left", fill="both", expand=True)
 
         # Update style for light gray background
+        style = ttk.Style()
         style.configure('Hover.TFrame', background='#e0e0e0')  # Darker gray on hover
 
         # Add checkbox trace
         for option, var in self.ledm_vars.items():
             var.trace_add('write', self.update_clear_button_visibility)
 
-        # Create Telemetry frame next to LEDM
-        self.telemetry_frame = ttk.LabelFrame(self.main_frame, text="Telemetry", style='LEDM.TLabelframe')
-        self.telemetry_frame.grid(row=3, column=1, padx=10, pady=10, sticky="nsew")
-
-        # Telemetry button panel
-        self.telemetry_button_frame = ttk.Frame(self.telemetry_frame)
+        # 3. Telemetry components
+        self.telemetry_button_frame = ttk.Frame(self.telemetry_container)
         self.telemetry_button_frame.pack(fill='x', pady=5)
         
         # Telemetry control buttons
@@ -401,7 +334,7 @@ class SiriusTab(TabContent):
         ).pack(side='left', padx=5)
 
         # Telemetry list container
-        telemetry_container = ttk.Frame(self.telemetry_frame)
+        telemetry_container = ttk.Frame(self.telemetry_container)
         telemetry_container.pack(fill='both', expand=True, padx=5, pady=(0,5))
         
         # Treeview for telemetry events
@@ -438,10 +371,6 @@ class SiriusTab(TabContent):
         # Add double-click binding
         self.telemetry_tree.bind("<Double-1>", lambda e: self.view_telemetry_details())
 
-        # Adjust grid layout to accommodate new telemetry frame
-        self.main_frame.grid_columnconfigure(1, weight=1, minsize=400)  # Telemetry column
-        self.main_frame.grid_rowconfigure(3, weight=1)  # LEDM/Telemetry row
-
     @property
     def password(self):
         """Get current password from Entry widget"""
@@ -454,14 +383,6 @@ class SiriusTab(TabContent):
 
     def _save_password_to_config(self, *args):
         self.app.config_manager.set("password", self.password_var.get())
-
-    def _save_step_to_config(self, *args):
-        """Save current step number to configuration"""
-        try:
-            step_num = int(self.step_var.get())
-            self.app.config_manager.set("step_number", step_num)
-        except ValueError:
-            pass  # Ignore invalid values
 
     def toggle_ui_connection(self):
         """Toggle printer connection state and update UI"""
@@ -536,13 +457,12 @@ class SiriusTab(TabContent):
             "Step Number",
             "Enter step number:",
             parent=self.frame,
-            initialvalue=self.step_var.get()
+            initialvalue=self.step_var.get()  # Using base class step_var
         )
         
         if not step_identifier:  # User clicked cancel
             self._show_notification("LEDM capture cancelled", "blue")
             return
-
 
         def _fetch_ledm_thread():
             try:    
@@ -693,38 +613,10 @@ class SiriusTab(TabContent):
 
         threading.Thread(target=_capture_screenshot_background).start()
 
-    def validate_step_input(self, value):
-        """Validate that the step entry only contains numbers"""
-        if value == "":
-            return True  # Allow empty input during editing
-        try:
-            int(value)
-            return True
-        except ValueError:
-            return False
-
-    def _handle_step_focus_out(self, event):
-        """Handle empty input when focus leaves the entry"""
-        if self.step_var.get().strip() == "":
-            self.step_var.set("1")
-
-    def update_filename_prefix(self, delta):
-        """Update the current step number with bounds checking"""
-        try:
-            current = int(self.step_var.get())
-            new_value = max(1, current + delta)
-            self.step_var.set(str(new_value))
-        except ValueError:
-            pass
-
     def get_step_prefix(self) -> str:
         """Returns the current step prefix including trailing space"""
-        try:
-            current_step = int(self.step_var.get())
-            return f"{current_step}. " if current_step >= 0 else ""
-        except ValueError:
-            return ""
-
+        return self._get_step_prefix()
+        
     def show_alerts(self):
         """Trigger alert loading and display"""
         self.load_alerts()

@@ -9,13 +9,27 @@ class SettingsTab(TabContent):
         self.keybinding_var = StringVar()
         self.capture_window = None
         super().__init__(parent)
+        
+        # Disable step controls
+        if hasattr(self, 'step_control_frame'):
+            self.step_control_frame.pack_forget()
+
+    def get_layout_config(self) -> tuple:
+        """Override to disable quadrant layout"""
+        return ({}, None, None)
+
+    def _create_base_layout(self) -> None:
+        """Override to disable base class layout creation"""
+        # Only create the fundamental frame
+        self.frame = ttk.Frame(self.parent)
+        self.frame.pack(fill="both", expand=True)
 
     def create_widgets(self) -> None:
-        # Create a main frame to hold the settings
+        # Create custom layout without base class elements
         self.main_frame = ttk.Frame(self.frame)
         self.main_frame.pack(fill="both", expand=True)
 
-        # Create a frame to hold the keybinding button and label
+        # Keybinding section
         self.keybinding_frame = ttk.Frame(self.main_frame)
         self.keybinding_frame.pack(pady=5, padx=10, anchor="w")
 

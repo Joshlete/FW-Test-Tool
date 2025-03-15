@@ -1,14 +1,15 @@
+import tkinter as tk
 from .base import TabContent
 from ews_capture import EWSScreenshotCapturer
 from tkinter import ttk, simpledialog, Toplevel, IntVar, Text, Canvas, LEFT, RIGHT, X
 import threading
 import queue
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import requests
 import urllib3
 import json
 import os
+from typing import List
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -24,6 +25,8 @@ class TrilliumTab(TabContent):
         self.ip = self.app.get_ip_address()
         self.directory = self.app.get_directory()
         self.is_connected = False
+        self.alert_items = {}  # Dictionary to store alert references by item ID
+        self.telemetry_window = None  # Initialize telemetry window reference
 
         # Get CDM endpoints from DuneFetcher
         self.cdm_options = self.app.dune_fetcher.get_endpoints()
@@ -40,222 +43,145 @@ class TrilliumTab(TabContent):
         self.task_queue = queue.Queue()
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)
         self.worker_thread.start()
-        
-        # Add async support
-        self.loop = asyncio.new_event_loop()
-        self.executor = ThreadPoolExecutor(max_workers=2)
-        asyncio.set_event_loop(self.loop)
-        self.async_thread = threading.Thread(target=self._run_async_loop, daemon=True)
-        self.async_thread.start()
+
+    def get_layout_config(self) -> tuple:
+        """
+        Define the layout for Trillium tab with:
+        - CDM on left (2/5 of total width)
+        - Alerts top-right (part of 3/5 width)
+        - Telemetry bottom-right (part of 3/5 width)
+        """
+        return (
+            {
+                "left_full": {"title": "CDM"},
+                "top_right": {"title": "Alerts"},
+                "bottom_right": {"title": "Telemetry"}
+            },  # quadrants with titles
+            {0: 2, 1: 3},  # column weights - ratio 2:3 (left takes 2/5, right takes 3/5)
+            {0: 1, 1: 1}   # row weights - equal heights
+        )
 
     def create_widgets(self) -> None:
-        # Create main layout frames
-        self.main_frame = ttk.Frame(self.frame)
-        self.main_frame.pack(fill="both", expand=True)
-
-        # Create connection frame at the top
-        self.connection_frame = ttk.Frame(self.main_frame)
-        self.connection_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
-
-        # Add connect button to connection frame
+        print("\n=== Creating TrilliumTab widgets ===")
+        # Connection buttons
         self.connect_button = ttk.Button(self.connection_frame, text=CONNECT, command=self.toggle_connection)
-        self.connect_button.pack(side="left", pady=5, padx=10)
+        self.connect_button.pack(side="left", padx=5)
+        print("Connect button created")
 
-        # Add EWS capture button to connection frame
-        self.capture_ews_button = ttk.Button(self.connection_frame, text="Capture EWS", command=self.capture_ews, state="disabled")
-        self.capture_ews_button.pack(side="left", pady=5, padx=10)
+        self.capture_ews_button = ttk.Button(self.connection_frame, text="Capture EWS", 
+                                          command=lambda: self.capture_ews(), state="disabled")
+        self.capture_ews_button.pack(side="left", padx=5)
+        self.capture_ews_button.bind("<Button-3>", self.show_ews_context_menu)
+        print("EWS button created")
+        
+        # Add Telemetry input button
+        self.telemetry_input_button = ttk.Button(self.connection_frame, text="Telemetry Input", 
+                                               command=self.open_telemetry_input, state="normal")
+        self.telemetry_input_button.pack(side="left", padx=5)
+        print("Telemetry input button created")
 
-        # Add separator line
-        separator = ttk.Separator(self.main_frame, orient='horizontal')
-        separator.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5,0))
-
-        # Create CDM frame (left side)
-        self.cdm_frame = ttk.LabelFrame(self.main_frame, text="CDM Endpoints", width=200)
-        self.cdm_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-        self.cdm_frame.grid_propagate(False)
-
-        # Create REST Client frame (right side)
-        self.rest_frame = ttk.LabelFrame(self.main_frame, text="REST Client")
-        self.rest_frame.grid(row=2, column=1, padx=10, pady=10, sticky="nsew")
-
-        # Configure grid weights for main_frame
-        self.main_frame.grid_columnconfigure(0, weight=0)  # Left column (CDM)
-        self.main_frame.grid_columnconfigure(1, weight=1)  # Right column (REST)
-        self.main_frame.grid_rowconfigure(2, weight=1)     # Content row
-
-        # Create CDM buttons frame and content
-        self.create_cdm_widgets()
-
-        # Create scrollable alerts area in REST frame
-        self.create_rest_client_widgets()
-
-        # Create notification label
-        self.notification_label = ttk.Label(self.frame, text="", foreground="red")
-        self.notification_label.pack(side="bottom", pady=20, padx=10, anchor="center")
+        # Main content frames
+        print("\nCreating content frames:")
+        try:
+            # Update quadrant assignments per new layout
+            # Instead of creating labeled frames with titles, just access the existing frames
+            self.cdm_frame = self.quadrants["left_full"]
+            print(f"Using CDM frame from left_full quadrant")
+            
+            self.rest_frame = self.quadrants["top_right"]
+            print(f"Using Alerts frame from top_right quadrant")
+            
+            self.telemetry_frame = self.quadrants["bottom_right"]
+            print(f"Using Telemetry frame from bottom_right quadrant")
+            
+            # Create content for each frame
+            print("Creating CDM widgets...")
+            self.cdm_vars = {option: IntVar(value=False) for option in self.cdm_options}
+            # Add trace to all variables for button visibility
+            for var in self.cdm_vars.values():
+                var.trace_add("write", self.update_clear_button_visibility)
+            self.create_cdm_widgets()
+            print("Creating REST client widgets...")
+            self.create_rest_client_widgets()
+            print("Creating telemetry widgets...")
+            self.create_telemetry_widgets()
+            print("Widget creation complete")
+            
+        except Exception as e:
+            print(f"Error creating widgets: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def create_cdm_widgets(self):
-        """Creates the CDM section widgets."""
-        # Create a frame for the CDM buttons
-        self.cdm_buttons_frame = ttk.Frame(self.cdm_frame)
-        self.cdm_buttons_frame.pack(pady=5, padx=5, anchor="w")
+        print("\nCreating CDM widgets:")
+        try:
+            self.cdm_buttons_frame = ttk.Frame(self.cdm_frame)
+            self.cdm_buttons_frame.pack(pady=5, padx=5, anchor="w")
+            print("CDM buttons frame packed")
 
-        # Add CDM capture button
-        self.capture_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Save CDM", 
-                                           command=self.capture_cdm, state="disabled")
-        self.capture_cdm_button.pack(side="left", padx=(0, 5))
+            self.capture_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Save CDM", 
+                                               command=lambda: self.capture_cdm(), state="disabled")
+            self.capture_cdm_button.pack(side="left", padx=(0, 5))
+            self.capture_cdm_button.bind("<Button-3>", self.show_cdm_capture_context_menu)
+            print("CDM capture button created")
 
-        # Add Clear button (initially hidden)
-        self.clear_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Clear", 
-                                          command=self.clear_cdm_checkboxes)
+            # Add Clear button (initially hidden)
+            self.clear_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Clear", 
+                                              command=self.clear_cdm_checkboxes)
 
-        # Create canvas for scrollable checkboxes
-        self.cdm_canvas = Canvas(self.cdm_frame, width=250)
-        self.cdm_scrollbar = ttk.Scrollbar(self.cdm_frame, orient="vertical", 
-                                          command=self.cdm_canvas.yview)
-        self.cdm_checkbox_frame = ttk.Frame(self.cdm_canvas)
+            # Create canvas for scrollable checkboxes
+            self.cdm_canvas = Canvas(self.cdm_frame, width=250)
+            self.cdm_scrollbar = ttk.Scrollbar(self.cdm_frame, orient="vertical", 
+                                              command=self.cdm_canvas.yview)
+            self.cdm_checkbox_frame = ttk.Frame(self.cdm_canvas)
 
-        # Configure scrolling
-        self.cdm_canvas.configure(yscrollcommand=self.cdm_scrollbar.set)
-        self.cdm_checkbox_frame.bind(
-            "<Configure>",
-            lambda e: self.cdm_canvas.configure(scrollregion=self.cdm_canvas.bbox("all"))
-        )
+            # Configure scrolling
+            self.cdm_canvas.configure(yscrollcommand=self.cdm_scrollbar.set)
+            self.cdm_checkbox_frame.bind(
+                "<Configure>",
+                lambda e: self.cdm_canvas.configure(scrollregion=self.cdm_canvas.bbox("all"))
+            )
 
-        # Create window inside canvas
-        self.cdm_canvas.create_window((0, 0), window=self.cdm_checkbox_frame, anchor="nw")
+            # Create window inside canvas
+            self.cdm_canvas.create_window((0, 0), window=self.cdm_checkbox_frame, anchor="nw")
 
-        # Pack scrollbar and canvas
-        self.cdm_scrollbar.pack(side="right", fill="y")
-        self.cdm_canvas.pack(side="left", fill="both", expand=True)
+            # Pack scrollbar and canvas
+            self.cdm_scrollbar.pack(side="right", fill="y")
+            self.cdm_canvas.pack(side="left", fill="both", expand=True)
 
-        # Add CDM checkboxes
-        for option in self.cdm_options:
-            cb = ttk.Checkbutton(self.cdm_checkbox_frame, text=option, 
-                                variable=self.cdm_vars[option])
-            cb.pack(anchor="w", padx=5, pady=2)
+            # Add CDM checkboxes
+            for option in self.cdm_options:
+                container_frame = ttk.Frame(self.cdm_checkbox_frame)
+                container_frame.pack(anchor="w", fill="x", padx=5, pady=2)
+                
+                cb = ttk.Checkbutton(container_frame, text=option, 
+                                   variable=self.cdm_vars[option])
+                cb.pack(side="left", anchor="w")
+                
+                # Add right-click binding to both frame and checkbox
+                for widget in [container_frame, cb]:
+                    widget.bind("<Button-3>", 
+                              lambda e, opt=option: self.show_cdm_context_menu(e, opt))
+
+        except Exception as e:
+            print(f"Error in CDM widgets: {str(e)}")
 
     def create_rest_client_widgets(self):
-        """Creates the REST client interface widgets with horizontal and vertical scrolling."""
-        # Add fetch alerts button
-        self.fetch_alerts_button = ttk.Button(
+        """Creates the REST client interface with a Treeview table"""
+        # Use the base class method to create standardized alerts widget
+        self.fetch_alerts_button, self.alerts_tree, self.alert_items = self.create_alerts_widget(
             self.rest_frame,
-            text="Fetch Alerts",
-            command=self.fetch_alerts,
-            state="disabled"
+            self.fetch_alerts,
+            allow_acknowledge=True
         )
-        self.fetch_alerts_button.pack(pady=2, padx=5, anchor="w")
 
-        # Create canvas container frame
-        canvas_container = ttk.Frame(self.rest_frame)
-        canvas_container.pack(fill="both", expand=True, padx=5, pady=5)
-
-        # Create canvas with both scrollbars
-        self.alerts_canvas = Canvas(canvas_container)
-        v_scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", 
-                                   command=self.alerts_canvas.yview)
-        h_scrollbar = ttk.Scrollbar(canvas_container, orient="horizontal", 
-                                   command=self.alerts_canvas.xview)
-        
-        # Create the frame that will contain the alerts
-        self.alerts_frame = ttk.Frame(self.alerts_canvas)
-        
-        # Configure scrolling
-        self.alerts_frame.bind(
-            "<Configure>",
-            lambda e: self.alerts_canvas.configure(
-                scrollregion=self.alerts_canvas.bbox("all")
-            )
+    def create_telemetry_widgets(self):
+        """Creates telemetry section widgets using base class implementation"""
+        # Use the base class method to create standardized telemetry widget
+        self.telemetry_update_button, self.telemetry_tree, self.telemetry_items = self.create_telemetry_widget(
+            self.telemetry_frame,
+            self.fetch_telemetry
         )
-        
-        # Configure canvas
-        self.alerts_canvas.configure(
-            yscrollcommand=v_scrollbar.set,
-            xscrollcommand=h_scrollbar.set
-        )
-        
-        # Create window inside canvas
-        self.alerts_canvas.create_window((0, 0), window=self.alerts_frame, anchor="nw")
-        
-        # Pack scrollbars and canvas
-        v_scrollbar.pack(side="right", fill="y")
-        h_scrollbar.pack(side="bottom", fill="x")
-        self.alerts_canvas.pack(side="left", fill="both", expand=True)
-
-    def open_text_window(self):
-        # Create a new top-level window
-        self.text_window = Toplevel(self.root)
-        self.text_window.title("Input Text")
-
-        # Create a Text widget for input
-        self.text_input = Text(self.text_window, width=50, height=15)
-        self.text_input.pack(padx=10, pady=10)
-
-        # Add a Save As button
-        save_button = ttk.Button(self.text_window, text="Save As", command=self.save_text_to_file)
-        save_button.pack(pady=5)
-
-    def save_text_to_file(self):
-        """
-        Process and save text from the Text widget with color and state information.
-        
-        :return: None
-        """
-        # Get the text from the Text widget
-        user_text = self.text_input.get("1.0", "end-1c")
-
-        if not user_text.strip():
-            self._show_notification("No text to save.", "blue")
-            return
-
-        # Ask user for file number
-        number = simpledialog.askstring("File Number", "Enter a number for the file:", parent=self.text_window)
-        
-        if number is None:  # User clicked Cancel
-            self._show_notification("Save cancelled", "blue")
-            return
-
-        try:
-            # Process the text
-            processed_text = ''.join(line[2:].strip() for line in user_text.splitlines())
-            json_data = json.loads(processed_text)
-            
-            # Extract color information
-            color_code = (json_data.get('eventDetail', {})
-                         .get('eventDetailConsumable', {})
-                         .get('identityInfo', {})
-                         .get('supplyColorCode', ''))
-            
-            # Map color code to name
-            color = "Tri-Color" if color_code == "CMY" else "Black" if color_code == "K" else "Unknown Color"
-            
-            # Extract state reasons
-            state_reasons = (json_data.get('eventDetail', {})
-                           .get('eventDetailConsumable', {})
-                           .get('stateInfo', {})
-                           .get('stateReasons', []))
-            state_reasons_str = '_'.join(state_reasons) if state_reasons else 'None'
-            
-            # Extract notification trigger
-            notification_trigger = (json_data.get('eventDetail', {})
-                                  .get('eventDetailConsumable', {})
-                                  .get('notificationTrigger', 'Unknown'))
-            
-            # Create filename
-            filename = f"{number}. Telemetry {color} {state_reasons_str} {notification_trigger}.json"
-            file_path = os.path.join(self.directory, filename)
-
-            # Save the formatted JSON
-            formatted_json = json.dumps(json_data, indent=4)
-            with open(file_path, "w", encoding="utf-8") as file:
-                file.write(formatted_json)
-                
-            self._show_notification(f"JSON saved as '{filename}'", "green")
-            self.text_window.destroy()  # Close the text window after successful save
-            
-        except json.JSONDecodeError as e:
-            self._show_notification(f"Invalid JSON format: {str(e)}", "red")
-        except Exception as e:
-            self._show_notification(f"Error processing/saving file: {str(e)}", "red")
 
     def _worker(self):
         while True:
@@ -279,7 +205,8 @@ class TrilliumTab(TabContent):
             self.connect_button.config(state="normal", text="Disconnect")
             self.capture_ews_button.config(state="normal")
             self.capture_cdm_button.config(state="normal")
-            self.fetch_alerts_button.config(state="normal")  # Enable fetch alerts button
+            self.fetch_alerts_button.config(state="normal")
+            self.telemetry_update_button.config(state="normal")
             self._show_notification("Connected", "green")
         else:
             self.connect_button.config(state="disabled", text=DISCONNECTING)
@@ -287,87 +214,185 @@ class TrilliumTab(TabContent):
             self.connect_button.config(state="normal", text=CONNECT)
             self.capture_ews_button.config(state="disabled")
             self.capture_cdm_button.config(state="disabled")
-            self.fetch_alerts_button.config(state="disabled")  # Disable fetch alerts button
+            self.fetch_alerts_button.config(state="disabled")
+            self.telemetry_update_button.config(state="disabled")
             self._show_notification("Disconnected", "green")
 
-    def capture_ews(self):
-        """Capture EWS screenshots asynchronously"""
-        self.capture_ews_button.config(text="Capturing...", state="disabled")
-
-        number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", parent=self.frame)
-        
-        if number is None:
-            self._show_notification("EWS capture cancelled", "blue")
-            self.capture_ews_button.config(text="Capture EWS", state="normal")
+    def show_ews_context_menu(self, event):
+        """Show context menu for EWS capture with variant options"""
+        # Only show menu if the button is enabled
+        if self.capture_ews_button.cget('state') == 'disabled':
             return
+            
+        print(f"DEBUG: Opening EWS context menu at coordinates {event.x_root}, {event.y_root}")
+        menu = tk.Menu(self.frame, tearoff=0)
+        
+        # Add variants as capture options
+        for variant in ["A", "B", "C", "D", "E", "F"]:
+            menu.add_command(label=f"Substep {variant}", 
+                           command=lambda v=variant: self.capture_ews(v))
+        
+        menu.tk_popup(event.x_root, event.y_root)
+        
+    def capture_ews(self, variant=""):
+        """Capture EWS screenshots asynchronously with optional variant"""
+        self.capture_ews_button.config(text="Capturing...", state="disabled")
+        
+        # Capture the current step number when button is clicked
+        current_step = self.step_var.get()
+        
+        # Use async function to handle the capture with variant
+        asyncio.run_coroutine_threadsafe(self._capture_ews_async(variant, current_step), self.loop)
 
-        # Create and run coroutine
-        asyncio.run_coroutine_threadsafe(self._capture_ews_async(number), self.loop)
-
-    async def _capture_ews_async(self, number):
-        """Asynchronous EWS capture operation"""
+    async def _capture_ews_async(self, variant="", step_number=None):
+        """Asynchronous EWS capture operation using base class save methods"""
         try:
             capturer = EWSScreenshotCapturer(self.frame, self.ip, self.directory)
-            success, message = await self.loop.run_in_executor(
+            
+            # Just get the screenshots as data, don't save them in the capturer
+            screenshots = await self.loop.run_in_executor(
                 self.executor,
-                capturer.capture_screenshots,
-                number
+                capturer._capture_ews_screenshots  # Use the internal method that doesn't save
             )
-            self.root.after(0, lambda: self._show_notification(message, "green" if success else "red"))
+            
+            # If screenshots were captured successfully
+            if screenshots:
+                save_results = []
+                for idx, (image_bytes, description) in enumerate(screenshots):
+                    
+                    # If a variant is provided, append it to the description
+                    # The step number is added during save, so we need to modify the description
+                    # in a way that will result in the format "X. Variant. Description"
+                    modified_description = description
+                    if variant:
+                        # Add the variant at the beginning, which will result in "X. Variant. Description"
+                        # after the step number is added during save
+                        modified_description = f"{variant}. {description}"
+                    
+                    # Save each screenshot using the base class method, passing the captured step
+                    success, filepath = self.save_image_data(image_bytes, modified_description, step_number=step_number)
+                    save_results.append((success, modified_description, filepath))
+                    print(f"DEBUG: Save result: success={success}, filepath={filepath}")
+                
+                # Notify about results
+                total = len(save_results)
+                success_count = sum(1 for res in save_results if res[0])
+                print(f"DEBUG: Save complete - {success_count}/{total} successful")
+                
+                if success_count == total:
+                    self.root.after(0, lambda: self._show_notification(
+                        f"Successfully saved {success_count} EWS screenshots", "green"))
+                else:
+                    self.root.after(0, lambda: self._show_notification(
+                        f"Partially saved EWS screenshots ({success_count}/{total})", "yellow"))
+            else:
+                print("DEBUG: No screenshots were captured")
+                self.root.after(0, lambda: self._show_notification(
+                    "Failed to capture EWS screenshots", "red"))
         except Exception as e:
+            print(f"DEBUG: Error in _capture_ews_async: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.root.after(0, lambda: self._show_notification(f"Error capturing EWS: {str(e)}", "red"))
         finally:
             self.root.after(0, lambda: self.capture_ews_button.config(text="Capture EWS", state="normal"))
 
-    def capture_cdm(self):
-        """Capture CDM data for selected endpoints asynchronously"""
+    def show_cdm_capture_context_menu(self, event):
+        """Show context menu for CDM capture with variant options"""
+        # Only show menu if the button is enabled
+        if self.capture_cdm_button.cget('state') == 'disabled':
+            return
+            
+        menu = tk.Menu(self.frame, tearoff=0)
+        
+        # Add variants as capture options
+        for variant in ["A", "B", "C", "D", "E", "F"]:
+            menu.add_command(label=f"Substep {variant}", 
+                           command=lambda v=variant: self.capture_cdm(v))
+        
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def capture_cdm(self, variant=""):
+        """Capture CDM data for selected endpoints with optional variant"""
         selected_endpoints = [option for option, var in self.cdm_vars.items() if var.get()]
         
-        number = simpledialog.askstring("File Prefix", "Enter a number for file prefix (optional):", 
-                                      parent=self.frame)
-        
-        if number is None:
-            self._show_notification("CDM capture cancelled", "blue")
+        if not selected_endpoints:
+            self._show_notification("No CDM endpoints selected", "red")
             return
 
         self.capture_cdm_button.config(state="disabled")
         self._show_notification("Capturing CDM...", "blue")
         
+        # Capture current step number when button is clicked
+        current_step = self.step_var.get()
+        
         # Create and run coroutine
-        asyncio.run_coroutine_threadsafe(self._capture_cdm_async(selected_endpoints, number), self.loop)
+        asyncio.run_coroutine_threadsafe(self._capture_cdm_async(selected_endpoints, variant, current_step), self.loop)
 
-    async def _capture_cdm_async(self, selected_endpoints, number):
-        """Asynchronous CDM capture operation"""
+    async def _capture_cdm_async(self, selected_endpoints, variant="", step_number=None):
+        """Asynchronous CDM capture operation using base class save methods"""
         try:
-            await self.loop.run_in_executor(
+            
+            # Fetch data from endpoints but don't save it
+            data = await self.loop.run_in_executor(
                 self.executor,
-                self._save_cdm,
-                selected_endpoints,
-                number
+                lambda: self.app.dune_fetcher.fetch_data(selected_endpoints)
             )
-            self.root.after(0, lambda: self._show_notification("CDM data saved successfully", "green"))
+            
+            # Save the data using the base class save methods
+            save_results = []
+            for endpoint, content in data.items():
+                
+                # Skip error responses
+                if content.startswith("Error:"):
+                    if "401" in content or "Unauthorized" in content:
+                        self.root.after(0, lambda: self._show_notification(
+                            "Error: Authentication required - Send Auth command", "red"))
+                    else:
+                        self.root.after(0, lambda: self._show_notification(
+                            f"Error fetching {endpoint}: {content}", "red"))
+                    save_results.append((False, endpoint, None))
+                    continue
+                    
+                # Extract endpoint name for filename
+                endpoint_name = endpoint.split('/')[-1].split('.')[0]
+                if "rtp" in endpoint:
+                    endpoint_name = "rtp_alerts"
+                if "cdm/alert" in endpoint:
+                    endpoint_name = "alert_alerts"
+                    
+                # Prepare filename with variant if provided
+                if variant:
+                    filename = f"{variant}. CDM {endpoint_name}"
+                else:
+                    filename = f"CDM {endpoint_name}"
+                
+                success, filepath = self.save_json_data(content, filename, step_number=step_number)
+                save_results.append((success, endpoint, filepath))
+            
+            # Notify about results
+            total = len(save_results)
+            success_count = sum(1 for res in save_results if res[0])
+            
+            if success_count == 0:
+                self.root.after(0, lambda: self._show_notification(
+                    "Failed to save any CDM data", "red"))
+            elif success_count < total:
+                self.root.after(0, lambda: self._show_notification(
+                    f"Partially saved CDM data ({success_count}/{total} files)", "yellow"))
+            else:
+                self.root.after(0, lambda: self._show_notification(
+                    "CDM data saved successfully", "green"))
+            
         except Exception as e:
-            self.root.after(0, lambda: self._show_notification(f"Error in CDM capture: {str(e)}", "red"))
+            print(f"DEBUG: Error in _capture_cdm_async: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            error_msg = str(e)  # Capture the error message
+            self.root.after(0, lambda: self._show_notification(
+                f"Error in CDM capture: {error_msg}", "red"))
         finally:
             self.root.after(0, lambda: self.capture_cdm_button.config(state="normal"))
-
-    def _save_cdm(self, selected_endpoints, number):
-        fetcher = self.app.dune_fetcher
-        if fetcher:
-            try:
-                fetcher.save_to_file(self.directory, selected_endpoints, number)
-                self._show_notification("CDM data saved for selected endpoints", "green")
-            except Exception as e:
-                self._show_notification(f"Error saving CDM data: {str(e)}", "red")
-        else:
-            self._show_notification("Error: Dune fetcher not initialized", "red")
-        
-        self.root.after(0, lambda: self.capture_cdm_button.config(state="normal"))
-
-    def _show_notification(self, message, color, duration=10000):
-        """Display a notification message"""
-        self.root.after(0, lambda: self.notification_label.config(text=message, foreground=color))
-        self.root.after(duration, lambda: self.notification_label.config(text=""))
 
     def on_ip_change(self, new_ip):
         self.ip = new_ip
@@ -385,22 +410,8 @@ class TrilliumTab(TabContent):
     def stop_listeners(self):
         """Stop the worker thread and clean up resources"""
         print("Stopping listeners for TrilliumTab")
-        if self.is_connected:
-            self.toggle_connection()
-        
-        # Stop the task queue
-        self.task_queue.put((None, None))
-        self.worker_thread.join(timeout=5)
-        
-        # Stop the async loop and executor
-        self.loop.call_soon_threadsafe(self.loop.stop)
-        self.executor.shutdown(wait=False)
-        self.async_thread.join(timeout=5)
-        
-        if self.worker_thread.is_alive() or self.async_thread.is_alive():
-            print("Warning: Some threads did not stop within the timeout period")
-        
-        print("TrilliumTab listeners stopped")
+        # Delegate to base class cleanup, which will call _additional_cleanup
+        super().cleanup()
 
     def fetch_alerts(self):
         """Initiates asynchronous fetch of alerts."""
@@ -412,129 +423,34 @@ class TrilliumTab(TabContent):
     async def _fetch_alerts_async(self):
         """Asynchronous operation to fetch and display alerts."""
         try:
-            # Clear previous alerts in the main thread
-            self.root.after(0, self._clear_alerts_frame)
-
-            # Fetch alerts using executor
-            url = f"https://{self.ip}/cdm/supply/v1/alerts"
-            response = await self.loop.run_in_executor(
+            # Clear the table in the main thread before fetching
+            self.root.after(0, lambda: self.alerts_tree.delete(*self.alerts_tree.get_children()))
+            self.root.after(0, lambda: self.alert_items.clear())
+            
+            # Fetch alerts using executor to avoid blocking
+            alerts = await self.loop.run_in_executor(
                 self.executor,
-                lambda: requests.get(url, verify=False)
+                self.app.dune_fetcher.fetch_alerts
             )
-            response.raise_for_status()
-            alerts_data = response.json().get("alerts", [])
             
-            if not alerts_data:
-                self.root.after(0, self._display_no_alerts)
-                return
-            
-            # Display alerts in the main thread
-            self.root.after(0, lambda: self._display_alerts(alerts_data))
-            
-        except requests.exceptions.RequestException as e:
-            self.root.after(0, lambda: self._show_notification(
-                f"Failed to fetch alerts: {str(e)}", "red"))
+            if not alerts:
+                self.root.after(0, lambda: self._show_notification("No alerts found", "blue"))
+            else:
+                # Display alerts in the main thread using the base class method
+                self.root.after(0, lambda: self.populate_alerts_tree(self.alerts_tree, self.alert_items, alerts))
+                self.root.after(0, lambda: self._show_notification(
+                    f"Successfully fetched {len(alerts)} alerts", "green"))
         except Exception as e:
-            self.root.after(0, lambda: self._show_notification(str(e), "red"))
+            self.root.after(0, lambda e=e: self._show_notification(
+                f"Failed to fetch alerts: {str(e)}", "red"))
         finally:
             self.root.after(0, lambda: self.fetch_alerts_button.config(
                 state="normal", text="Fetch Alerts"))
 
-    def _clear_alerts_frame(self):
-        """Clears all widgets from the alerts frame."""
-        for widget in self.alerts_frame.winfo_children():
-            widget.destroy()
-
-    def _display_no_alerts(self):
-        """Displays a message when no alerts are found."""
-        no_alerts_label = ttk.Label(self.alerts_frame, text="NO ALERTS")
-        no_alerts_label.pack(pady=10)
-
-    def _display_alerts(self, alerts_data):
-        """
-        Displays the fetched alerts in the UI with proper text wrapping.
-        
-        :param alerts_data: List of alert dictionaries to display
-        """
-        for alert in alerts_data:
-            alert_frame = ttk.Frame(self.alerts_frame)
-            alert_frame.pack(fill="x", pady=2, padx=5)
-            
-            # Extract color from data array
-            color = next((
-                item['value']['seValue'] 
-                for item in alert.get('data', [])
-                if item['propertyPointer'].endswith('/colors')
-            ), 'Unknown')
-            
-            alert_text = (f"ID: {alert['stringId']}"
-                          f"\nCategory: {alert['category']}"
-                          f"\nColor: {color}"
-                          f"\nSeverity: {alert['severity']}"
-                          f"\nPriority: {alert['priority']}")
-            
-            # Use Text widget instead of Label for better text wrapping
-            alert_text_widget = Text(alert_frame, wrap="word", height=4, 
-                                   width=40, borderwidth=0)
-            alert_text_widget.insert("1.0", alert_text)
-            alert_text_widget.configure(state="disabled")  # Make it read-only
-            alert_text_widget.pack(side="left", padx=5, fill="x", expand=True)
-            
-            buttons_frame = ttk.Frame(alert_frame)
-            buttons_frame.pack(side="right")
-            
-            action_link = next((link['href'] for link in 
-                              alert.get('actions', {}).get('links', [])
-                              if link['rel'] == 'alertAction'), None)
-            
-            if (action_link and 'actions' in alert and 
-                'supported' in alert['actions']):
-                for action in alert['actions']['supported']:
-                    action_value = action['value']['seValue']
-                    btn = ttk.Button(
-                        buttons_frame,
-                        text=action_value.capitalize(),
-                        command=lambda a=alert['id'], v=action_value, 
-                        l=action_link: self.handle_alert_action(a, v, l)
-                    )
-                    btn.pack(side=RIGHT, padx=2)
-
-    def handle_alert_action(self, alert_id, action_value, action_link):
-        """Initiates asynchronous alert action."""
-        asyncio.run_coroutine_threadsafe(
-            self._handle_alert_action_async(alert_id, action_value, action_link),
-            self.loop
-        )
-
-    async def _handle_alert_action_async(self, alert_id, action_value, action_link):
-        """
-        Handles button clicks for alert actions asynchronously.
-        
-        :param alert_id: ID of the alert
-        :param action_value: Value of the action (e.g., 'yes', 'no')
-        :param action_link: The action endpoint URL
-        """
-        try:
-            url = f"https://{self.ip}/cdm/supply/v1/alerts/{alert_id}/action"
-            payload = {"selectedAction": action_value}
-
-            response = await self.loop.run_in_executor(
-                self.executor,
-                lambda: requests.put(url, json=payload, verify=False)
-            )
-            
-            # Check if the request was successful
-            if response.status_code == 200:
-                self.root.after(0, lambda: self._show_notification(
-                    f"Action '{action_value}' successfully sent for alert {alert_id}", "green"))
-                self.root.after(0, self.fetch_alerts)  # Refresh the alerts
-            else:
-                self.root.after(0, lambda: self._show_notification(
-                    f"Failed to send action: Server returned status {response.status_code}", "red"))
-            
-        except Exception as e:
-            self.root.after(0, lambda: self._show_notification(
-                f"Failed to send action: {str(e)}", "red"))
+    def _get_telemetry_data(self):
+        """Implementation of abstract method from parent class - fetches telemetry data"""
+        # Use the DuneFetcher instance to get telemetry data with refresh=True
+        return self.app.dune_fetcher.get_telemetry_data(refresh=True)
 
     def clear_cdm_checkboxes(self):
         """Clears all selected CDM endpoints."""
@@ -547,3 +463,372 @@ class TrilliumTab(TabContent):
             self.clear_cdm_button.pack(side="left")
         else:
             self.clear_cdm_button.pack_forget()
+
+    def create_labeled_frame(self, quadrant: str, title: str) -> ttk.LabelFrame:
+        """Modified to ensure expansion"""
+        frame = ttk.LabelFrame(self.quadrants[quadrant], text=title)
+        frame.pack(fill="both", expand=True, padx=2, pady=2)
+        # Force internal expansion
+        frame.grid_propagate(False)
+        frame.pack_propagate(False)
+        return frame
+
+    def _refresh_alerts_after_action(self):
+        """Refreshes alerts after an action is taken"""
+        # Use a small delay to allow the server to process the action
+        self.root.after(1000, self.fetch_alerts)
+
+    def _additional_cleanup(self):
+        """Additional cleanup specific to TrilliumTab"""
+        if self.is_connected:
+            self.toggle_connection()
+        
+        # Stop the task queue
+        self.task_queue.put((None, None))
+        self.worker_thread.join(timeout=5)
+        
+        if self.worker_thread.is_alive():
+            print("Warning: Worker thread did not stop within the timeout period")
+        
+        print("TrilliumTab listeners stopped")
+
+    def show_cdm_context_menu(self, event, endpoint: str):
+        """Show context menu for CDM items"""
+        menu = tk.Menu(self.frame, tearoff=0)
+        menu.add_command(label="View Data", 
+                       command=lambda: self.view_cdm_data(endpoint))
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def view_cdm_data(self, endpoint: str):
+        """Display CDM data in a viewer window"""
+        try:
+            data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
+            self._show_json_viewer(endpoint, data)
+        except Exception as e:
+            self._show_notification(f"Failed to fetch {endpoint}: {str(e)}", "red")
+
+    def _show_json_viewer(self, endpoint: str, json_data: str):
+        """Create a window to display JSON data with formatting"""
+        viewer = Toplevel(self.frame)
+        viewer.title(f"CDM Data Viewer - {os.path.basename(endpoint)}")
+        viewer.geometry("800x600")
+        
+        text_frame = ttk.Frame(viewer)
+        text_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        text = Text(text_frame, wrap='none', font=('Consolas', 10))
+        scroll_y = ttk.Scrollbar(text_frame, orient='vertical', command=text.yview)
+        scroll_x = ttk.Scrollbar(text_frame, orient='horizontal', command=text.xview)
+        text.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+        
+        # Format and display the JSON data
+        try:
+            # Try to parse and pretty-print JSON
+            parsed_data = json.loads(json_data) if isinstance(json_data, str) else json_data
+            formatted_json = json.dumps(parsed_data, indent=4)
+            text.insert('end', formatted_json)
+        except json.JSONDecodeError:
+            # If not valid JSON, just display as plain text
+            text.insert('end', json_data)
+        
+        text.config(state='disabled')
+        text.grid(row=0, column=0, sticky='nsew')
+        scroll_y.grid(row=0, column=1, sticky='ns')
+        scroll_x.grid(row=1, column=0, sticky='ew')
+        
+        text_frame.grid_rowconfigure(0, weight=1)
+        text_frame.grid_columnconfigure(0, weight=1)
+        
+        # Add buttons
+        btn_frame = ttk.Frame(viewer)
+        btn_frame.pack(pady=5)
+        
+        # Add refresh button
+        refresh_btn = ttk.Button(btn_frame, text="Refresh Data", 
+                               command=lambda ep=endpoint, txt=text: self._refresh_cdm_data(ep, txt))
+        refresh_btn.pack(side=LEFT, padx=5)
+        
+        # Add copy button
+        copy_btn = ttk.Button(btn_frame, text="Copy to Clipboard", 
+                            command=lambda: self.root.clipboard_clear() or self.root.clipboard_append(
+                                json.dumps(parsed_data, indent=4) if 'parsed_data' in locals() else json_data
+                            ))
+        copy_btn.pack(side=RIGHT, padx=5)
+
+    def _refresh_cdm_data(self, endpoint: str, text_widget: Text):
+        """Refresh CDM data in the viewer window"""
+        try:
+            # Fetch latest data
+            new_data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
+            
+            # Update the text widget
+            text_widget.config(state='normal')
+            text_widget.delete('1.0', 'end')
+            
+            try:
+                # Try to parse and pretty-print JSON
+                parsed_data = json.loads(new_data) if isinstance(new_data, str) else new_data
+                formatted_json = json.dumps(parsed_data, indent=4)
+                text_widget.insert('end', formatted_json)
+            except json.JSONDecodeError:
+                # If not valid JSON, just display as plain text
+                text_widget.insert('end', new_data)
+            
+            text_widget.config(state='disabled')
+            
+            # Add status message
+            print(f"DEBUG: Refreshed CDM data for {endpoint}")
+            self._show_notification(f"Refreshed CDM data for {os.path.basename(endpoint)}", "green")
+        except Exception as e:
+            print(f"DEBUG: Error refreshing CDM data: {str(e)}")
+            self._show_notification(f"Error refreshing data: {str(e)}", "red")
+            import traceback
+            traceback.print_exc()
+
+    def open_telemetry_input(self):
+        """Open dialog for pasting and processing telemetry data"""
+        telemetry_window = Toplevel(self.frame)
+        telemetry_window.title("Telemetry Input")
+        telemetry_window.geometry("800x600")
+        telemetry_window.minsize(600, 400)
+        
+        # Main frames
+        input_frame = ttk.Frame(telemetry_window)
+        input_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        button_frame = ttk.Frame(telemetry_window)
+        button_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # Text area with scrollbars
+        text_area = Text(input_frame, wrap="word", font=("Consolas", 10))
+        y_scrollbar = ttk.Scrollbar(input_frame, orient="vertical", command=text_area.yview)
+        x_scrollbar = ttk.Scrollbar(input_frame, orient="horizontal", command=text_area.xview)
+        
+        text_area.configure(yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
+        
+        # Layout with grid
+        text_area.grid(row=0, column=0, sticky="nsew")
+        y_scrollbar.grid(row=0, column=1, sticky="ns")
+        x_scrollbar.grid(row=1, column=0, sticky="ew")
+        
+        input_frame.grid_rowconfigure(0, weight=1)
+        input_frame.grid_columnconfigure(0, weight=1)
+        
+        # Status label
+        status_label = ttk.Label(button_frame, text="")
+        status_label.pack(side="top", fill="x", pady=(0, 5))
+        
+        # Buttons
+        cleanup_btn = ttk.Button(button_frame, text="Clean Up", 
+                               command=lambda: self.cleanup_telemetry_text(text_area, status_label))
+        cleanup_btn.pack(side="left", padx=5)
+        
+        format_btn = ttk.Button(button_frame, text="Format JSON", 
+                              command=lambda: self.format_telemetry_json(text_area, status_label))
+        format_btn.pack(side="left", padx=5)
+        
+        save_btn = ttk.Button(button_frame, text="Save", 
+                           command=lambda: self.save_telemetry_input(text_area, status_label))
+        save_btn.pack(side="right", padx=5)
+        
+        # Add OpenSearch Save button
+        opensearch_save_btn = ttk.Button(button_frame, text="OpenSearch Save", 
+                                       command=lambda: self.save_opensearch_telemetry(text_area, status_label))
+        opensearch_save_btn.pack(side="right", padx=5)
+        
+        # Debug info
+        print("Telemetry input window opened")
+
+    def cleanup_telemetry_text(self, text_area, status_label):
+        """Remove first two characters from each line and join lines without newlines"""
+        try:
+            # Get all text
+            text = text_area.get("1.0", "end-1c")
+            
+            # Split by actual newlines to get each line
+            lines = text.split('\n')
+            cleaned_lines = []
+                        
+            for i, line in enumerate(lines):
+                if not line.strip():
+                    continue
+                    
+                # First, remove the first two characters
+                if len(line) > 2:
+                    line = line[2:]
+                
+                # Then trim any whitespace from both ends of the line
+                line = line.strip()
+                
+                # Add to cleaned lines
+                cleaned_lines.append(line)
+            
+            # Join all lines without adding spaces
+            cleaned_text = ''.join(cleaned_lines)
+            
+            print(f"DEBUG: Final text length: {len(cleaned_text)}")
+            
+            # Clear and insert cleaned text
+            text_area.delete("1.0", "end")
+            text_area.insert("1.0", cleaned_text)
+            
+            status_label.config(text="Text cleaned up successfully")
+        except Exception as e:
+            status_label.config(text=f"Error during cleanup: {str(e)}")
+            print(f"DEBUG: Error cleaning telemetry text: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def format_telemetry_json(self, text_area, status_label):
+        """Format content as pretty JSON"""
+        try:
+            # Get text content
+            text = text_area.get("1.0", "end-1c")
+            
+            # Try to parse as JSON
+            try:
+                json_data = json.loads(text)
+                formatted_json = json.dumps(json_data, indent=4)
+                
+                # Update text area
+                text_area.delete("1.0", "end")
+                text_area.insert("1.0", formatted_json)
+                
+                status_label.config(text="JSON formatted successfully")
+                print("DEBUG: Telemetry JSON formatted")
+            except json.JSONDecodeError as je:
+                status_label.config(text=f"Invalid JSON: {str(je)}")
+                print(f"DEBUG: Invalid JSON: {str(je)}")
+        except Exception as e:
+            status_label.config(text=f"Error formatting JSON: {str(e)}")
+            print(f"DEBUG: Error formatting telemetry JSON: {str(e)}")
+    
+    def save_telemetry_input(self, text_area, status_label):
+        """Save telemetry data to file with the same format as telemetry table"""
+        try:
+            # Get current text
+            text = text_area.get("1.0", "end-1c")
+            
+            # Try to parse as JSON for validation
+            try:
+                json_data = json.loads(text)
+                
+                # Capture current step number
+                current_step = self.step_var.get()
+                
+                # Extract the same fields used in save_telemetry_to_file for consistency
+                
+                # Extract useful information for filename
+                color_code = (json_data.get('eventDetail', {})
+                             .get('eventDetailConsumable', {})
+                             .get('identityInfo', {})
+                             .get('supplyColorCode', ''))
+                
+                # Map color code to name
+                color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black', 'CMY': 'Tri-Color'}
+                color = color_map.get(color_code, 'Unknown')
+                
+                # Extract state reasons
+                state_reasons = (json_data.get('eventDetail', {})
+                               .get('eventDetailConsumable', {})
+                               .get('stateInfo', {})
+                               .get('stateReasons', []))
+                state_reasons_str = '_'.join(state_reasons) if state_reasons else 'None'
+                
+                # Extract notification trigger
+                notification_trigger = (json_data.get('eventDetail', {})
+                                      .get('eventDetailConsumable', {})
+                                      .get('notificationTrigger', 'Unknown'))
+                
+                # Create base filename exactly as in telemetry table
+                base_filename = f"Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
+                
+                # Save the JSON data using the base class method (same as telemetry table)
+                success, filepath = self.save_json_data(json_data, base_filename, step_number=current_step)
+                
+                if success:
+                    status_label.config(text=f"Telemetry saved to: {os.path.basename(filepath)}")
+                    print(f"DEBUG: Telemetry saved to {filepath}")
+                else:
+                    status_label.config(text="Failed to save telemetry data")
+                    print("DEBUG: Failed to save telemetry data")
+                    
+            except json.JSONDecodeError:
+                status_label.config(text="Cannot save: Invalid JSON. Please format first.")
+                print("DEBUG: Cannot save invalid JSON")
+                
+        except Exception as e:
+            status_label.config(text=f"Error saving data: {str(e)}")
+            print(f"DEBUG: Error saving telemetry data: {str(e)}")
+
+    def save_opensearch_telemetry(self, text_area, status_label):
+        """Save telemetry data in OpenSearch format"""
+        try:
+            # Get current text
+            text = text_area.get("1.0", "end-1c")
+            
+            # Try to parse as JSON for validation
+            try:
+                json_data = json.loads(text)
+                
+                # Capture current step number
+                current_step = self.step_var.get()
+                
+                # The OpenSearch format may have events in an array
+                # Extract the first event if it exists
+                event = None
+                if 'events' in json_data and isinstance(json_data['events'], list) and json_data['events']:
+                    event = json_data['events'][0]
+                else:
+                    # If not in expected format, assume the JSON itself is the event
+                    event = json_data
+                
+                # Extract the same fields as in regular telemetry save
+                color_code = ''
+                state_reasons = []
+                notification_trigger = 'Unknown'
+                
+                # Try to extract from the event structure
+                if 'eventDetail' in event:
+                    details = event['eventDetail']
+                    # Extract color code
+                    if 'identityInfo' in details and 'supplyColorCode' in details['identityInfo']:
+                        color_code = details['identityInfo']['supplyColorCode']
+                    
+                    # Extract state reasons
+                    if 'stateInfo' in details and 'stateReasons' in details['stateInfo']:
+                        state_reasons = details['stateInfo']['stateReasons']
+                    
+                    # Extract notification trigger
+                    if 'notificationTrigger' in details:
+                        notification_trigger = details['notificationTrigger']
+                
+                # Map color code to name
+                color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black', 'CMY': 'Tri-Color'}
+                color = color_map.get(color_code, 'Unknown')
+                
+                # Format state reasons as a string
+                state_reasons_str = '_'.join(state_reasons) if state_reasons else 'None'
+                
+                # Create base filename with OpenSearch prefix
+                base_filename = f"OpenSearch_Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
+                
+                # Save the JSON data using the base class method
+                success, filepath = self.save_json_data(json_data, base_filename, step_number=current_step)
+                
+                if success:
+                    status_label.config(text=f"OpenSearch telemetry saved to: {os.path.basename(filepath)}")
+                    print(f"DEBUG: OpenSearch telemetry saved to {filepath}")
+                else:
+                    status_label.config(text="Failed to save OpenSearch telemetry data")
+                    print("DEBUG: Failed to save OpenSearch telemetry data")
+                    
+            except json.JSONDecodeError:
+                status_label.config(text="Cannot save: Invalid JSON. Please format first.")
+                print("DEBUG: Cannot save invalid JSON")
+                
+        except Exception as e:
+            status_label.config(text=f"Error saving data: {str(e)}")
+            print(f"DEBUG: Error saving OpenSearch telemetry data: {str(e)}")
+            import traceback
+            traceback.print_exc()

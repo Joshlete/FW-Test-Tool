@@ -66,7 +66,7 @@ class KeybindingManager:
                     if self.callback:
                         self.callback(self.get_ordered_keys())
                 else:
-                    self.run_snippet_tool()
+                    self.check_and_run_snippet_tool()
         except Exception as e:
             print(f"Error capturing key: {e}")
 
@@ -101,16 +101,37 @@ class KeybindingManager:
                 return chr(key.vk + 32)  # Convert to lowercase
         return None
 
-    def run_snippet_tool(self):
+    def check_and_run_snippet_tool(self):
         """Check if the currently pressed keys match the registered hotkey and trigger the snippet tool."""
-        required_keys = set(self._hotkey_combination.split('+'))
-        if required_keys.issubset(self.active_keys):
-            self.capture_manager.capture_screen_region(
-                self.root, 
-                file_name="snip_capture", 
-                save_directory=".",
-                error_label=tk.Label(self.root, text="", foreground="red")
-            )
+        hotkey_parts = self._hotkey_combination.split('+')
+        required_keys = set(hotkey_parts)
+        
+        # Only run when the exact combination is pressed
+        if required_keys == self.active_keys and required_keys:
+            print(f"> [KeybindingManager] Hotkey detected: {self._hotkey_combination}")
+            self._trigger_capture()
+
+    def _trigger_capture(self):
+        """Execute the screen capture when hotkey is pressed"""
+        # Create a temporary error label for messages
+        temp_error_label = tk.Label(self.root, text="")
+        
+        # Capture screen region but don't save (only copy to clipboard)
+        self.capture_manager.capture_screen_region(
+            self.root, 
+            file_name=None,
+            save_directory=None,
+            error_label=temp_error_label
+        )
+        
+        # If there was an error, show it briefly
+        if temp_error_label.cget("text"):
+            temp_error_label.pack()
+            self.root.after(5000, temp_error_label.destroy)
+
+    def run_snippet_tool(self):
+        """Legacy method - delegates to check_and_run_snippet_tool"""
+        self.check_and_run_snippet_tool()
 
     def get_hotkey_combination(self):
         """Get the current hotkey combination."""

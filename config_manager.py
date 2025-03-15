@@ -24,10 +24,12 @@ class ConfigManager:
             self.config["ip_address"] = self.DEFAULT_IP
         if "directory" not in self.config:
             self.config["directory"] = self.DEFAULT_DIRECTORY
-        if "step_number" not in self.config:
-            self.config["step_number"] = 1
         if "dune_step_number" not in self.config:
             self.config["dune_step_number"] = 1
+        if "trillium_step_number" not in self.config:
+            self.config["trillium_step_number"] = 1
+        if "sirius_step_number" not in self.config:
+            self.config["sirius_step_number"] = 1
         self._save_config()  # Save the updated config with defaults
 
     def get(self, key: str, default: Any = None) -> Any:

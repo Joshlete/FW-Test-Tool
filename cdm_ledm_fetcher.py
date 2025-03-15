@@ -91,33 +91,29 @@ class BaseFetcher(ABC):
                     # Parse the content to check if it's valid JSON
                     json_data = json.loads(content)
                     # Check if content is already pretty-printed by comparing lengths
-                    if len(content.splitlines()) <= 2:  # Unformatted JSON is typically on few lines
+                    if len(content) < len(json.dumps(json_data, indent=4)):
                         content = json.dumps(json_data, indent=4)
                 except json.JSONDecodeError:
-                    # If content isn't valid JSON, keep it as is
+                    # If not valid JSON, keep the content as is (might be XML)
                     pass
-                
-                with open(file_path, "w", encoding='utf-8') as file:
+
+                with open(file_path, "w", encoding="utf-8") as file:
                     file.write(content)
-                print(f"Saved: {file_path}")
+                print(f"Saved: {file_path} ")
                 success_count += 1
-
-            except ValueError as e:
-                error_message = f"Error for {endpoint}: {str(e)}"
-                print(error_message)
-                error_messages.append(error_message)
-            except IOError:
-                error_message = f"Failed to save data to file for {endpoint}"
+            except Exception as e:
+                error_message = f"Error saving {endpoint}: {str(e)}"
                 print(error_message)
                 error_messages.append(error_message)
 
-        total_endpoints = len(selected_endpoints) if selected_endpoints else len(data)
-        print(f"Successfully saved {success_count} out of {total_endpoints} files")
-
+        total_count = len(selected_endpoints) if selected_endpoints else len(data)
+        print(f"Successfully saved {success_count} out of {total_count} files")
+        
         if error_messages:
-            error_text = "\n".join(error_messages)
-            print(f"Encountered errors:\n{error_text}")
-            raise ValueError(error_text)
+            for msg in error_messages:
+                print(msg)
+        
+        return success_count, total_count
 
     @abstractmethod
     def get_url(self, endpoint):
@@ -159,6 +155,9 @@ class DuneFetcher(BaseFetcher):
     def __init__(self, ip_address):
         super().__init__(ip_address)
         self.base_url = f"https://{ip_address}"
+        self.alerts_data = None
+    
+        self.telemetry_data = None
 
     def get_endpoints(self):
         return [
@@ -170,13 +169,142 @@ class DuneFetcher(BaseFetcher):
             "cdm/rtp/v1/alerts",
             "cdm/supply/v1/regionReset",
             "cdm/supply/v1/platformInfo",
-            "cdm/supply/v1/supplyHistory"
+            "cdm/supply/v1/supplyHistory",
+            "cdm/eventing/v1/events/dcrSupplyData"
         ]
 
     def get_url(self, endpoint):
         return f"{self.base_url}/{endpoint}"
     
+    def fetch_alerts(self):
+        """Fetch alerts and store them"""
+        endpoint = "cdm/supply/v1/alerts"
+        url = self.get_url(endpoint)
+        try:
+            response = requests.get(url, verify=False, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            self.alerts_data = data.get('alerts', [])
+            return self.alerts_data
+        except requests.RequestException as e:
+            print(f"Error fetching alerts: {str(e)}")
+            return []
     
+    def get_alerts(self, refresh=False):
+        """Get alerts from storage or fetch if needed/requested"""
+        if refresh or not self.alerts_data:
+            return self.fetch_alerts()
+        return self.alerts_data
+        
+    def acknowledge_alert(self, alert_id):
+        """Acknowledge an alert by ID
+        
+        Args:
+            alert_id: The ID of the alert to acknowledge
+            
+        Returns:
+            tuple: (success, message) where success is a boolean and message is a string
+        """
+        try:
+            url = f"{self.base_url}/cdm/supply/v1/alerts/{alert_id}/action"
+            payload = {"selectedAction": "acknowledge"}
+            
+            response = requests.put(url, json=payload, verify=False, timeout=10)
+            
+            if response.status_code == 200:
+                return True, f"Alert {alert_id} successfully acknowledged"
+            else:
+                return False, f"Failed to acknowledge alert: Server returned status {response.status_code}"
+                
+        except requests.RequestException as e:
+            print(f"Error acknowledging alert: {str(e)}")
+            return False, f"Error acknowledging alert: {str(e)}"
+
+    def fetch_telemetry(self):
+        """
+        Fetches telemetry events from the device.
+        
+        Returns:
+            List of telemetry events or None if fetch failed
+        """
+        try:
+            url = f"{self.base_url}/cdm/eventing/v1/events/supply"
+            print(f"Fetching telemetry from: {url}")
+            
+            response = requests.get(url, timeout=10, verify=False)
+            response.raise_for_status()
+            
+            self.telemetry_data = response.json().get('events', [])
+            
+            # Sort by sequence number in reverse order
+            self.telemetry_data.sort(key=lambda event: event.get('sequenceNumber', 0), reverse=True)
+            
+            print(f"Successfully fetched {len(self.telemetry_data)} telemetry events")
+            return self.telemetry_data
+        except Exception as e:
+            print(f"Error fetching telemetry: {str(e)}")
+            return None
+
+    def get_telemetry_data(self, refresh=False):
+        """
+        Returns telemetry data, fetching it first if requested or not available.
+        
+        Args:
+            refresh: If True, fetch new data even if we have data already
+            
+        Returns:
+            List of telemetry events or None if fetch failed
+        """
+        if refresh or self.telemetry_data is None:
+            return self.fetch_telemetry()
+        return self.telemetry_data
+    
+    def format_telemetry_event(self, event):
+        """
+        Format a telemetry event for display.
+        
+        Args:
+            event: The telemetry event to format
+            
+        Returns:
+            A formatted string representation of the event
+        """
+        color_code = event.get('eventDetail', {}).get('eventDetailConsumable', {}).get('identityInfo', {}).get('supplyColorCode', '')
+        color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black'}
+        color = color_map.get(color_code, 'Unknown')
+        
+        state_reasons = event.get('eventDetail', {}).get('eventDetailConsumable', {}).get('stateInfo', {}).get('stateReasons', [])
+        state_reasons_str = ', '.join(state_reasons) if state_reasons else 'None'
+        
+        notification_trigger = event.get('eventDetail', {}).get('eventDetailConsumable', {}).get('notificationTrigger', 'Unknown')
+        
+        sequence_number = event.get('sequenceNumber', 'N/A')
+        return f"Telemetry Event {sequence_number} - {color} - Reason: {state_reasons_str} - Trigger: {notification_trigger}"
+    
+    def get_telemetry_details(self, event):
+        """
+        Extract important details from a telemetry event for file naming or display.
+        
+        Args:
+            event: The telemetry event
+            
+        Returns:
+            A dictionary of key details
+        """
+        color_code = event.get('eventDetail', {}).get('eventDetailConsumable', {}).get('identityInfo', {}).get('supplyColorCode', '')
+        color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black'}
+        color = color_map.get(color_code, 'Unknown')
+        
+        state_reasons = event.get('eventDetail', {}).get('eventDetailConsumable', {}).get('stateInfo', {}).get('stateReasons', [])
+        notification_trigger = event.get('eventDetail', {}).get('eventDetailConsumable', {}).get('notificationTrigger', 'Unknown')
+        sequence_number = event.get('sequenceNumber', 'N/A')
+        
+        return {
+            'color': color,
+            'state_reasons': state_reasons,
+            'notification_trigger': notification_trigger,
+            'sequence_number': sequence_number
+        }
 
 class SiriusFetcher(BaseFetcher):
     def get_endpoints(self):
