@@ -237,9 +237,19 @@ class DuneTab(TabContent):
         self.ecl_menu_button["menu"] = ecl_menu
         self.ecl_menu_button.pack(side="left", pady=0, padx=5)
 
-        # Add image label below buttons
-        self.image_label = ttk.Label(ui_frame)
-        self.image_label.pack(pady=(5,5), padx=10, expand=True, fill="both")
+        # Create a fixed-size frame for the image
+        self.image_frame = ttk.Frame(ui_frame)
+        self.image_frame.pack(pady=(5,5), padx=10, expand=True, fill="both")
+        
+        # Set fixed size for image display (typical printer UI size after scaling)
+        self.image_frame.update()
+        width = 800  # Fixed width
+        height = 600  # Fixed height
+        self.image_frame.config(width=width, height=height)
+
+        # Add image label inside the image frame
+        self.image_label = ttk.Label(self.image_frame)
+        self.image_label.pack(expand=True, fill="both")
 
     def create_rest_client_widgets(self):
         """Creates the REST client interface with a Treeview table"""
@@ -367,28 +377,25 @@ class DuneTab(TabContent):
         print(f">     [Dune] Fetch Telemetry button pressed")
         self.telemetry_update_button.config(state="disabled", text="Fetching...")
         self.queue_task(self._fetch_telemetry_async)
-    
+
     def _fetch_telemetry_async(self):
-        """Asynchronous operation to fetch and display telemetry data."""
+        """Background operation to fetch and display telemetry"""
         try:
-            # Clear previous telemetry
-            self.root.after(0, lambda: self.telemetry_tree.delete(*self.telemetry_tree.get_children()))
-            self.root.after(0, lambda: self.telemetry_items.clear())
+            # Fetch telemetry data directly (already in background thread)
+            events = self._get_telemetry_data()
             
-            # Get telemetry data using the abstract method
-            telemetry_data = self._get_telemetry_data()
-            
-            if not telemetry_data:
+            if not events:
                 self.root.after(0, lambda: self._show_notification("No telemetry data found", "blue"))
-                return
-            
-            # Display telemetry using the base class method
-            self.root.after(0, lambda: self.populate_telemetry_tree(self.telemetry_tree, self.telemetry_items, telemetry_data))
-            self.root.after(0, lambda: self._show_notification("Telemetry fetched successfully", "green"))
-            
-        except Exception as error:
-            error_msg = str(error)
-            self.root.after(0, lambda: self._show_notification(f"Failed to fetch telemetry: {error_msg}", "red"))
+            else:
+                # Display telemetry in the main thread with is_dune_format=True
+                self.root.after(0, lambda: self.populate_telemetry_tree(
+                    self.telemetry_tree, self.telemetry_items, events, is_dune_format=True))
+                self.root.after(0, lambda: self._show_notification(
+                    f"Successfully fetched {len(events)} telemetry events", "green"))
+        except Exception as e:
+            error_msg = str(e)  # Capture error message outside lambda
+            self.root.after(0, lambda: self._show_notification(
+                f"Failed to fetch telemetry: {error_msg}", "red"))
         finally:
             self.root.after(0, lambda: self.telemetry_update_button.config(
                 state="normal", text="Update Telemetry"))
@@ -629,40 +636,60 @@ class DuneTab(TabContent):
         self.continuous_ui_button.config(text=DISCONNECT_UI)
         self.update_ui()
 
-    def update_ui(self):
+    def update_ui(self, callback=None):
+        print(f">     [Dune] Updating UI display. is_viewing_ui={self.is_viewing_ui}")
+        
         if not self.dune_fpui.is_connected():
             # Attempt to connect if not already connected
+            print(f">     [Dune] FPUI not connected, attempting to connect to {self.ip}")
             if not self.dune_fpui.connect(self.ip):
                 self._show_notification("Failed to connect to Dune FPUI", "red")
-                print("Failed to connect to Dune FPUI")
+                print(">     [Dune] Failed to connect to Dune FPUI")
                 self.stop_view_ui()  # Stop viewing UI if connection fails
                 return
             else:
                 self._show_notification("Connected to Dune FPUI", "green")
-
+                print(">     [Dune] Successfully connected to Dune FPUI")
 
         if self.is_viewing_ui:
+            print(">     [Dune] Capturing UI image")
             image_data = self.dune_fpui.capture_ui()
             if image_data:
                 image = Image.open(io.BytesIO(image_data))
-                # Calculate new dimensions (2/3 of original size)
-                new_width = int(image.width * 2/3)
-                new_height = int(image.height * 2/3)
-                # Add extra height for buttons and padding
-                frame_height = new_height + 60  # Increased extra space for buttons and padding
                 
+                # Get current frame size (use fixed dimensions instead of dynamic sizing)
+                frame_width = self.image_frame.winfo_width()
+                frame_height = self.image_frame.winfo_height()
+                
+                # Calculate scaling to fit within the frame while preserving aspect ratio
+                img_width, img_height = image.size
+                width_ratio = frame_width / img_width
+                height_ratio = frame_height / img_height
+                scale_factor = min(width_ratio, height_ratio) * 0.9  # 90% of available space
+                
+                # Calculate new dimensions
+                new_width = int(img_width * scale_factor)
+                new_height = int(img_height * scale_factor)
+                
+                print(f">     [Dune] Resizing image to {new_width}x{new_height}")
                 # Resize the image
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 photo = ImageTk.PhotoImage(image)
                 
-                # Update frame size to match the new image size plus button space
-                self.image_frame.configure(width=new_width + 20, height=frame_height)  # Increased padding
+                # Update image without changing frame size
                 self.image_label.config(image=photo)
                 self.image_label.image = photo  # Keep a reference
-                
+                print(">     [Dune] UI image updated successfully")
+            else:
+                print(">     [Dune] Failed to capture UI image")
+            
             self.ui_update_job = self.root.after(100, self.update_ui)  # Update every 100ms
         else:
+            print(">     [Dune] Stopping UI view due to is_viewing_ui=False")
             self.stop_view_ui()
+
+        if callback:
+            callback()
 
     def stop_view_ui(self):
         print(f">     [Dune] Stopping UI view")
@@ -728,8 +755,7 @@ class DuneTab(TabContent):
             if response.status_code == 200:
                 self.root.after(0, lambda: self._show_notification(
                     f"Action '{action_value}' successfully sent for alert {alert_id}", "green"))
-                # Refresh the alerts after successful action
-                self.root.after(1000, self.fetch_alerts)  # Wait 1 second before refreshing
+                self._refresh_alerts_after_action()
             else:
                 self.root.after(0, lambda: self._show_notification(
                     f"Failed to send action: Server returned status {response.status_code}", "red"))
@@ -857,3 +883,105 @@ class DuneTab(TabContent):
             self.app.config_manager.set("dune_step_number", step_num)
         except ValueError:
             pass
+
+    def _refresh_alerts_after_action(self):
+        """Implementation of abstract method from base class"""
+        self.root.after(1000, self.fetch_alerts)
+
+    def show_alert_context_menu(self, event, tree, menu, alert_items, allow_acknowledge=True):
+        """Custom context menu implementation for Dune alerts"""
+        item = tree.identify_row(event.y)
+        if not item:
+            return
+        
+        tree.selection_set(item)
+        
+        # Get the alert for this item
+        if item not in alert_items:
+            return
+        
+        alert = alert_items[item]
+        
+        # Create fresh menu
+        menu.delete(0, 'end')
+        
+        # Add base commands
+        menu.add_command(label="View Details", 
+                       command=lambda: self.view_alert_details(tree, alert_items))
+        menu.add_command(label="Save", 
+                       command=lambda: self.save_selected_alert(tree, alert_items))
+        
+        # Add UI capture option at the top
+        menu.add_separator()
+        menu.add_command(label="Capture UI", 
+                       command=lambda: self.capture_ui_for_alert(tree, alert_items))
+        
+        # Add dynamic action items from alert data
+        if 'actions' in alert:
+            actions = alert.get('actions', {})
+            supported_actions = actions.get('supported', [])
+            
+            if supported_actions:
+                menu.add_separator()
+                action_links = actions.get('links', [])
+                action_link = next((link['href'] for link in action_links if link['rel'] == 'alertAction'), None)
+                
+                for action in supported_actions:
+                    action_value = action.get('value', {}).get('seValue', '')
+                    display_name = action_value.capitalize().replace('_', ' ')
+                    
+                    menu.add_command(
+                        label=display_name,
+                        command=lambda id=alert.get('id'), val=action_value, link=action_link: 
+                            self.handle_alert_action(id, val, link)
+                    )
+        
+        # Show the menu
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def capture_ui_for_alert(self, tree, alert_items):
+        """Handles UI capture for selected alert with formatted filename"""
+        selected = tree.selection()
+        if not selected:
+            self._show_notification("No alert selected", "red")
+            return
+            
+        try:
+            item_id = selected[0]
+            alert = alert_items[item_id]
+            string_id = alert.get('stringId', 'unknown')
+            category = alert.get('category', 'unknown')
+            
+            # Format: step_num. UI string_id category
+            base_name = f"UI_{string_id}_{category}"
+            self.queue_task(self._save_ui_for_alert, base_name)
+            self._show_notification("Starting UI capture...", "blue")
+            
+        except Exception as e:
+            self._show_notification(f"Capture failed: {str(e)}", "red")
+
+    def _save_ui_for_alert(self, base_name):
+        """Background task to save UI without dialog"""
+        try:
+            # Generate safe filename with step prefix
+            filepath, filename = self.get_safe_filepath(
+                self.directory,
+                base_name,
+                ".png",
+                step_number=self.step_var.get()
+            )
+            
+            if not self.dune_fpui.is_connected():
+                if not self.dune_fpui.connect(self.ip):
+                    raise ConnectionError("Failed to connect to Dune FPUI")
+
+            if not self.dune_fpui.save_ui(os.path.dirname(filepath), os.path.basename(filepath)):
+                raise RuntimeError("UI capture failed")
+
+            # Show success notification with filename
+            self.root.after(0, lambda: self._show_notification(
+                f"UI captured: {filename}", "green", 5000))
+            
+        except Exception as e:
+            self.root.after(0, lambda: self._show_notification(
+                f"Capture failed: {str(e)}", "red", 5000))

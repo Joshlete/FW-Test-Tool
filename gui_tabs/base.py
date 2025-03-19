@@ -787,27 +787,43 @@ class TabContent(ABC):
             # Get the telemetry data
             event = telemetry_items[item_id]
             
+            # Determine format by checking for eventDetailConsumable
+            is_dune_format = 'eventDetailConsumable' not in (event.get('eventDetail', {}) or {})
+            
             # Extract useful information for filename
-            color_code = (event.get('eventDetail', {})
-                         .get('eventDetailConsumable', {})
-                         .get('identityInfo', {})
-                         .get('supplyColorCode', ''))
+            if is_dune_format:
+                # Direct path for Dune format
+                color_code = (event.get('eventDetail', {})
+                             .get('identityInfo', {})
+                             .get('supplyColorCode', ''))
+                
+                state_reasons = (event.get('eventDetail', {})
+                               .get('stateInfo', {})
+                               .get('stateReasons', []))
+                
+                notification_trigger = (event.get('eventDetail', {})
+                                      .get('notificationTrigger', 'Unknown'))
+            else:
+                # Path with eventDetailConsumable for Trillium format
+                color_code = (event.get('eventDetail', {})
+                             .get('eventDetailConsumable', {})
+                             .get('identityInfo', {})
+                             .get('supplyColorCode', ''))
+                
+                state_reasons = (event.get('eventDetail', {})
+                               .get('stateInfo', {})
+                               .get('stateReasons', []))
+                
+                notification_trigger = (event.get('eventDetail', {})
+                                      .get('eventDetailConsumable', {})
+                                      .get('notificationTrigger', 'Unknown'))
             
             # Map color code to name
             color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black', 'CMY': 'Tri-Color'}
             color = color_map.get(color_code, 'Unknown')
             
             # Extract state reasons
-            state_reasons = (event.get('eventDetail', {})
-                           .get('eventDetailConsumable', {})
-                           .get('stateInfo', {})
-                           .get('stateReasons', []))
             state_reasons_str = '_'.join(state_reasons) if state_reasons else 'None'
-            
-            # Extract notification trigger
-            notification_trigger = (event.get('eventDetail', {})
-                                  .get('eventDetailConsumable', {})
-                                  .get('notificationTrigger', 'Unknown'))
             
             # Create base filename
             base_filename = f"Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
@@ -831,7 +847,7 @@ class TabContent(ABC):
         except ValueError:
             return ""
 
-    def populate_telemetry_tree(self, tree, telemetry_items, events_data):
+    def populate_telemetry_tree(self, tree, telemetry_items, events_data, is_dune_format=False):
         """
         Populates the telemetry tree with the fetched data
         
@@ -839,6 +855,7 @@ class TabContent(ABC):
             tree: The Treeview widget to populate
             telemetry_items: Dictionary to store references to telemetry data
             events_data: List of telemetry events
+            is_dune_format: Boolean indicating if data is in Dune format (no eventDetailConsumable level)
         """
         # Clear existing items
         tree.delete(*tree.get_children())
@@ -856,21 +873,37 @@ class TabContent(ABC):
             # Extract details
             seq_num = event.get('sequenceNumber', 'N/A')
             
-            color_code = (event.get('eventDetail', {})
+            # Extract data based on format type
+            if is_dune_format:
+                # Direct path for Dune format
+                color_code = (event.get('eventDetail', {})
+                             .get('identityInfo', {})
+                             .get('supplyColorCode', ''))
+                
+                state_reasons = (event.get('eventDetail', {})
+                               .get('stateInfo', {})
+                               .get('stateReasons', []))
+                
+                trigger = (event.get('eventDetail', {})
+                         .get('notificationTrigger', 'N/A'))
+            else:
+                # Path with eventDetailConsumable for Trillium format
+                color_code = (event.get('eventDetail', {})
+                             .get('eventDetailConsumable', {})
+                             .get('identityInfo', {})
+                             .get('supplyColorCode', ''))
+                
+                state_reasons = (event.get('eventDetail', {})
+                               .get('eventDetailConsumable', {})
+                               .get('stateInfo', {})
+                               .get('stateReasons', []))
+                
+                trigger = (event.get('eventDetail', {})
                          .get('eventDetailConsumable', {})
-                         .get('identityInfo', {})
-                         .get('supplyColorCode', ''))
+                         .get('notificationTrigger', 'N/A'))
+            
             color = color_map.get(color_code, color_code)
-            
-            state_reasons = (event.get('eventDetail', {})
-                           .get('eventDetailConsumable', {})
-                           .get('stateInfo', {})
-                           .get('stateReasons', []))
             state_reasons_str = ', '.join(state_reasons) if state_reasons else 'None'
-            
-            trigger = (event.get('eventDetail', {})
-                     .get('eventDetailConsumable', {})
-                     .get('notificationTrigger', 'N/A'))
             
             values = (seq_num, color, state_reasons_str, trigger)
             
