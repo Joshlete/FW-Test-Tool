@@ -16,6 +16,7 @@ import time
 import sys
 from pathlib import Path
 from config_manager import ConfigManager
+from print import Print
 
 # Playwright browser path handling for PyInstaller
 if getattr(sys, 'frozen', False):
@@ -54,7 +55,10 @@ class App(tk.Tk):
         self.create_directory_input()  # New method call
         self.capture_manager = CaptureManager(current_directory=".")
 
-        self.create_snip_tool()
+        # initialize tools
+        self.create_toolbar()
+        self.print = Print(self._ip_address)
+
         self.keybinding_manager = KeybindingManager(self, self.capture_manager)
 
         # Initialize fetchers
@@ -76,19 +80,45 @@ class App(tk.Tk):
 
         print("> [App.__init__] App initialization complete")
 
-    def create_snip_tool(self) -> None:
+    def create_toolbar(self):
+        toolbar_frame = ttk.Frame(self)
+        toolbar_frame.pack(fill="x", padx=10, pady=5)
+        self.create_snip_tool(toolbar_frame)
+        toolbar_frame.pack(fill="x", padx=10, pady=5)
+        self.create_print_dropdown(toolbar_frame)
+
+    def create_snip_tool(self, master=None) -> ttk.Button:
         print("> [App.create_snip_tool] Creating Snip Tool")
         # Create a frame and button for the Snip Tool functionality
-        snip_frame = ttk.Frame(self)
-        snip_frame.pack(fill="x", padx=10, pady=10)
-        self.snip_tool_button = ttk.Button(snip_frame, text="Snip Tool", command=self.snip_tool)
-        self.snip_tool_button.pack(side="left", padx=5)
+        snip_button = ttk.Button(master, text="Snip Tool", command=self.snip_tool)
+        snip_button.pack(side="left", padx=5)
+        return snip_button
 
     def snip_tool(self) -> None:
         print("> [App.snip_tool] Capturing screen region")
         # Capture a screen region when the Snip Tool button is clicked
         root = self.winfo_toplevel()
         self.capture_manager.capture_screen_region(root, "screenshot", ".", None)
+
+    def create_print_dropdown(self, master=None) -> ttk.Menubutton:
+        print("> [App.create_print_dropdown] Creating Print Dropdown")
+        # Create print menu dropdown
+        print_dropdown = ttk.Menubutton(
+            master=master,
+            text="Print PCL Page",
+            style='TButton'
+        )
+        print_dropdown.pack(side="left", padx=5)
+        print_dropdown_menu = tk.Menu(print_dropdown, tearoff=0)
+
+        # add menu options
+        for file in Print.pcl_dict:
+            print_dropdown_menu.add_command(label=file['name'],
+                                            command=lambda: self.print.send_job(file['path']))
+
+        # attach the menu to button and return
+        print_dropdown["menu"] = print_dropdown_menu
+        return print_dropdown
 
     def create_ip_input(self) -> None:
         print("> [App.create_ip_input] Creating IP input field")
