@@ -2,7 +2,7 @@ import threading
 from ews_capture import EWSScreenshotCapturer
 from sirius_ui_capture import SiriusConnection
 from .base import TabContent
-from tkinter import ttk, filedialog, Canvas, IntVar, simpledialog, Toplevel, Text, messagebox
+from tkinter import ttk, filedialog, Canvas, IntVar, simpledialog, Toplevel, Text, messagebox, StringVar
 from PIL import Image, ImageTk
 import requests
 import io
@@ -29,8 +29,16 @@ DISCONNECT = "Disconnect from UI"
 class SiriusTab(TabContent):
     def __init__(self, parent, app):
         self.app = app
-        self.show_password_var = tk.BooleanVar(value=False)
-        self.password_var = tk.StringVar()
+        self.root = parent.winfo_toplevel()
+        self.ip = self.app.get_ip_address()
+        self.directory = self.app.get_directory()
+        self._directory = self.directory
+        self.is_connected = False
+        self.update_thread = None
+        self.stop_update = threading.Event()
+        self.ui_connection = None
+        self.telemetry_windows = []
+        self.password_var = StringVar(value=self.app.config_manager.get("password", ""))
         self.password_var.trace_add("write", self._save_password_to_config)
         
         # Initialize LEDM components FIRST
@@ -40,22 +48,14 @@ class SiriusTab(TabContent):
         # THEN call parent constructor
         super().__init__(parent)
         
-        self._ip = self.get_current_ip()
-        self.is_connected = False
-        self.update_thread = None
-        self.stop_update = threading.Event()
-        self.ui_connection = None
-        self.telemetry_windows = []
-        self._directory = self.app.get_directory()
+        self.show_password_var = tk.BooleanVar(value=False)
         
-        # Load saved password
-        self.password = self.app.config_manager.get("password") or ""
+        # Setup telemetry manager
+        self.telemetry_mgr = TelemetryManager(self.ip)
         
         # Register callbacks
-        self.app.register_ip_callback(self.update_ip)
-        self.app.register_directory_callback(self.update_directory)
-
-        self.telemetry_mgr = TelemetryManager(self.ip)
+        self.app.register_ip_callback(self.on_ip_change)
+        self.app.register_directory_callback(self.on_directory_change)
 
     @property
     def ip(self):
@@ -65,20 +65,23 @@ class SiriusTab(TabContent):
     def ip(self, value):
         self._ip = value
 
-    def update_ip(self, new_ip):
+    def on_ip_change(self, new_ip):
         self._ip = new_ip
         if self.ui_connection:
             self.ui_connection.update_ip(new_ip)
         self.telemetry_mgr.ip = new_ip
         self.telemetry_mgr.disconnect()
 
-    def update_directory(self, new_directory: str) -> None:
+    def on_directory_change(self, new_directory):
+        """Handle changes to the directory"""
         print(f"> [SiriusTab.update_directory] Updating directory to: {new_directory}")
-        self._directory = new_directory
+        self.directory = new_directory
+        self._directory = new_directory  # Keep both attributes in sync
 
     def stop_listeners(self):
         """Stop the update thread and clean up resources"""
         print(f"Stopping listeners for SiriusTab")
+        # First disconnect UI connection
         if self.ui_connection:
             self.ui_connection.disconnect()
         self.ui_connection = None
@@ -89,6 +92,9 @@ class SiriusTab(TabContent):
             window.close_window()
         self.telemetry_windows.clear()
 
+        # Call parent class cleanup to properly handle async loop shutdown
+        super().cleanup()
+        
         print(f"SiriusTab listeners stopped")
 
     def get_current_ip(self) -> str:
@@ -452,40 +458,47 @@ class SiriusTab(TabContent):
             self._show_notification("No endpoints selected", "red")
             return
 
-        # Get step number with confirmation dialog
-        step_identifier = simpledialog.askstring(
-            "Step Number",
-            "Enter step number:",
-            parent=self.frame,
-            initialvalue=self.step_var.get()  # Using base class step_var
-        )
-        
-        if not step_identifier:  # User clicked cancel
-            self._show_notification("LEDM capture cancelled", "blue")
-            return
-
         def _fetch_ledm_thread():
             try:    
                 self._show_notification("Fetching LEDM data...", "blue")
                 fetcher = self.app.sirius_fetcher
                 if fetcher:
-                    # Add overwrite check before saving
-                    if fetcher.check_files_exist(self._directory, selected_endpoints, step_identifier):
-                        confirm = messagebox.askyesno(
-                            "Files Exist",
-                            "Some files already exist. Overwrite?",
-                            parent=self.frame
-                        )
-                        if not confirm:
-                            self._show_notification("LEDM capture cancelled", "blue")
-                            return
+                    # Fetch the data from selected endpoints
+                    data = fetcher.fetch_data(selected_endpoints)
                     
-                    fetcher.save_to_file(
-                        self._directory, 
-                        selected_endpoints=selected_endpoints, 
-                        step_num=step_identifier
-                    )
-                    self._show_notification("LEDM data fetched successfully", "green")
+                    # Save each endpoint using base class methods
+                    save_results = []
+                    for endpoint, content in data.items():
+                        # Skip error responses
+                        if isinstance(content, str) and content.startswith("Error:"):
+                            self._show_notification(f"Error fetching {endpoint}: {content}", "red")
+                            save_results.append((False, endpoint, None))
+                            continue
+                        
+                        # Extract endpoint name for filename
+                        endpoint_name = os.path.basename(endpoint).replace('.xml', '')
+                        filename = f"LEDM {endpoint_name}"
+                        
+                        # Use current step number from step_var
+                        step_num = None
+                        try:
+                            step_num = int(self.step_var.get())
+                        except ValueError:
+                            pass
+                        
+                        success, filepath = self.save_text_data(content, filename, extension=".xml", step_number=step_num)
+                        save_results.append((success, endpoint, filepath))
+                    
+                    # Notify about results
+                    total = len(save_results)
+                    success_count = sum(1 for res in save_results if res[0])
+                    
+                    if success_count == 0:
+                        self._show_notification("Failed to save any LEDM data", "red")
+                    elif success_count < total:
+                        self._show_notification(f"Partially saved LEDM data ({success_count}/{total} files)", "yellow")
+                    else:
+                        self._show_notification(f"Successfully saved {success_count} LEDM files", "green")
                 else:
                     raise ValueError("Sirius fetcher not initialized")
             except Exception as e:
@@ -494,18 +507,17 @@ class SiriusTab(TabContent):
         threading.Thread(target=_fetch_ledm_thread).start()
 
     def capture_ui(self, description: str = ""):
-        """Capture the latest screenshot first, then handle filename"""
+        """Handle UI screenshot capture with different save behaviors"""
         if not self.password:
             self._show_notification("Password is required", "red")
             return
 
-        # Disable both UI and ECL buttons during capture
+        # Disable buttons during capture
         self.capture_ui_button.config(state="disabled", text="Capturing...")
         self.ecl_menu_button.config(state="disabled", text="Capturing...")
 
         def _capture_ui_thread():
             try:
-                # attempt capture
                 response = requests.get(
                     f"https://{self.ip}/TestService/UI/ScreenCapture",
                     timeout=5,
@@ -517,61 +529,68 @@ class SiriusTab(TabContent):
                     self._show_notification(f"Capture failed: {response.status_code}", "red")
                     return
 
-                # Capture successful, now get filename
-                file_path = self._ask_filename(description)
-                if not file_path:
-                    self._show_notification("Capture cancelled", "blue")
-                    return
-                
-                if os.path.exists(file_path):
-                    confirm = messagebox.askyesno(
-                        "File Exists",
-                        f"'{os.path.basename(file_path)}' already exists.\nOverwrite?",
-                        parent=self.frame
-                    )
-                    if not confirm:
-                        self._show_notification("Save cancelled", "blue")
-                        return
+                def reenable_buttons():
+                    self.capture_ui_button.config(state="normal", text="Capture UI")
+                    self.ecl_menu_button.config(state="normal", text="Capture ECL")
 
-                # Save the already captured image
-                with open(file_path, 'wb') as file:
-                    file.write(response.content)
-                self._show_notification("Screenshot saved!", "green")
+                if not description:  # Main UI capture - show save dialog
+                    # Build filename with step number
+                    try:
+                        step_num = int(self.step_var.get())
+                        suggested_filename = f"{step_num}. UI.png"
+                    except ValueError:
+                        suggested_filename = "UI.png"
+
+                    def show_save_dialog():
+                        filepath = filedialog.asksaveasfilename(
+                            initialdir=self.directory,
+                            initialfile=suggested_filename,
+                            defaultextension=".png",
+                            filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+                        )
+                        
+                        if not filepath:
+                            self._show_notification("Capture canceled", "blue")
+                            return
+                        
+                        try:
+                            with open(filepath, 'wb') as f:
+                                f.write(response.content)
+                            self._show_notification(f"Screenshot saved as {os.path.basename(filepath)}", "green")
+                        except Exception as e:
+                            self._show_notification(f"Save error: {str(e)}", "red")
+                        finally:
+                            reenable_buttons()
+                    
+                    self.frame.after(0, show_save_dialog)
+                    
+                else:  # ECL capture - save automatically
+                    try:
+                        # Generate filename from description
+                        base_name = f"UI {description}"
+                        success, filepath = self.save_image_data(
+                            response.content,
+                            base_name,
+                            step_number=self.step_var.get()
+                        )
+                        
+                        if success:
+                            self._show_notification(f"ECL screenshot saved to {os.path.basename(filepath)}", "green")
+                        else:
+                            self._show_notification("Failed to save ECL screenshot", "red")
+                    except Exception as e:
+                        self._show_notification(f"Save error: {str(e)}", "red")
+                    finally:
+                        self.frame.after(0, reenable_buttons)
 
             except requests.RequestException as e:
                 self._show_notification(f"Capture error: {str(e)}", "red")
+                self.frame.after(0, reenable_buttons)
             except Exception as e:
-                self._show_notification(f"Save error: {str(e)}", "red")
-            finally:
-                # Re-enable buttons when done
-                self.frame.after(0, lambda: [
-                    self.capture_ui_button.config(
-                        state="normal", 
-                        text="Capture UI"
-                    ),
-                    self.ecl_menu_button.config(
-                        state="normal", 
-                        text="Capture ECL"
-                    )
-                ])
+                self._show_notification(f"Error: {str(e)}", "red")
+                self.frame.after(0, reenable_buttons)
 
         threading.Thread(target=_capture_ui_thread).start()
-
-    def _ask_filename(self, description: str = "") -> str:
-        """Open a file save dialog and return the chosen path"""
-        base_name = self.get_step_prefix()
-        base_name += "UI "
-        if description:
-            base_name += f"{description}"
-        
-        file_types = [('PNG files', '*.png'), ('All files', '*.*')]
-        
-        return filedialog.asksaveasfilename(
-            initialdir=self._directory,
-            initialfile=base_name,
-            defaultextension=".png",
-            filetypes=file_types
-        )
 
     def capture_ews(self):
         """Capture EWS screenshots in a separate thread"""
@@ -588,22 +607,55 @@ class SiriusTab(TabContent):
         # If user clicks the X to close the dialog, don't proceed
         if number is None:
             self._show_notification("EWS capture cancelled", "blue")
-            self.button_frame.config(state="normal")
+            self.ews_button.config(state="normal", text="Capture EWS")
             return
 
         def _capture_screenshot_background():
             """Capture EWS screenshots in the background"""
             try:
-                capturer = EWSScreenshotCapturer(
-                    self.frame, 
-                    self.ip, 
-                    self._directory,
-                    password=self.password  # Pass current password
-                )
-                success, message = capturer.capture_screenshots(number)
-                self.frame.after(0, lambda: self._show_notification(message, "green" if success else "red"))
+                capturer = EWSScreenshotCapturer(self.frame, self.ip, self.directory, password=self.password)
+                
+                # Just get the screenshots as data, don't save them in the capturer
+                screenshots = capturer._capture_ews_screenshots()
+                
+                # If screenshots were captured successfully
+                if screenshots:
+                    save_results = []
+                    for idx, (image_bytes, description) in enumerate(screenshots):
+                        # Save each screenshot using base class method
+                        try:
+                            step_num = int(number)
+                        except ValueError:
+                            step_num = None
+                            
+                        # Format filename with EWS prefix
+                        filename = f"EWS {description}"
+                        
+                        success, filepath = self.save_image_data(
+                            image_bytes, 
+                            filename,
+                            step_number=step_num
+                        )
+                        save_results.append((success, description, filepath))
+                    
+                    # Notify about results
+                    total = len(save_results)
+                    success_count = sum(1 for res in save_results if res[0])
+                    
+                    if success_count == total:
+                        self.frame.after(0, lambda: self._show_notification(
+                            f"Successfully saved {success_count} EWS screenshots", "green"))
+                    else:
+                        self.frame.after(0, lambda: self._show_notification(
+                            f"Partially saved EWS screenshots ({success_count}/{total})", "yellow"))
+                else:
+                    self.frame.after(0, lambda: self._show_notification(
+                        "Failed to capture EWS screenshots", "red"))
+                
             except Exception as e:
-                self.frame.after(0, lambda: self._show_notification(f"Error capturing EWS screenshot: {str(e)}", "red"))
+                # Fix the lambda scope issue by using a function with a parameter
+                error_msg = str(e)  # Capture error message outside lambda
+                self.frame.after(0, lambda: self._show_notification(f"Error capturing EWS screenshot: {error_msg}", "red"))
             finally:
                 # Re-enable button when done
                 self.frame.after(0, lambda: self.ews_button.config(
@@ -719,10 +771,16 @@ class SiriusTab(TabContent):
             item_values = self.alerts_tree.item(selected_item, 'values')
             alert_id = item_values[0]
             string_id = item_values[1]
-            color = item_values[2]  # New color value from treeview
+            color = item_values[2]  # Color value from treeview
             
             # Generate filename format: "{step}. UI {alert_id} {string_id} {color}"
-            description = f"{alert_id} {string_id} {color}"
+            # Strip each value to remove any leading/trailing spaces
+            alert_id = alert_id.strip()
+            string_id = string_id.strip()
+            color = color.strip()
+            
+            # Create description with proper spacing between components
+            description = f"{alert_id} {string_id} {color}".strip()
             self.capture_ui(description)
 
     def clear_ledm_checkboxes(self):
@@ -806,38 +864,58 @@ class SiriusTab(TabContent):
         self._show_notification("Telemetry data updated", "green")
 
     def save_selected_telemetry(self):
-        """Save selected telemetry files with descriptive default filename"""
+        """Save selected telemetry files with descriptive filename"""
         selected = self.telemetry_tree.selection()
         if not selected:
             self._show_notification("No telemetry files selected", "red")
             return
-            
+        
         try:
-            # Get selected item data (convert display index to data index)
-            tree_index = int(self.telemetry_tree.index(selected[0]))
-            data_index = len(self.telemetry_mgr.file_data) - 1 - tree_index
-            telemetry_data = self.telemetry_mgr.file_data[data_index]
+            # Get selected item data from treeview
+            selected_item = self.telemetry_tree.item(selected[0])
+            selected_values = selected_item['values']
             
-            # Build default filename components
-            step_prefix = self.get_step_prefix()
-            color = telemetry_data.get('color', 'Unknown').replace(" ", "_")
-            reasons = "_".join(telemetry_data.get('reasons', [])).replace("/", "_")
-            trigger = telemetry_data.get('trigger', 'Unknown').replace(" ", "_")
+            # Find the corresponding entry in file_data by sequence number
+            seq_number = selected_values[0]  # First column contains sequence number
             
-            # Construct default filename
-            default_name = f"{step_prefix}Telemetry {color} {reasons} {trigger}.json"
-
-            save_path = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("JSON files", "*.json")],
-                initialfile=default_name
+            # Find the telemetry data with matching sequence number
+            matching_data = None
+            for item in self.telemetry_mgr.file_data:
+                if str(item.get('sequenceNumber', '')) == str(seq_number):
+                    matching_data = item
+                    break
+                
+            if not matching_data:
+                self._show_notification("Could not find matching telemetry data", "red")
+                return
+            
+            # Build filename components
+            color = matching_data.get('color', 'Unknown').replace(" ", "_")
+            reasons = "_".join(matching_data.get('reasons', [])).replace("/", "_")
+            trigger = matching_data.get('trigger', 'Unknown').replace(" ", "_")
+            
+            # Construct descriptive filename
+            base_filename = f"Telemetry {color} {reasons} {trigger}"
+            
+            # Add debug print
+            print(f"DEBUG: Saving telemetry with sequence number {seq_number}")
+            
+            # Save using base class method
+            success, filepath = self.save_json_data(
+                matching_data['raw_data'], 
+                base_filename, 
+                step_number=self.step_var.get()
             )
-            if save_path:
-                self.telemetry_mgr.save_telemetry_file(data_index, save_path)
-                self._show_notification("File saved successfully", "green")
+            
+            if success:
+                self._show_notification(f"Telemetry saved as {os.path.basename(filepath)}", "green")
+            else:
+                self._show_notification("Failed to save telemetry file", "red")
                 
         except Exception as e:
             self._show_notification(f"Save failed: {str(e)}", "red")
+            import traceback
+            traceback.print_exc()
 
     def delete_selected_telemetry(self):
         """Delete multiple selected telemetry files from device after confirmation"""
