@@ -9,6 +9,7 @@ import io
 import requests
 import tkinter as tk
 import os
+import json
 
 # Constants for button text
 CONNECTING = "Connecting..."
@@ -122,44 +123,11 @@ class DuneTab(TabContent):
                            command=lambda: self.start_snip("EWS Supplies Page Yellow"))
         ews_menu.add_command(label="Supplies Page Black", 
                            command=lambda: self.start_snip("EWS Supplies Page Black"))
+        ews_menu.add_command(label="Supplies Page Color", 
+                           command=lambda: self.start_snip("EWS Supplies Page Color"))
         
         ews_menu_button["menu"] = ews_menu
         ews_menu_button.pack(side="left", pady=5, padx=10)
-
-        # Add step control frame
-        self.step_control_frame = ttk.Frame(self.connection_frame)
-        self.step_control_frame.pack(side="left", pady=5, padx=10)
-
-        # Add step label
-        step_label = ttk.Label(self.step_control_frame, text="STEP:")
-        step_label.pack(side="left", padx=(0, 5))
-
-        # Add step number controls
-        self.step_down_button = ttk.Button(
-            self.step_control_frame, 
-            text="-", 
-            width=2, 
-            command=lambda: self.update_filename_prefix(-1)
-        )
-        self.step_down_button.pack(side="left")
-
-        self.step_entry = ttk.Entry(
-            self.step_control_frame, 
-            width=4, 
-            validate="key", 
-            validatecommand=(self.frame.register(self.validate_step_input), '%P'),
-            textvariable=self.step_var
-        )
-        self.step_entry.pack(side="left", padx=2)
-        self.step_entry.bind('<FocusOut>', self._handle_step_focus_out)
-
-        self.step_up_button = ttk.Button(
-            self.step_control_frame, 
-            text="+", 
-            width=2, 
-            command=lambda: self.update_filename_prefix(1)
-        )
-        self.step_up_button.pack(side="left")
 
         # Add SSH dropdown menu button next to step controls
         self.ssh_menu_button = ttk.Menubutton(
@@ -302,11 +270,19 @@ class DuneTab(TabContent):
         for option, var in self.cdm_vars.items():
             var.trace_add('write', self.update_clear_button_visibility)
 
-        # Add CDM checkboxes
+        # Add CDM checkboxes with right-click support
         for option in self.cdm_options:
-            cb = ttk.Checkbutton(self.cdm_checkbox_frame, text=option, 
-                                variable=self.cdm_vars[option])
-            cb.pack(anchor="w", padx=5, pady=2)
+            container_frame = ttk.Frame(self.cdm_checkbox_frame)
+            container_frame.pack(anchor="w", fill="x", padx=5, pady=2)
+            
+            cb = ttk.Checkbutton(container_frame, text=option, 
+                               variable=self.cdm_vars[option])
+            cb.pack(side="left", anchor="w")
+            
+            # Add right-click binding to both frame and checkbox
+            for widget in [container_frame, cb]:
+                widget.bind("<Button-3>", 
+                          lambda e, opt=option: self.show_cdm_context_menu(e, opt))
 
     def create_telemetry_widgets(self):
         """Creates telemetry section widgets using base class implementation"""
@@ -985,3 +961,131 @@ class DuneTab(TabContent):
         except Exception as e:
             self.root.after(0, lambda: self._show_notification(
                 f"Capture failed: {str(e)}", "red", 5000))
+
+    def show_cdm_context_menu(self, event, endpoint: str):
+        """Show context menu for CDM items"""
+        menu = tk.Menu(self.frame, tearoff=0)
+        menu.add_command(label="View Data", 
+                        command=lambda: self.view_cdm_data(endpoint))
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def view_cdm_data(self, endpoint: str):
+        """Display CDM data in a viewer window"""
+        try:
+            data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
+            self._show_json_viewer(endpoint, data)
+        except Exception as e:
+            self._show_notification(f"Failed to fetch {endpoint}: {str(e)}", "red")
+
+    def _show_json_viewer(self, endpoint: str, json_data: str):
+        """Create a window to display JSON data with formatting"""
+        try:
+            # Create new window
+            viewer = tk.Toplevel(self.frame)
+            viewer.title(f"CDM Data: {os.path.basename(endpoint)}")
+            viewer.geometry("800x600")
+            viewer.minsize(600, 400)
+            
+            # Create main frame
+            main_frame = ttk.Frame(viewer)
+            main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            
+            # Create button frame
+            button_frame = ttk.Frame(viewer)
+            button_frame.pack(fill="x", padx=10, pady=(0, 10))
+            
+            # Create text area with scrollbars
+            text_widget = Text(main_frame, wrap="none", font=("Consolas", 10))
+            y_scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=text_widget.yview)
+            x_scrollbar = ttk.Scrollbar(main_frame, orient="horizontal", command=text_widget.xview)
+            
+            text_widget.configure(yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
+            
+            # Insert data
+            try:
+                # Try to parse and pretty-print JSON
+                parsed_data = json.loads(json_data) if isinstance(json_data, str) else json_data
+                formatted_json = json.dumps(parsed_data, indent=4)
+                text_widget.insert('1.0', formatted_json)
+            except (json.JSONDecodeError, TypeError):
+                # If not valid JSON, just display as plain text
+                text_widget.insert('1.0', json_data)
+            
+            # Make read-only after insertion
+            text_widget.config(state='disabled')
+            
+            # Layout with grid
+            text_widget.grid(row=0, column=0, sticky="nsew")
+            y_scrollbar.grid(row=0, column=1, sticky="ns")
+            x_scrollbar.grid(row=1, column=0, sticky="ew")
+            
+            main_frame.grid_rowconfigure(0, weight=1)
+            main_frame.grid_columnconfigure(0, weight=1)
+            
+            # Add context menu
+            text_menu = tk.Menu(text_widget, tearoff=0)
+            text_menu.add_command(label="Copy", command=lambda: self.copy_text_selection(text_widget))
+            text_widget.bind("<Button-3>", lambda e: self.show_text_context_menu(e, text_widget, text_menu))
+            
+            # Add buttons
+            refresh_btn = ttk.Button(button_frame, text="Refresh", 
+                                  command=lambda: self._refresh_cdm_data(endpoint, text_widget))
+            refresh_btn.pack(side="left", padx=5)
+            
+            save_btn = ttk.Button(button_frame, text="Save", 
+                               command=lambda: self.save_viewed_cdm(endpoint, json_data))
+            save_btn.pack(side="right", padx=5)
+            
+        except Exception as e:
+            print(f"Error in _show_json_viewer: {str(e)}")
+            self._show_notification(f"Error displaying JSON: {str(e)}", "red")
+
+    def _refresh_cdm_data(self, endpoint: str, text_widget: Text):
+        """Refresh CDM data in the viewer window"""
+        try:
+            # Fetch latest data
+            new_data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
+            
+            # Update the text widget
+            text_widget.config(state='normal')
+            text_widget.delete('1.0', 'end')
+            
+            try:
+                # Try to parse and pretty-print JSON
+                parsed_data = json.loads(new_data) if isinstance(new_data, str) else new_data
+                formatted_json = json.dumps(parsed_data, indent=4)
+                text_widget.insert('end', formatted_json)
+            except json.JSONDecodeError:
+                # If not valid JSON, just display as plain text
+                text_widget.insert('end', new_data)
+            
+            text_widget.config(state='disabled')
+            
+            # Add status message
+            print(f"DEBUG: Refreshed CDM data for {endpoint}")
+            self._show_notification(f"Refreshed CDM data for {os.path.basename(endpoint)}", "green")
+        except Exception as e:
+            print(f"DEBUG: Error refreshing CDM data: {str(e)}")
+            self._show_notification(f"Error refreshing data: {str(e)}", "red")
+
+    def save_viewed_cdm(self, endpoint: str, json_data: str):
+        """Save currently viewed CDM data to a file"""
+        try:
+            endpoint_name = endpoint.split('/')[-1].split('.')[0]
+            if "rtp" in endpoint:
+                endpoint_name = "rtp_alerts"
+            if "cdm/alert" in endpoint:
+                endpoint_name = "alert_alerts"
+            
+            # Save with CDM prefix
+            filename = f"CDM {endpoint_name}"
+            
+            success, filepath = self.save_json_data(json_data, filename)
+            
+            if success:
+                self._show_notification(f"Saved CDM data to {os.path.basename(filepath)}", "green")
+            else:
+                self._show_notification("Failed to save CDM data", "red")
+            
+        except Exception as e:
+            self._show_notification(f"Error saving CDM data: {str(e)}", "red")

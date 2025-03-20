@@ -178,7 +178,7 @@ class DuneFetcher(BaseFetcher):
     
     def fetch_alerts(self):
         """Fetch alerts and store them"""
-        endpoint = "cdm/supply/v1/alerts"
+        endpoint = "cdm/alert/v1/alerts"
         url = self.get_url(endpoint)
         try:
             response = requests.get(url, verify=False, timeout=10)

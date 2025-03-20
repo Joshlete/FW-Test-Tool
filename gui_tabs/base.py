@@ -238,13 +238,10 @@ class TabContent(ABC):
 
         # Create Treeview for alerts
         tree = ttk.Treeview(parent_frame, 
-                            columns=('color', 'category', 'stringId', 'severity', 'priority'),
+                            columns=('category', 'stringId', 'severity', 'priority'),
                             show='headings')
         
         # Configure columns
-        tree.heading('color', text='Color')
-        tree.column('color', width=60, anchor='center')
-        
         tree.heading('category', text='Category')
         tree.column('category', width=120)
         
@@ -392,7 +389,6 @@ class TabContent(ABC):
                               if 'colors' in item['propertyPointer']), 'Unknown')
 
             values = (
-                color_code,
                 alert.get('category', 'N/A'),
                 alert.get('stringId', 'N/A'),
                 alert.get('severity', 'N/A'),
@@ -652,7 +648,7 @@ class TabContent(ABC):
                           show='headings')
         
         # Configure columns
-        tree.heading('seq', text='Sequence')
+        tree.heading('seq', text='ID')
         tree.column('seq', width=80, anchor='center')
         
         tree.heading('color', text='Color')
