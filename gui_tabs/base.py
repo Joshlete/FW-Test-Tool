@@ -88,6 +88,7 @@ class TabContent(ABC):
         
         # Add step control elements to connection frame
         self._create_step_controls()
+        self._create_udw_command_controls()
         
         # Separator line under connection frame
         self.separator = ttk.Separator(self.main_frame, orient='horizontal')
@@ -1020,6 +1021,51 @@ class TabContent(ABC):
             self.step_var.set(str(new_value))
         except ValueError:
             self.step_var.set("1")
+
+    def _create_udw_command_controls(self):
+        """Create the controls to handle udw interactions with the printer"""
+        # Create step control frame
+        self.udw_frame = ttk.Frame(self.connection_frame)
+        self.udw_frame.pack(side="left", pady=5, padx=10)
+
+        self.send_udw_button = ttk.Button(
+            self.udw_frame,
+            text="Send udws:",
+            width=11,
+            command=lambda: self.send_udw_command_to_printer(self.udw_cmd_entry.get())
+        )
+        self.send_udw_button.pack(side="left")
+
+        # Add step entry
+        self.udw_cmd_entry = ttk.Entry(
+            self.udw_frame,
+            width=35
+        )
+        self.udw_cmd_entry.pack(side="left", padx=2)
+        self.udw_cmd_entry.bind('<Return>', self.handle_udw_enter_pressed)
+
+    def handle_udw_enter_pressed(self, event):
+        """Handle pressing enter while in focus of entering UDW cmd"""
+        self.send_udw_command_to_printer(self.udw_cmd_entry.get())
+
+    def send_udw_command_to_printer(self, cmd):
+        """
+        Send a UDW command to the printer, represented by the cmd argument
+
+        Args:
+            cmd: the command to send to the printer
+
+        Returns:
+            nothing.
+
+        Effects:
+            Will print to the terminal the output.
+
+        """
+        cmd_to_send = cmd.replace(" ", "+")
+        response = requests.get(f'https://{self.ip}/UDW/Command?entry={cmd_to_send}%3B', verify=False).text
+        print("> command response:")
+        print(response)
 
     def get_safe_filepath(self, directory, base_filename, extension=".json", step_number=None):
         """
