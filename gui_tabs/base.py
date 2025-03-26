@@ -1062,7 +1062,7 @@ class TabContent(ABC):
             Will print to the terminal the output.
 
         """
-        cmd_to_send = cmd.replace(" ", "+")
+        cmd_to_send = cmd.strip().replace(" ", "+")
         response = requests.get(f'https://{self.ip}/UDW/Command?entry={cmd_to_send}%3B', verify=False).text
         print("> command response:")
         print(response)
