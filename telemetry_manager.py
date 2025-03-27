@@ -16,10 +16,12 @@ class TelemetryManager:
         self.ssh_client.connect(self.ip, username='root', password='myroot', timeout=5)
 
     def disconnect(self) -> None:
-        """Close SSH connection"""
+        """Properly close SSH connection"""
+        print("DEBUG: Disconnecting SSH client")
         if self.ssh_client:
             self.ssh_client.close()
             self.ssh_client = None
+        self.file_data = []
 
     def update_ip(self, new_ip: str) -> None:
         """Update IP address and reset connection"""

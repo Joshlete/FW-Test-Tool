@@ -799,12 +799,10 @@ class SiriusTab(TabContent):
         """Initiate telemetry refresh in a background thread"""
         self.telemetry_refresh_btn.config(text="Updating...", state="disabled")
         
-        # Clear existing data immediately for better UX
         self.telemetry_tree.delete(*self.telemetry_tree.get_children())
         self._show_notification("Refreshing telemetry data...", "blue")
         
         def _background_refresh():
-            """Background thread worker for telemetry refresh"""
             try:
                 # Check if we need to reconnect due to IP change
                 current_ip = self.get_current_ip()
@@ -825,9 +823,10 @@ class SiriusTab(TabContent):
                 
             except Exception as e:
                 error_msg = f"Telemetry error: {str(e)}"
+                print(f"DEBUG: Error in background refresh: {error_msg}")
+                self.telemetry_mgr.disconnect()  # Ensure cleanup
                 self.frame.after(0, lambda: self._show_notification(error_msg, "red"))
             finally:
-                # Always reset button state even if errors occur
                 self.frame.after(0, lambda: self.telemetry_refresh_btn.config(text="Refresh", state="normal"))
 
         # Start the background thread
@@ -963,21 +962,34 @@ class SiriusTab(TabContent):
             return
             
         try:
-            # Convert display index to data index
-            tree_index = int(self.telemetry_tree.index(selected[0]))
-            data_index = len(self.telemetry_mgr.file_data) - 1 - tree_index
-            item = self.telemetry_mgr.file_data[data_index]
+            # Get selected item data from treeview
+            selected_item = self.telemetry_tree.item(selected[0])
+            selected_values = selected_item['values']
+            
+            # Find the corresponding entry in file_data by sequence number
+            seq_number = selected_values[0]  # First column contains sequence number
+            
+            # Find the telemetry data with matching sequence number
+            matching_data = None
+            for item in self.telemetry_mgr.file_data:
+                if str(item.get('sequenceNumber', '')) == str(seq_number):
+                    matching_data = item
+                    break
+                
+            if not matching_data:
+                self._show_notification("Could not find matching telemetry data", "red")
+                return
             
             # Create JSON viewer window
             json_window = Toplevel(self.frame)
-            json_window.title(f"Telemetry Details - {item['filename']}")
+            json_window.title(f"Telemetry Details - {matching_data.get('filename', 'Unknown')}")
             
             text = Text(json_window, wrap="none")
             scroll_y = ttk.Scrollbar(json_window, orient="vertical", command=text.yview)
             scroll_x = ttk.Scrollbar(json_window, orient="horizontal", command=text.xview)
             text.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
             
-            text.insert("end", json.dumps(item['raw_data'], indent=4))
+            text.insert("end", json.dumps(matching_data['raw_data'], indent=4))
             text.config(state="disabled")
             
             text.grid(row=0, column=0, sticky="nsew")
@@ -986,6 +998,10 @@ class SiriusTab(TabContent):
             
         except Exception as e:
             self._show_notification(f"Details error: {str(e)}", "red")
+            # Add debug print to help troubleshoot
+            print(f"DEBUG: Error viewing telemetry details: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def show_telemetry_menu(self, event):
         """Show context menu for telemetry items"""
