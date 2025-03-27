@@ -527,6 +527,7 @@ class SiriusTab(TabContent):
                 
                 if response.status_code != 200:
                     self._show_notification(f"Capture failed: {response.status_code}", "red")
+                    self.frame.after(0, reenable_buttons)  # Make sure buttons are re-enabled
                     return
 
                 def reenable_buttons():
@@ -549,6 +550,9 @@ class SiriusTab(TabContent):
                             filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
                         )
                         
+                        # Always re-enable buttons, even if user cancels the dialog
+                        reenable_buttons()
+                        
                         if not filepath:
                             self._show_notification("Capture canceled", "blue")
                             return
@@ -559,8 +563,6 @@ class SiriusTab(TabContent):
                             self._show_notification(f"Screenshot saved as {os.path.basename(filepath)}", "green")
                         except Exception as e:
                             self._show_notification(f"Save error: {str(e)}", "red")
-                        finally:
-                            reenable_buttons()
                     
                     self.frame.after(0, show_save_dialog)
                     
