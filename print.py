@@ -16,8 +16,20 @@ class Print:
             "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid\\50%_Black.pcl"
         },
         {
+            "name": "25% Black",
+            "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid\\25%_Black.pcl"
+        },
+        {
             "name": "25% CMY",
             "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid\\25%_CMY.pcl"
+        },
+        {
+            "name": "Kwangdots",
+            "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Tij4\\Kwangdots.pcl"
+        },
+        {
+            "name": "ISO_K",
+            "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\PythonScripts\\drivenFiles\\pcl3\\ISO_K.pcl"
         }
     ]
 

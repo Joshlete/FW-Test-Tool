@@ -113,8 +113,14 @@ class App(tk.Tk):
 
         # add menu options
         for file in Print.pcl_dict:
-            print_dropdown_menu.add_command(label=file['name'],
-                                            command=lambda: self.print.send_job(file['path']))
+            print(f"Adding menu item: {file['name']} with path: {file['path']}")
+            print_dropdown_menu.add_command(
+                label=file['name'],
+                command=lambda path=file['path']: (
+                    print(f"Sending job from menu: {path}"),
+                    self.print.send_job(path)
+                )
+            )
 
         # attach the menu to button and return
         print_dropdown["menu"] = print_dropdown_menu
