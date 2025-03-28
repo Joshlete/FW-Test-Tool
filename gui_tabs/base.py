@@ -8,6 +8,8 @@ import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import os
+from udw import UDW
+
 
 class TabContent(ABC):
     def __init__(self, parent: Any) -> None:
@@ -36,6 +38,10 @@ class TabContent(ABC):
         self.layout_config = self.get_layout_config()  # Let subclass define layout first
         self._create_base_layout()
         self.create_widgets()
+
+        # init UDW tool
+        self.udw = UDW()
+        self.udw_history_index = -1
 
     def get_layout_config(self) -> tuple:
         """
@@ -1032,7 +1038,7 @@ class TabContent(ABC):
             self.udw_frame,
             text="Send udws:",
             width=11,
-            command=lambda: self.send_udw_command_to_printer(self.udw_cmd_entry.get())
+            command=lambda: self.handle_udw_enter_pressed(None)
         )
         self.send_udw_button.pack(side="left")
 
@@ -1043,29 +1049,40 @@ class TabContent(ABC):
         )
         self.udw_cmd_entry.pack(side="left", padx=2)
         self.udw_cmd_entry.bind('<Return>', self.handle_udw_enter_pressed)
+        self.udw_cmd_entry.bind('<Up>', self.handle_up_arrow_pressed)
+        self.udw_cmd_entry.bind('<Down>', self.handle_down_arrow_pressed)
 
     def handle_udw_enter_pressed(self, event):
         """Handle pressing enter while in focus of entering UDW cmd"""
-        self.send_udw_command_to_printer(self.udw_cmd_entry.get())
+        cmd = self.udw_cmd_entry.get()
+        self.udw.send_udw_command_to_printer(self.ip, cmd)
+        self.udw.commands_sent.append(cmd)
+        self.udw_history_index = -1
 
-    def send_udw_command_to_printer(self, cmd):
+    def handle_up_arrow_pressed(self, event):
         """
-        Send a UDW command to the printer, represented by the cmd argument
+        Handle pressing up while in focus of entering UDW cmd
 
-        Args:
-            cmd: the command to send to the printer
-
-        Returns:
-            nothing.
-
-        Effects:
-            Will print to the terminal the output.
-
+        Effect: Increment the history index and fetch the previous command sent in that index.
         """
-        cmd_to_send = cmd.strip().replace(" ", "+")
-        response = requests.get(f'https://{self.ip}/UDW/Command?entry={cmd_to_send}%3B', verify=False).text
-        print("> command response:")
-        print(response)
+        if self.udw_history_index < len(self.udw.commands_sent)-1:
+            self.udw_history_index += 1
+            self.udw_cmd_entry.delete(0, 9999)
+            self.udw_cmd_entry.insert(0,
+                                      self.udw.commands_sent[len(self.udw.commands_sent) - 1 - self.udw_history_index])
+
+    def handle_down_arrow_pressed(self, event):
+        """
+        Handle pressing down while in focus of entering UDW cmd
+
+        Effect: Decrement the history index and fetch the previous command sent in that index.
+        """
+        if self.udw_history_index >= 0:
+            self.udw_history_index -= 1
+            self.udw_cmd_entry.delete(0, 9999)
+            if self.udw_history_index > -1:
+                self.udw_cmd_entry.insert(0,
+                                          self.udw.commands_sent[len(self.udw.commands_sent) - 1 - self.udw_history_index])
 
     def get_safe_filepath(self, directory, base_filename, extension=".json", step_number=None):
         """
