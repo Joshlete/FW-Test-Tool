@@ -20,6 +20,10 @@ class Print:
             "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid\\25%_Black.pcl"
         },
         {
+            "name": "25% Cyan",
+            "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL\\C_out_6x6_25_pn.pcl"
+        },
+        {
             "name": "25% CMY",
             "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid\\25%_CMY.pcl"
         },
