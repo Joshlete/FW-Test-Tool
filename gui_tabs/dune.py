@@ -190,7 +190,7 @@ class DuneTab(TabContent):
         )
         
         # Add color-specific entries
-        colors = ["Cyan", "Magenta", "Yellow", "Black"]
+        colors = ["Cyan", "Magenta", "Yellow", "Black", "Color"]
         suffixes = ["A", "B", "C"]
         for color in colors:
             ecl_menu.add_separator()
@@ -613,8 +613,6 @@ class DuneTab(TabContent):
         self.update_ui()
 
     def update_ui(self, callback=None):
-        print(f">     [Dune] Updating UI display. is_viewing_ui={self.is_viewing_ui}")
-        
         if not self.dune_fpui.is_connected():
             # Attempt to connect if not already connected
             print(f">     [Dune] FPUI not connected, attempting to connect to {self.ip}")
@@ -628,44 +626,60 @@ class DuneTab(TabContent):
                 print(">     [Dune] Successfully connected to Dune FPUI")
 
         if self.is_viewing_ui:
-            print(">     [Dune] Capturing UI image")
-            image_data = self.dune_fpui.capture_ui()
-            if image_data:
-                image = Image.open(io.BytesIO(image_data))
-                
-                # Get current frame size (use fixed dimensions instead of dynamic sizing)
-                frame_width = self.image_frame.winfo_width()
-                frame_height = self.image_frame.winfo_height()
-                
-                # Calculate scaling to fit within the frame while preserving aspect ratio
-                img_width, img_height = image.size
-                width_ratio = frame_width / img_width
-                height_ratio = frame_height / img_height
-                scale_factor = min(width_ratio, height_ratio) * 0.9  # 90% of available space
-                
-                # Calculate new dimensions
-                new_width = int(img_width * scale_factor)
-                new_height = int(img_height * scale_factor)
-                
-                print(f">     [Dune] Resizing image to {new_width}x{new_height}")
-                # Resize the image
-                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                photo = ImageTk.PhotoImage(image)
-                
-                # Update image without changing frame size
-                self.image_label.config(image=photo)
-                self.image_label.image = photo  # Keep a reference
-                print(">     [Dune] UI image updated successfully")
-            else:
-                print(">     [Dune] Failed to capture UI image")
-            
-            self.ui_update_job = self.root.after(100, self.update_ui)  # Update every 100ms
+            # Queue the UI capture and processing in the worker thread
+            self.queue_task(self._process_ui_update)
+
+            # Schedule next update with a longer interval (500ms instead of 100ms)
+            self.ui_update_job = self.root.after(500, self.update_ui)
         else:
             print(">     [Dune] Stopping UI view due to is_viewing_ui=False")
             self.stop_view_ui()
 
         if callback:
             callback()
+
+    def _process_ui_update(self):
+        """Process UI update in worker thread"""
+        try:
+            # Capture UI image
+            image_data = self.dune_fpui.capture_ui()
+            if not image_data:
+                return
+
+            # Process image in worker thread
+            image = Image.open(io.BytesIO(image_data))
+            
+            # Get frame size once and cache it
+            if not hasattr(self, '_cached_frame_size'):
+                self._cached_frame_size = (self.image_frame.winfo_width(), self.image_frame.winfo_height())
+            
+            frame_width, frame_height = self._cached_frame_size
+            
+            # Calculate scaling to fit within the frame while preserving aspect ratio
+            img_width, img_height = image.size
+            width_ratio = frame_width / img_width
+            height_ratio = frame_height / img_height
+            scale_factor = min(width_ratio, height_ratio) * 0.9  # 90% of available space
+            
+            # Calculate new dimensions
+            new_width = int(img_width * scale_factor)
+            new_height = int(img_height * scale_factor)
+            
+            # Resize the image
+            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(image)
+            
+            # Update UI in main thread
+            self.root.after(0, lambda: self._update_ui_image(photo))
+            
+        except Exception as e:
+            print(f">     [Dune] Error processing UI update: {str(e)}")
+
+    def _update_ui_image(self, photo):
+        """Update UI image in main thread"""
+        if self.is_viewing_ui:  # Only update if still viewing
+            self.image_label.config(image=photo)
+            self.image_label.image = photo  # Keep a reference
 
     def stop_view_ui(self):
         print(f">     [Dune] Stopping UI view")
