@@ -168,7 +168,22 @@ class DuneTab(TabContent):
         self.continuous_ui_button = ttk.Button(self.ui_button_frame, text=CONNECT_UI, 
                                              command=self.toggle_view_ui, state="disabled")
         self.continuous_ui_button.pack(side="left", pady=0, padx=5)
-
+        
+        # Add right-click menu for rotation settings
+        self.rotation_menu = tk.Menu(self.ui_button_frame, tearoff=0)
+        
+        # Initialize rotation setting variable
+        self.rotation_var = tk.IntVar(value=0)  # Default to 0 (no rotation)
+        
+        # Add rotation options
+        self.rotation_menu.add_radiobutton(label="No Rotation (0°)", variable=self.rotation_var, value=0)
+        self.rotation_menu.add_radiobutton(label="Rotate 90°", variable=self.rotation_var, value=90)
+        self.rotation_menu.add_radiobutton(label="Rotate 180°", variable=self.rotation_var, value=180)
+        self.rotation_menu.add_radiobutton(label="Rotate 270°", variable=self.rotation_var, value=270)
+        
+        # Bind right-click to View UI button
+        self.continuous_ui_button.bind("<Button-3>", self.show_rotation_menu)
+        
         # Add Capture UI button to UI frame
         self.capture_ui_button = ttk.Button(self.ui_button_frame, text="Capture UI", 
                                            command=self.queue_save_fpui_image, state="disabled")
@@ -186,21 +201,18 @@ class DuneTab(TabContent):
         # Add main ECL entry
         ecl_menu.add_command(
             label="Estimated Cartridge Level", 
-            command=lambda: self.queue_save_fpui_image("Estimated Cartridge Level")
+            command=lambda: self.queue_save_fpui_image("Estimated Cartridge Level", auto_save=True)
         )
         
         # Add color-specific entries
         colors = ["Cyan", "Magenta", "Yellow", "Black", "Color"]
-        suffixes = ["A", "B", "C"]
         for color in colors:
             ecl_menu.add_separator()
-            for suffix in suffixes:
-                label = f"{color} {suffix}"
-                filename = f"Estimated Cartridge Level {label}"
-                ecl_menu.add_command(
-                    label=label,
-                    command=lambda f=filename: self.queue_save_fpui_image(f)
-                )
+            filename = f"Estimated Cartridge Level {color}"
+            ecl_menu.add_command(
+                label=color,
+                command=lambda f=filename: self.queue_save_fpui_image(f, auto_save=True)
+            )
         
         self.ecl_menu_button["menu"] = ecl_menu
         self.ecl_menu_button.pack(side="left", pady=0, padx=5)
@@ -294,14 +306,15 @@ class DuneTab(TabContent):
 
     def fetch_alerts(self):
         """Initiates asynchronous fetch of alerts."""
-        print(f">     [Dune] Fetch Alerts button pressed")
         self.fetch_alerts_button.config(state="disabled", text="Fetching...")
         self.queue_task(self._fetch_alerts_async)
 
     def _fetch_alerts_async(self):
         """Asynchronous operation to fetch and display alerts."""
+        print(f">     [Dune] Fetch Alerts button pressed")
         try:
             # Clear previous alerts
+            print(f">     [Dune] Clearing previous alerts")
             self.root.after(0, lambda: self.alerts_tree.delete(*self.alerts_tree.get_children()))
             self.root.after(0, lambda: self.alert_items.clear())
 
@@ -448,7 +461,7 @@ class DuneTab(TabContent):
                 self.ssh_menu_button.config(state="disabled")
             ])
             self.root.after(0, lambda: self.image_label.config(image=None))
-            self.root.after(0, lambda: setattr(self.image_label, 'image', None))
+            self.image_label.image = None  # Remove the reference
             
             # Stop viewing the UI
             self.stop_view_ui()
@@ -543,9 +556,38 @@ class DuneTab(TabContent):
         finally:
             self.root.after(0, lambda: self.fetch_json_button.config(state="normal"))
 
-    def queue_save_fpui_image(self, base_name="UI"):
+    def queue_save_fpui_image(self, base_name="UI", auto_save=False):
+        """
+        Queue a task to save FPUI image with optional auto-save functionality.
+        
+        :param base_name: Base name for the image file
+        :param auto_save: If True, saves automatically without prompting; if False, shows file dialog
+        """
         print(f">     [Dune] Capture UI button pressed")
-        self.queue_task(self._ask_for_filename, base_name)
+        if auto_save:
+            # For auto-save, generate filename and save directly
+            self.queue_task(self._auto_save_fpui_image, base_name)
+        else:
+            # For manual save, ask for filename
+            self.queue_task(self._ask_for_filename, base_name)
+            
+    def _auto_save_fpui_image(self, base_name):
+        """Automatically generate a filename and save the UI image without prompting"""
+        try:
+            # Generate safe filepath with step prefix
+            filepath, filename = self.get_safe_filepath(
+                self.directory,
+                base_name,
+                ".png",
+                step_number=self.step_var.get()
+            )
+            
+            # Use the existing _continue_save_fpui_image method 
+            # which already handles the connection and saving
+            self._continue_save_fpui_image(filepath)
+            
+        except Exception as e:
+            self._show_notification(f"Failed to auto-save UI: {str(e)}", "red")
 
     def _ask_for_filename(self, base_name):
         """Handles file saving with a proper save dialog."""
@@ -615,15 +657,15 @@ class DuneTab(TabContent):
     def update_ui(self, callback=None):
         if not self.dune_fpui.is_connected():
             # Attempt to connect if not already connected
-            print(f">     [Dune] FPUI not connected, attempting to connect to {self.ip}")
-            if not self.dune_fpui.connect(self.ip):
+            print(f">     [Dune] FPUI not connected, attempting to connect to {self.ip} with rotation {self.rotation_var.get()}")
+            if not self.dune_fpui.connect(self.ip, rotation=self.rotation_var.get()):
                 self._show_notification("Failed to connect to Dune FPUI", "red")
                 print(">     [Dune] Failed to connect to Dune FPUI")
                 self.stop_view_ui()  # Stop viewing UI if connection fails
                 return
             else:
-                self._show_notification("Connected to Dune FPUI", "green")
-                print(">     [Dune] Successfully connected to Dune FPUI")
+                self._show_notification(f"Connected to Dune FPUI with rotation {self.rotation_var.get()}°", "green")
+                print(f">     [Dune] Successfully connected to Dune FPUI with rotation {self.rotation_var.get()}")
 
         if self.is_viewing_ui:
             # Queue the UI capture and processing in the worker thread
@@ -693,6 +735,10 @@ class DuneTab(TabContent):
         if self.ui_update_job:
             self.root.after_cancel(self.ui_update_job)
             self.ui_update_job = None
+        
+        # Disconnect the FPUI to ensure clean reconnection with new rotation
+        if self.dune_fpui.is_connected():
+            self.dune_fpui.disconnect()
         
         self._show_notification("Disconnected from Dune FPUI", "green") 
 
@@ -973,8 +1019,9 @@ class DuneTab(TabContent):
                 f"UI captured: {filename}", "green", 5000))
             
         except Exception as e:
-            self.root.after(0, lambda: self._show_notification(
-                f"Capture failed: {str(e)}", "red", 5000))
+            error_msg = str(e)  # Capture error message before lambda
+            self.root.after(0, lambda msg=error_msg: self._show_notification(
+                f"Capture failed: {msg}", "red", 5000))
 
     def show_cdm_context_menu(self, event, endpoint: str):
         """Show context menu for CDM items"""
@@ -1103,3 +1150,8 @@ class DuneTab(TabContent):
             
         except Exception as e:
             self._show_notification(f"Error saving CDM data: {str(e)}", "red")
+
+    def show_rotation_menu(self, event):
+        """Display rotation menu on right-click of the View UI button."""
+        if self.rotation_menu:
+            self.rotation_menu.tk_popup(event.x_root, event.y_root)

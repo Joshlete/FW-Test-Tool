@@ -8,6 +8,7 @@ import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import os
+from dune_fpui import DEBUG
 from udw import UDW
 
 
@@ -1116,13 +1117,25 @@ class TabContent(ABC):
         filepath = os.path.join(directory, f"{clean_filename}{extension}")
         filename = f"{clean_filename}{extension}"
         
-        # Check if file exists and adjust name if needed
-        counter = 1
-        while os.path.exists(filepath):
-            # Add counter to filename to avoid overwriting
-            filename = f"{clean_filename}_{counter}{extension}"
-            filepath = os.path.join(directory, filename)
-            counter += 1
+        # First, check if the _0 version exists
+        filepath_0 = os.path.join(directory, f"{clean_filename}_0{extension}")
+        if os.path.exists(filepath_0):
+            # If _0 exists, start incrementing from the highest existing number
+            counter = 1
+            while True:
+                filename = f"{clean_filename}_{counter}{extension}"
+                filepath = os.path.join(directory, filename)
+                if not os.path.exists(filepath):
+                    break
+                counter += 1
+        else:
+            # If _0 doesn't exist, check if the original file exists
+            if os.path.exists(filepath):
+                # Rename the original file to _0
+                os.rename(filepath, filepath_0)
+                # Now, the new file will be _1
+                filename = f"{clean_filename}_1{extension}"
+                filepath = os.path.join(directory, filename)
         
         return filepath, filename
 
@@ -1160,10 +1173,13 @@ class TabContent(ABC):
             with open(filepath, 'w', encoding='utf-8') as file:
                 json.dump(data_dict, file, indent=4)
             
-            print(f"JSON saved to: {filepath}")
+            if DEBUG:
+                print(f"JSON saved to: {filepath}")
             return True, filepath
         except Exception as e:
-            print(f"Error saving JSON: {str(e)}")
+            if DEBUG:
+                print(f"Error saving JSON: {str(e)}")
+            self._show_notification(f"File Save Failed: {str(e)}", "red")
             return False, None
 
     def save_image_data(self, image_data, base_filename, directory=None, format='PNG', step_number=None):
@@ -1197,10 +1213,15 @@ class TabContent(ABC):
                 # Assume PIL Image
                 image_data.save(filepath, format=format)
             
-            print(f"Image saved to: {filepath}")
+            if DEBUG:   
+                print(f"Image saved to: {filepath}")
+
+            self._show_notification(f"File Saved: {filename}", "green")
             return True, filepath
         except Exception as e:
-            print(f"Error saving image: {str(e)}")
+            if DEBUG:
+                print(f"Error saving image: {str(e)}")
+            self._show_notification(f"File Save Failed: {str(e)}", "red")
             return False, None
         
     def save_text_data(self, text_data, base_filename, directory=None, extension=".txt", step_number=None):
@@ -1228,8 +1249,11 @@ class TabContent(ABC):
             with open(filepath, 'w', encoding='utf-8') as file:
                 file.write(text_data)
             
-            print(f"Text saved to: {filepath}")
+            if DEBUG:
+                print(f"Text saved to: {filepath}")
             return True, filepath
         except Exception as e:
-            print(f"Error saving text: {str(e)}")
+            if DEBUG:
+                print(f"Error saving text: {str(e)}")
+            self._show_notification(f"File Save Failed: {str(e)}", "red")
             return False, None

@@ -53,7 +53,7 @@ class App(tk.Tk):
         # Create UI components
         self.create_ip_input()
         self.create_directory_input()  # New method call
-        self.capture_manager = CaptureManager(current_directory=".")
+        self.capture_manager = CaptureManager(current_directory=self._directory)
 
         # initialize tools
         self.create_toolbar()
@@ -98,7 +98,7 @@ class App(tk.Tk):
         print("> [App.snip_tool] Capturing screen region")
         # Capture a screen region when the Snip Tool button is clicked
         root = self.winfo_toplevel()
-        self.capture_manager.capture_screen_region(root, "screenshot", ".", None)
+        self.capture_manager.capture_screen_region(root, "screenshot", self._directory, None)
 
     def create_print_dropdown(self, master=None) -> ttk.Menubutton:
         print("> [App.create_print_dropdown] Creating Print Dropdown")
@@ -137,25 +137,36 @@ class App(tk.Tk):
         self._on_ip_change()  # Validate initial IP
 
     def _on_ip_change(self, *args) -> None:
-        # Validate and process IP address changes
+        """Validate and process IP address changes"""
         ip = self.ip_var.get()
-        self._ip_address = ip
         try:
+            # Validate IP address format
             ipaddress.ip_address(ip)
-            self.save_ip_address()  # Save the new IP address
-            for callback in self._ip_callbacks:
-                callback(ip)
-            print(f"> [App._on_ip_change] IP changed to: {self.ip_var.get()}")
-        except ValueError:
-            print(f"> [App._on_ip_change] Invalid IP address: {ip}")
+            
+            # Only update if IP is different
+            if ip != self._ip_address:
+                self._ip_address = ip
+                self.save_ip_address()  # Save the new IP address
+                
+                # Notify callbacks
+                for callback in self._ip_callbacks:
+                    try:
+                        callback(ip)
+                    except Exception as e:
+                        print(f">! [App._on_ip_change] Error in IP callback: {str(e)}")
+                
+                print(f"> [App._on_ip_change] IP changed to: {ip}")
+        except ValueError as e:
+            print(f">! [App._on_ip_change] Invalid IP address: {ip} - {str(e)}")
+            # You might want to show an error message to the user here
 
     def create_directory_input(self) -> None:
         print("> [App.create_directory_input] Creating Directory input field")
         dir_frame = ttk.Frame(self)
-        dir_frame.pack(fill="x", padx=10, pady=5)
+        dir_frame.pack(fill="x", padx=20, pady=5)
         ttk.Label(dir_frame, text="Directory:").pack(side="left")
-        self.dir_entry = ttk.Entry(dir_frame, textvariable=self.directory_var, width=40, state="readonly")
-        self.dir_entry.pack(side="left", padx=5)
+        self.dir_entry = ttk.Entry(dir_frame, textvariable=self.directory_var, state="readonly")
+        self.dir_entry.pack(side="left", fill="x", expand=True, padx=5)
         self.dir_button = ttk.Button(dir_frame, text="Browse", command=self.browse_directory)
         self.dir_button.pack(side="left")
 
@@ -174,10 +185,25 @@ class App(tk.Tk):
 
     def save_ip_address(self) -> None:
         """Save the current IP address to the config file."""
-        config = self.load_config()
-        config["ip_address"] = self._ip_address
-        with open(self.CONFIG_FILE, "w") as f:
-            json.dump(config, f)
+        try:
+            # Load current config
+            config = self.load_config()
+            config["ip_address"] = self._ip_address
+            
+            # Create a temporary file
+            temp_file = f"{self.CONFIG_FILE}.tmp"
+            
+            # Write to temporary file first
+            with open(temp_file, "w") as f:
+                json.dump(config, f, indent=4)
+            
+            # Atomic rename operation
+            os.replace(temp_file, self.CONFIG_FILE)
+            
+            print(f"> [App.save_ip_address] Successfully saved IP: {self._ip_address}")
+        except Exception as e:
+            print(f">! [App.save_ip_address] Error saving IP: {str(e)}")
+            # You might want to show an error message to the user here
 
     def load_ip_address(self) -> str:
         """Load the IP address from the config file."""
@@ -211,10 +237,25 @@ class App(tk.Tk):
 
     def save_directory(self) -> None:
         """Save the current directory to the config file."""
-        config = self.load_config()
-        config["directory"] = self._directory
-        with open(self.CONFIG_FILE, "w") as f:
-            json.dump(config, f)
+        try:
+            # Load current config
+            config = self.load_config()
+            config["directory"] = self._directory
+            
+            # Create a temporary file
+            temp_file = f"{self.CONFIG_FILE}.tmp"
+            
+            # Write to temporary file first
+            with open(temp_file, "w") as f:
+                json.dump(config, f, indent=4)
+            
+            # Atomic rename operation
+            os.replace(temp_file, self.CONFIG_FILE)
+            
+            print(f"> [App.save_directory] Successfully saved directory: {self._directory}")
+        except Exception as e:
+            print(f">! [App.save_directory] Error saving directory: {str(e)}")
+            # You might want to show an error message to the user here
 
     def load_directory(self) -> str:
         """Load the directory from the config file."""

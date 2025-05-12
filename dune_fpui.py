@@ -15,7 +15,7 @@ class DuneFPUI:
         self.vnc_client: Optional[api.VNCClient] = None
         self._is_connected = False
 
-    def connect(self, ip_addr):
+    def connect(self, ip_addr, rotation=0):
         self._ip = ip_addr
         try:
             if DEBUG:
@@ -34,7 +34,7 @@ class DuneFPUI:
                 print(f">     [dune_fpui] Terminated existing remoteControlPanel processes")
 
             # Start a new VNC server
-            command = "cd /core/bin && ./remoteControlPanel -r 90 -t /dev/input/event0 &"
+            command = f"cd /core/bin && ./remoteControlPanel -r {rotation} -t /dev/input/event0 &"
             stdin, stdout, stderr = self.ssh_client.exec_command(command)
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0:
