@@ -201,14 +201,14 @@ class DuneTab(TabContent):
         # Add main ECL entry
         ecl_menu.add_command(
             label="Estimated Cartridge Level", 
-            command=lambda: self.queue_save_fpui_image("Estimated Cartridge Level", auto_save=True)
+            command=lambda: self.queue_save_fpui_image("UI Estimated Cartridge Level", auto_save=True)
         )
         
         # Add color-specific entries
         colors = ["Cyan", "Magenta", "Yellow", "Black", "Color"]
         for color in colors:
             ecl_menu.add_separator()
-            filename = f"Estimated Cartridge Level {color}"
+            filename = f"UI Estimated Cartridge Level {color}"
             ecl_menu.add_command(
                 label=color,
                 command=lambda f=filename: self.queue_save_fpui_image(f, auto_save=True)
@@ -374,6 +374,7 @@ class DuneTab(TabContent):
             events = self._get_telemetry_data()
             
             if not events:
+                self.root.after(0, lambda: self.telemetry_tree.delete(*self.telemetry_tree.get_children()))
                 self.root.after(0, lambda: self._show_notification("No telemetry data found", "blue"))
             else:
                 # Display telemetry in the main thread with is_dune_format=True
@@ -465,6 +466,8 @@ class DuneTab(TabContent):
             
             # Stop viewing the UI
             self.stop_view_ui()
+
+            self.is_connected = False
             
             # Show success notification
             self.root.after(0, lambda: self._show_notification("Disconnected from printer", "green"))

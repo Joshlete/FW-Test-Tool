@@ -25,7 +25,6 @@ if getattr(sys, 'frozen', False):
     os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://playwright.azureedge.net"
 
 class App(tk.Tk):
-    CONFIG_FILE = "config.json"
     DEFAULT_IP = "15.8.177.148"
     DEFAULT_DIRECTORY = "."
 
@@ -35,24 +34,24 @@ class App(tk.Tk):
         self.title("FW Test Tool")
         self.geometry("900x800")
         
-        # Add this line before any config accesses
-        self.config_manager = ConfigManager()  # Initialize config manager first
+        # Initialize config manager first
+        self.config_manager = ConfigManager()
         
-        # Load IP address from config file or use default
-        self._ip_address = self.load_ip_address() or self.DEFAULT_IP
+        # Load IP address from config manager
+        self._ip_address = self.config_manager.get("ip_address", self.DEFAULT_IP)
         self.ip_var = tk.StringVar(value=self._ip_address)
-        self.ip_var.trace_add("write", self._on_ip_change)  # Track changes to IP input
+        self.ip_var.trace_add("write", self._on_ip_change)
         self._ip_callbacks: List[Callable[[str], None]] = []
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # Load directory from config file or use default
-        self._directory = self.load_directory() or self.DEFAULT_DIRECTORY
+        # Load directory from config manager
+        self._directory = self.config_manager.get("directory", self.DEFAULT_DIRECTORY)
         self.directory_var = tk.StringVar(value=self.shorten_directory(self._directory))
         self._directory_callbacks: List[Callable[[str], None]] = []
 
         # Create UI components
         self.create_ip_input()
-        self.create_directory_input()  # New method call
+        self.create_directory_input()
         self.capture_manager = CaptureManager(current_directory=self._directory)
 
         # initialize tools
@@ -146,7 +145,7 @@ class App(tk.Tk):
             # Only update if IP is different
             if ip != self._ip_address:
                 self._ip_address = ip
-                self.save_ip_address()  # Save the new IP address
+                self.config_manager.set("ip_address", ip)
                 
                 # Notify callbacks
                 for callback in self._ip_callbacks:
@@ -179,47 +178,11 @@ class App(tk.Tk):
 
             # Update the directory display
             self.directory_var.set(shortened_directory)
-            self.save_directory()
+            self.config_manager.set("directory", directory)
             for callback in self._directory_callbacks:
                 callback(directory)
 
-    def save_ip_address(self) -> None:
-        """Save the current IP address to the config file."""
-        try:
-            # Load current config
-            config = self.load_config()
-            config["ip_address"] = self._ip_address
-            
-            # Create a temporary file
-            temp_file = f"{self.CONFIG_FILE}.tmp"
-            
-            # Write to temporary file first
-            with open(temp_file, "w") as f:
-                json.dump(config, f, indent=4)
-            
-            # Atomic rename operation
-            os.replace(temp_file, self.CONFIG_FILE)
-            
-            print(f"> [App.save_ip_address] Successfully saved IP: {self._ip_address}")
-        except Exception as e:
-            print(f">! [App.save_ip_address] Error saving IP: {str(e)}")
-            # You might want to show an error message to the user here
-
-    def load_ip_address(self) -> str:
-        """Load the IP address from the config file."""
-        config = self.load_config()
-        return config.get("ip_address")
-
-    @classmethod
-    def load_config(cls) -> dict:
-        """Load the entire config file."""
-        if os.path.exists(cls.CONFIG_FILE):
-            with open(cls.CONFIG_FILE, "r") as f:
-                return json.load(f)
-        return {}
-
     def get_ip_address(self) -> str:
-        # Getter for the current IP address
         return self._ip_address
     
     def get_directory(self) -> str:
@@ -230,51 +193,15 @@ class App(tk.Tk):
         # Register callbacks for IP address changes
         self._ip_callbacks.append(callback)
 
-
     def register_directory_callback(self, callback: Callable[[str], None]) -> None:
         print(f"> [App.register_directory_callback] Registering new directory callback")
         self._directory_callbacks.append(callback)
-
-    def save_directory(self) -> None:
-        """Save the current directory to the config file."""
-        try:
-            # Load current config
-            config = self.load_config()
-            config["directory"] = self._directory
-            
-            # Create a temporary file
-            temp_file = f"{self.CONFIG_FILE}.tmp"
-            
-            # Write to temporary file first
-            with open(temp_file, "w") as f:
-                json.dump(config, f, indent=4)
-            
-            # Atomic rename operation
-            os.replace(temp_file, self.CONFIG_FILE)
-            
-            print(f"> [App.save_directory] Successfully saved directory: {self._directory}")
-        except Exception as e:
-            print(f">! [App.save_directory] Error saving directory: {str(e)}")
-            # You might want to show an error message to the user here
-
-    def load_directory(self) -> str:
-        """Load the directory from the config file."""
-        config = self.load_config()
-        return config.get("directory")
 
     def shorten_directory(self, directory: str) -> str:
         """Shorten the directory path to show only the last 3 components."""
         path_components = directory.split('/')
         last_three_components = '/'.join(path_components[-3:])
         return f".../{last_three_components}" if len(path_components) > 3 else directory
-
-    def get_directory(self) -> str:
-        print(f"> [App.get_directory] Returning directory: {self._directory}")
-        return self._directory
-
-    def register_directory_callback(self, callback: Callable[[str], None]) -> None:
-        print(f"> [App.register_directory_callback] Registering new directory callback")
-        self._directory_callbacks.append(callback)
 
     def create_tabs(self) -> None:
         print("> [App.create_tabs] Creating tabs")

@@ -68,7 +68,6 @@ class CaptureManager:
                 min_y = min(monitor.y for monitor in self.monitors)
                 x2, y2 = event.x_root - min_x, event.y_root - min_y
                 canvas.coords(self.rectangle_id, start_x - min_x, start_y - min_y, x2, y2)
-                overlay.update()
 
         def on_mouse_up(event):
             nonlocal captured_image
