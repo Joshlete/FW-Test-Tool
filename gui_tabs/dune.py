@@ -943,25 +943,21 @@ class DuneTab(TabContent):
         
         # Create fresh menu
         menu.delete(0, 'end')
-        
-        # Add base commands
-        menu.add_command(label="View Details", 
-                       command=lambda: self.view_alert_details(tree, alert_items))
-        menu.add_command(label="Save", 
-                       command=lambda: self.save_selected_alert(tree, alert_items))
-        
+
         # Add UI capture option at the top
-        menu.add_separator()
         menu.add_command(label="Capture UI", 
                        command=lambda: self.capture_ui_for_alert(tree, alert_items))
         
-        # Add dynamic action items from alert data
-        if 'actions' in alert:
+        # Add Acknowledge submenu if allowed
+        if allow_acknowledge and 'actions' in alert:
             actions = alert.get('actions', {})
             supported_actions = actions.get('supported', [])
             
             if supported_actions:
-                menu.add_separator()
+                # Create acknowledge submenu
+                acknowledge_menu = tk.Menu(menu, tearoff=0)
+                menu.add_cascade(label="Acknowledge", menu=acknowledge_menu)
+                
                 action_links = actions.get('links', [])
                 action_link = next((link['href'] for link in action_links if link['rel'] == 'alertAction'), None)
                 
@@ -969,7 +965,7 @@ class DuneTab(TabContent):
                     action_value = action.get('value', {}).get('seValue', '')
                     display_name = action_value.capitalize().replace('_', ' ')
                     
-                    menu.add_command(
+                    acknowledge_menu.add_command(
                         label=display_name,
                         command=lambda id=alert.get('id'), val=action_value, link=action_link: 
                             self.handle_alert_action(id, val, link)
