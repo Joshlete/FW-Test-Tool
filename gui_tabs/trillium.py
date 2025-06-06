@@ -80,6 +80,12 @@ class TrilliumTab(TabContent):
         self.telemetry_input_button.pack(side="left", padx=5)
         print("Telemetry input button created")
 
+        # Add USB Connection button
+        self.usb_connection_button = ttk.Button(self.connection_frame, text="USB Connection", 
+                                              command=self.open_usb_connection, state="normal")
+        self.usb_connection_button.pack(side="left", padx=5)
+        print("USB Connection button created")
+
         # Main content frames
         print("\nCreating content frames:")
         try:
@@ -585,6 +591,51 @@ class TrilliumTab(TabContent):
             import traceback
             traceback.print_exc()
 
+    def open_usb_connection(self):
+        """Open dialog for USB connection operations (CDM parsing and script output)"""
+        usb_window = Toplevel(self.frame)
+        usb_window.title("USB Connection")
+        usb_window.geometry("800x600")
+        usb_window.minsize(600, 400)
+        
+        # Main frames
+        input_frame = ttk.Frame(usb_window)
+        input_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        button_frame = ttk.Frame(usb_window)
+        button_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # Text area with scrollbars
+        text_area = Text(input_frame, wrap="word", font=("Consolas", 10))
+        y_scrollbar = ttk.Scrollbar(input_frame, orient="vertical", command=text_area.yview)
+        x_scrollbar = ttk.Scrollbar(input_frame, orient="horizontal", command=text_area.xview)
+        
+        text_area.configure(yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
+        
+        # Layout with grid
+        text_area.grid(row=0, column=0, sticky="nsew")
+        y_scrollbar.grid(row=0, column=1, sticky="ns")
+        x_scrollbar.grid(row=1, column=0, sticky="ew")
+        
+        input_frame.grid_rowconfigure(0, weight=1)
+        input_frame.grid_columnconfigure(0, weight=1)
+        
+        # Status label
+        status_label = ttk.Label(button_frame, text="")
+        status_label.pack(side="top", fill="x", pady=(0, 5))
+        
+        # Buttons
+        parse_cdm_btn = ttk.Button(button_frame, text="Parse CDM JSONs",
+                                 command=lambda: self.parse_cdm_jsons(text_area, status_label))
+        parse_cdm_btn.pack(side="left", padx=5)
+        
+        save_script_btn = ttk.Button(button_frame, text="Save Script Output",
+                                   command=lambda: self.save_script_output(text_area, status_label))
+        save_script_btn.pack(side="left", padx=5)
+        
+        # Debug info
+        print("USB Connection window opened")
+
     def open_telemetry_input(self):
         """Open dialog for pasting and processing telemetry data"""
         telemetry_window = Toplevel(self.frame)
@@ -619,13 +670,9 @@ class TrilliumTab(TabContent):
         status_label.pack(side="top", fill="x", pady=(0, 5))
         
         # Buttons
-        cleanup_btn = ttk.Button(button_frame, text="Clean Up", 
-                               command=lambda: self.cleanup_telemetry_text(text_area, status_label))
-        cleanup_btn.pack(side="left", padx=5)
-        
-        format_btn = ttk.Button(button_frame, text="Format JSON", 
-                              command=lambda: self.format_telemetry_json(text_area, status_label))
-        format_btn.pack(side="left", padx=5)
+        cleanup_format_btn = ttk.Button(button_frame, text="Clean & Format", 
+                                      command=lambda: self.cleanup_and_format_json(text_area, status_label))
+        cleanup_format_btn.pack(side="left", padx=5)
         
         save_btn = ttk.Button(button_frame, text="Save", 
                            command=lambda: self.save_telemetry_input(text_area, status_label))
@@ -639,70 +686,140 @@ class TrilliumTab(TabContent):
         # Debug info
         print("Telemetry input window opened")
 
-    def cleanup_telemetry_text(self, text_area, status_label):
-        """Remove first two characters from each line and join lines without newlines"""
+    def parse_cdm_jsons(self, text_area, status_label):
+        """Parse multiple CDM JSONs and save them to their respective endpoints"""
         try:
-            # Get all text
+            # Get the text content
             text = text_area.get("1.0", "end-1c")
             
-            # Split by actual newlines to get each line
-            lines = text.split('\n')
-            cleaned_lines = []
-                        
-            for i, line in enumerate(lines):
-                if not line.strip():
+            # Split the text into individual JSON blocks
+            json_blocks = []
+            current_block = []
+            current_endpoint = None
+            
+            for line in text.split('\n'):
+                line = line.strip()
+                if not line:
                     continue
                     
-                # First, remove the first two characters
-                if len(line) > 2:
-                    line = line[2:]
+                # Check if this is an endpoint line
+                if line.startswith('/cdm/'):
+                    # If we have a previous block, save it
+                    if current_block and current_endpoint:
+                        json_blocks.append((current_endpoint, '\n'.join(current_block)))
+                    # Start new block
+                    current_endpoint = line
+                    current_block = []
+                else:
+                    current_block.append(line)
+            
+            # Add the last block if exists
+            if current_block and current_endpoint:
+                json_blocks.append((current_endpoint, '\n'.join(current_block)))
+            
+            if not json_blocks:
+                status_label.config(text="No valid CDM JSON blocks found")
+                return
+            
+            # Process each block
+            success_count = 0
+            error_count = 0
+            error_messages = []
+            saved_files = []
+            
+            for endpoint, json_str in json_blocks:
+                try:
+                    # Parse the JSON
+                    json_data = json.loads(json_str)
+                    
+                    # Get the base filename from the endpoint
+                    base_filename = endpoint.split('/')[-1]
+                    
+                    # Create filename based on the endpoint
+                    if base_filename == "alerts":
+                        filename = "CDM_Alerts"
+                    elif base_filename == "suppliesPrivate":
+                        filename = "CDM_SuppliesPrivate"
+                    elif base_filename == "suppliesPublic":
+                        filename = "CDM_SuppliesPublic"
+                    else:
+                        filename = f"CDM_{base_filename}"
+                    
+                    # Save the JSON data
+                    success, filepath = self.save_json_data(json_data, filename)
+                    
+                    if success:
+                        success_count += 1
+                        saved_files.append(os.path.basename(filepath))
+                        print(f"DEBUG: Saved {endpoint} to {filepath}")
+                    else:
+                        error_count += 1
+                        error_messages.append(f"Failed to save {endpoint}")
+                        
+                except json.JSONDecodeError as e:
+                    error_count += 1
+                    error_messages.append(f"Invalid JSON for {endpoint}: {str(e)}")
+                except Exception as e:
+                    error_count += 1
+                    error_messages.append(f"Error processing {endpoint}: {str(e)}")
+            
+            # Update status with detailed information
+            if error_count == 0:
+                status_text = f"Successfully saved {success_count} CDM JSONs:\n" + "\n".join(saved_files)
+                status_label.config(text=status_text)
+            else:
+                status_text = f"Saved {success_count} CDM JSONs, {error_count} errors:\n"
+                status_text += "\nSaved files:\n" + "\n".join(saved_files)
+                status_text += "\n\nErrors:\n" + "\n".join(error_messages)
+                status_label.config(text=status_text)
+                print("DEBUG: Errors encountered:")
+                for msg in error_messages:
+                    print(f"DEBUG: {msg}")
                 
-                # Then trim any whitespace from both ends of the line
-                line = line.strip()
-                
-                # Add to cleaned lines
-                cleaned_lines.append(line)
-            
-            # Join all lines without adding spaces
-            cleaned_text = ''.join(cleaned_lines)
-            
-            print(f"DEBUG: Final text length: {len(cleaned_text)}")
-            
-            # Clear and insert cleaned text
-            text_area.delete("1.0", "end")
-            text_area.insert("1.0", cleaned_text)
-            
-            status_label.config(text="Text cleaned up successfully")
         except Exception as e:
-            status_label.config(text=f"Error during cleanup: {str(e)}")
-            print(f"DEBUG: Error cleaning telemetry text: {str(e)}")
+            status_label.config(text=f"Error parsing CDM JSONs: {str(e)}")
+            print(f"DEBUG: Error parsing CDM JSONs: {str(e)}")
             import traceback
             traceback.print_exc()
-    
-    def format_telemetry_json(self, text_area, status_label):
-        """Format content as pretty JSON"""
+
+    def cleanup_and_format_json(self, text_area, status_label):
+        """Clean up the text and format it as JSON"""
         try:
-            # Get text content
             text = text_area.get("1.0", "end-1c")
+            lines = text.split('\n')
+            cleaned_lines = []
             
-            # Try to parse as JSON
+            for line in lines:
+                if not line.strip():
+                    continue
+                if len(line) > 2:
+                    line = line[2:]
+                line = line.strip()
+                cleaned_lines.append(line)
+            
+            cleaned_text = ''.join(cleaned_lines)
+            
             try:
-                json_data = json.loads(text)
+                json_data = json.loads(cleaned_text)
                 formatted_json = json.dumps(json_data, indent=4)
                 
-                # Update text area
                 text_area.delete("1.0", "end")
                 text_area.insert("1.0", formatted_json)
                 
-                status_label.config(text="JSON formatted successfully")
-                print("DEBUG: Telemetry JSON formatted")
-            except json.JSONDecodeError as je:
-                status_label.config(text=f"Invalid JSON: {str(je)}")
-                print(f"DEBUG: Invalid JSON: {str(je)}")
+                status_label.config(text="Text cleaned and formatted as JSON")
+                print("DEBUG: Text cleaned and formatted as JSON")
+            except json.JSONDecodeError:
+                text_area.delete("1.0", "end")
+                text_area.insert("1.0", cleaned_text)
+                status_label.config(text="Text cleaned but not valid JSON")
+                print("DEBUG: Text cleaned but not valid JSON")
+                
         except Exception as e:
-            status_label.config(text=f"Error formatting JSON: {str(e)}")
-            print(f"DEBUG: Error formatting telemetry JSON: {str(e)}")
-    
+            status_label.config(text=f"Error during cleanup and format: {str(e)}")
+            print(f"DEBUG: Error during cleanup and format: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
     def save_telemetry_input(self, text_area, status_label):
         """Save telemetry data to file with the same format as telemetry table"""
         try:
@@ -830,5 +947,30 @@ class TrilliumTab(TabContent):
         except Exception as e:
             status_label.config(text=f"Error saving data: {str(e)}")
             print(f"DEBUG: Error saving OpenSearch telemetry data: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def save_script_output(self, text_area, status_label):
+        """Save the raw text content with step number prefix"""
+        try:
+            # Get current text
+            text = text_area.get("1.0", "end-1c")
+            
+            # Get current step number
+            current_step = self.step_var.get()
+            
+            # Save the raw text
+            success, filepath = self.save_text_data(text, f"Script Output")
+            
+            if success:
+                status_label.config(text=f"Script output saved to: {os.path.basename(filepath)}")
+                print(f"DEBUG: Saved script output to {filepath}")
+            else:
+                status_label.config(text="Failed to save script output")
+                print("DEBUG: Failed to save script output")
+                
+        except Exception as e:
+            status_label.config(text=f"Error saving script output: {str(e)}")
+            print(f"DEBUG: Error saving script output: {str(e)}")
             import traceback
             traceback.print_exc()

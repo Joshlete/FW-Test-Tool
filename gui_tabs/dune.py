@@ -125,6 +125,9 @@ class DuneTab(TabContent):
                            command=lambda: self.start_snip("EWS Supplies Page Black"))
         ews_menu.add_command(label="Supplies Page Color", 
                            command=lambda: self.start_snip("EWS Supplies Page Color"))
+        ews_menu.add_separator()
+        ews_menu.add_command(label="Previous Cartridge Information", 
+                           command=lambda: self.start_snip("EWS Previous Cartridge Information"))
         
         ews_menu_button["menu"] = ews_menu
         ews_menu_button.pack(side="left", pady=5, padx=10)
@@ -205,9 +208,9 @@ class DuneTab(TabContent):
         )
         
         # Add color-specific entries
+        ecl_menu.add_separator()
         colors = ["Cyan", "Magenta", "Yellow", "Black", "Color"]
         for color in colors:
-            ecl_menu.add_separator()
             filename = f"UI Estimated Cartridge Level {color}"
             ecl_menu.add_command(
                 label=color,
