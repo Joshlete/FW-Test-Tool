@@ -256,20 +256,29 @@ class App(tk.Tk):
         self.keybinding_manager.stop_listeners()
 
         # Join remaining threads with a timeout
-        timeout = 5  # 5 seconds timeout
+        timeout = 1  # 3 seconds timeout for graceful shutdown
         start_time = time.time()
+        threads_still_running = []
+        
         for thread in threading.enumerate():
             if thread != threading.main_thread():
                 remaining_time = max(0, timeout - (time.time() - start_time))
                 if remaining_time <= 0:
-                    print(f"Timeout reached. Unable to stop thread: {thread.name}")
+                    threads_still_running.append(thread.name)
                     break
                 print(f"Waiting for thread to stop: {thread.name}")
                 thread.join(timeout=remaining_time)
+                if thread.is_alive():
+                    threads_still_running.append(thread.name)
 
-        print("Closing application...")
-        self.quit()
-        self.destroy()
+        # Force close if threads are still running
+        if threads_still_running:
+            print(f"Force closing application - threads still running: {threads_still_running}")
+            os._exit(0)  # Force exit without cleanup
+        else:
+            print("All threads stopped gracefully. Closing application...")
+            self.quit()
+            self.destroy()
 
     def _setup_tab_persistence(self) -> None:
         """Initialize tab persistence functionality"""
