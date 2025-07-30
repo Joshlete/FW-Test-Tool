@@ -52,7 +52,8 @@ class App(tk.Tk):
         # Create UI components
         self.create_ip_input()
         self.create_directory_input()
-        self.capture_manager = CaptureManager(current_directory=self._directory)
+        # Pass config_manager to CaptureManager
+        self.capture_manager = CaptureManager(current_directory=self._directory, config_manager=self.config_manager)
 
         # initialize tools
         self.create_toolbar()
@@ -256,7 +257,7 @@ class App(tk.Tk):
         self.keybinding_manager.stop_listeners()
 
         # Join remaining threads with a timeout
-        timeout = 1  # 3 seconds timeout for graceful shutdown
+        timeout = 3  # 3 seconds timeout for graceful shutdown
         start_time = time.time()
         threads_still_running = []
         

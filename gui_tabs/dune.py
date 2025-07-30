@@ -128,6 +128,8 @@ class DuneTab(TabContent):
         ews_menu.add_separator()
         ews_menu.add_command(label="Previous Cartridge Information", 
                            command=lambda: self.start_snip("EWS Previous Cartridge Information"))
+        ews_menu.add_command(label="Printer Region Reset", 
+                           command=lambda: self.start_snip("EWS Printer Region Reset"))
         
         ews_menu_button["menu"] = ews_menu
         ews_menu_button.pack(side="left", pady=5, padx=10)
@@ -445,15 +447,28 @@ class DuneTab(TabContent):
         self.root.after(0, lambda: self.connect_button.config(state="disabled", text=DISCONNECTING))
         
         try:
+            # Try to disconnect FPUI
+            try:
+                if hasattr(self, 'dune_fpui') and self.dune_fpui:
+                    self.dune_fpui.disconnect()
+            except Exception as e:
+                print(f">     [Dune] Error disconnecting FPUI: {e}")
+                pass  # Ignore errors when disconnecting FPUI
+
+            # Try to close socket if it exists
             if self.sock:
-                self.sock.close()
+                try:
+                    self.sock.close()
+                except Exception as e:
+                    print(f">     [Dune] Error closing socket: {e}")
+                    pass  # Ignore errors when closing socket
             self.sock = None
+
+            # Reset connection state and UI
             self.is_connected = False
-            if hasattr(self, 'remote_control_panel') and self.remote_control_panel:
-                self.remote_control_panel.close()
+            self.is_viewing_ui = False
 
-            self.dune_fpui.disconnect()
-
+            # Update UI elements
             self.root.after(0, lambda: [
                 self.connect_button.config(state="normal", text=CONNECT),
                 self.capture_ui_button.config(state="disabled"),
@@ -464,25 +479,34 @@ class DuneTab(TabContent):
                 self.ecl_menu_button.config(state="disabled"),
                 self.ssh_menu_button.config(state="disabled")
             ])
+
+            # Clear UI image
             self.root.after(0, lambda: self.image_label.config(image=None))
-            self.image_label.image = None  # Remove the reference
-            
-            # Stop viewing the UI
+            self.image_label.image = None
+
+            # Stop viewing UI
             self.stop_view_ui()
 
-            self.is_connected = False
-            
             # Show success notification
             self.root.after(0, lambda: self._show_notification("Disconnected from printer", "green"))
+
+            # Clear telemetry window if it exists
             if self.telemetry_window is not None and hasattr(self.telemetry_window, 'file_listbox'):
                 self.telemetry_window.file_listbox.delete(0, tk.END)
+
         except Exception as e:
             print(f"An error occurred while disconnecting: {e}")
             # Show error notification
             self.root.after(0, lambda: self._show_notification(f"Disconnection error: {str(e)}", "red"))
+            # Ensure connection state is reset even on error
+            self.is_connected = False
+            self.is_viewing_ui = False
+            self.sock = None
         finally:
+            # Always ensure button is re-enabled and shows correct state
             self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
 
+        # Clean up telemetry window
         if self.telemetry_window and self.telemetry_window.winfo_exists():
             self.telemetry_window.destroy()
         self.telemetry_window = None
@@ -821,18 +845,22 @@ class DuneTab(TabContent):
     def start_snip(self, default_filename: str) -> None:
         """
         Captures a screen region and saves it using the TabContent's save mechanism.
+        Now supports multiple named regions for different EWS pages.
 
-        :param default_filename: Base filename to use for saving
+        :param default_filename: Base filename to use for saving (also determines region type)
         """
         try:
             # Import here to avoid circular imports
             from snip_tool import CaptureManager
             
-            # Create capture manager
-            capture_manager = CaptureManager(self.directory)
+            # Create capture manager with config manager support
+            capture_manager = CaptureManager(self.directory, config_manager=self.app.config_manager)
             
-            # Capture image
-            image = capture_manager.capture_screen_region_and_return(self.root)
+            # Determine region name from filename
+            region_name = capture_manager._get_region_name_from_filename(default_filename)
+            
+            # Capture image with specific region
+            image = capture_manager.capture_screen_region_and_return(self.root, region_name)
             
             # Process the captured image
             if image:
@@ -845,7 +873,7 @@ class DuneTab(TabContent):
                 # Show result notification
                 if success:
                     filename = os.path.basename(filepath)
-                    self._show_notification(f"Screenshot saved: {filename}", "green")
+                    self._show_notification(f"Screenshot saved: {filename} (Region: {region_name})", "green")
                 else:
                     self._show_notification("Failed to save screenshot", "red")
                 
