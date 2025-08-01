@@ -1,5 +1,5 @@
 from .base import TabContent
-from dune_fpui import DuneFPUI
+from vncapp import VNCConnection
 from tkinter import simpledialog, ttk, Toplevel, Checkbutton, IntVar, Button, Canvas, RIGHT, Text, filedialog
 import threading
 import socket
@@ -10,6 +10,15 @@ import requests
 import tkinter as tk
 import os
 import json
+import time
+
+# Mouse/Display settings
+COORDINATE_SCALE_FACTOR = 0.8
+DRAG_THRESHOLD_PIXELS = 5
+SMALL_SCREEN_WIDTH_THRESHOLD = 400
+
+# Debug flag
+DEBUG = False  # Set to True to enable debug logging
 
 # Constants for button text
 CONNECTING = "Connecting..."
@@ -30,7 +39,7 @@ class DuneTab(TabContent):
         self.directory = self.app.get_directory()
         self.is_connected = False  # Global variable to track connection status
         self.sock = None    
-        self.dune_fpui = DuneFPUI()
+        self.vnc_connection = VNCConnection(self.ip)
         
         # Get CDM endpoints before initializing parent
         self.cdm_options = self.app.dune_fetcher.get_endpoints()
@@ -199,7 +208,7 @@ class DuneTab(TabContent):
             self.ui_button_frame,
             text="Capture ECL",
             style='TButton',
-            state="disabled"  # Initial disabled state
+            state="disabled"
         )
         ecl_menu = tk.Menu(self.ecl_menu_button, tearoff=0)
         
@@ -222,19 +231,23 @@ class DuneTab(TabContent):
         self.ecl_menu_button["menu"] = ecl_menu
         self.ecl_menu_button.pack(side="left", pady=0, padx=5)
 
-        # Create a fixed-size frame for the image
-        self.image_frame = ttk.Frame(ui_frame)
-        self.image_frame.pack(pady=(5,5), padx=10, expand=True, fill="both")
+        # Create a scrollable frame for the image (since it might be larger than the window)
+        self.image_canvas = tk.Canvas(ui_frame, bg='gray')
+        self.image_scrollbar_v = ttk.Scrollbar(ui_frame, orient="vertical", command=self.image_canvas.yview)
+        self.image_scrollbar_h = ttk.Scrollbar(ui_frame, orient="horizontal", command=self.image_canvas.xview)
+        self.image_canvas.configure(yscrollcommand=self.image_scrollbar_v.set, xscrollcommand=self.image_scrollbar_h.set)
         
-        # Set fixed size for image display (typical printer UI size after scaling)
-        self.image_frame.update()
-        width = 800  # Fixed width
-        height = 600  # Fixed height
-        self.image_frame.config(width=width, height=height)
-
-        # Add image label inside the image frame
-        self.image_label = ttk.Label(self.image_frame)
-        self.image_label.pack(expand=True, fill="both")
+        # Create the image label inside the canvas
+        self.image_label = ttk.Label(self.image_canvas)
+        self.image_canvas.create_window(0, 0, anchor="nw", window=self.image_label)
+        
+        # Pack scrollbars and canvas
+        self.image_scrollbar_v.pack(side="right", fill="y")
+        self.image_scrollbar_h.pack(side="bottom", fill="x")
+        self.image_canvas.pack(side="left", fill="both", expand=True)
+        
+        # Initialize scaling info for coordinate transformation
+        self._image_scale_info = None
 
     def create_rest_client_widgets(self):
         """Creates the REST client interface with a Treeview table"""
@@ -447,13 +460,9 @@ class DuneTab(TabContent):
         self.root.after(0, lambda: self.connect_button.config(state="disabled", text=DISCONNECTING))
         
         try:
-            # Try to disconnect FPUI
-            try:
-                if hasattr(self, 'dune_fpui') and self.dune_fpui:
-                    self.dune_fpui.disconnect()
-            except Exception as e:
-                print(f">     [Dune] Error disconnecting FPUI: {e}")
-                pass  # Ignore errors when disconnecting FPUI
+            # Disconnect VNC following PrinterUIApp pattern
+            if hasattr(self, 'vnc_connection') and self.vnc_connection:
+                self.vnc_connection.disconnect()
 
             # Try to close socket if it exists
             if self.sock:
@@ -639,21 +648,22 @@ class DuneTab(TabContent):
         self.queue_task(self._continue_save_fpui_image, full_path)
 
     def _continue_save_fpui_image(self, full_path):
-        """Handles the actual screenshot capture with full path."""
+        """Save UI screenshot to file"""
         directory = os.path.dirname(full_path)
         filename = os.path.basename(full_path)
         
-        if not self.dune_fpui.is_connected():
-            if not self.dune_fpui.connect(self.ip):
-                self._show_notification("Failed to connect to Dune FPUI", "red", duration=10000)
+        # Follow PrinterUIApp connection pattern
+        if not self.vnc_connection.connected:
+            if not self.vnc_connection.connect(self.ip, rotation=self.rotation_var.get()):
+                self._show_notification("Failed to connect to VNC", "red", duration=10000)
                 return
             
-        captured = self.dune_fpui.save_ui(directory, filename)
+        captured = self.vnc_connection.save_ui(directory, filename)
         if not captured:
             self._show_notification("Failed to capture UI", "red", duration=10000)
             return
             
-        self._show_notification("Screenshot Captured", "green", duration=10000)  # 10 seconds
+        self._show_notification("Screenshot Captured", "green", duration=10000)
 
     def on_ip_change(self, new_ip):
         self.ip = new_ip
@@ -685,92 +695,111 @@ class DuneTab(TabContent):
         self.update_ui()
 
     def update_ui(self, callback=None):
-        if not self.dune_fpui.is_connected():
-            # Attempt to connect if not already connected
-            print(f">     [Dune] FPUI not connected, attempting to connect to {self.ip} with rotation {self.rotation_var.get()}")
-            if not self.dune_fpui.connect(self.ip, rotation=self.rotation_var.get()):
-                self._show_notification("Failed to connect to Dune FPUI", "red")
-                print(">     [Dune] Failed to connect to Dune FPUI")
-                self.stop_view_ui()  # Stop viewing UI if connection fails
+        # Follow PrinterUIApp connection pattern - connect without parameters
+        if not self.vnc_connection.connected:
+            print(f">     [Dune] VNC not connected, attempting to connect")
+            # Set IP and rotation before connecting
+            self.vnc_connection.ip = self.ip
+            self.vnc_connection.rotation = self.rotation_var.get()
+            if not self.vnc_connection.connect(self.ip, self.rotation_var.get()):
+                self._show_notification("Failed to connect to VNC", "red")
+                self.stop_view_ui()
                 return
             else:
-                self._show_notification(f"Connected to Dune FPUI with rotation {self.rotation_var.get()}°", "green")
-                print(f">     [Dune] Successfully connected to Dune FPUI with rotation {self.rotation_var.get()}")
+                self._show_notification(f"Connected to VNC with rotation {self.rotation_var.get()}°", "green")
+                self._bind_click_events()
+
+        # Follow PrinterUIApp viewing pattern
+        if self.is_viewing_ui and not self.vnc_connection.viewing:
+            if not self.vnc_connection.start_viewing():
+                self._show_notification("Failed to start viewing", "red")
+                self.stop_view_ui()
+                return
 
         if self.is_viewing_ui:
-            # Queue the UI capture and processing in the worker thread
-            self.queue_task(self._process_ui_update)
-
-            # Schedule next update with a longer interval (500ms instead of 100ms)
-            self.ui_update_job = self.root.after(500, self.update_ui)
+            self._update_display()
+            self.ui_update_job = self.root.after(50, self.update_ui)  # Match PrinterUIApp timing
         else:
-            print(">     [Dune] Stopping UI view due to is_viewing_ui=False")
             self.stop_view_ui()
 
         if callback:
             callback()
 
-    def _process_ui_update(self):
-        """Process UI update in worker thread"""
-        try:
-            # Capture UI image
-            image_data = self.dune_fpui.capture_ui()
-            if not image_data:
-                return
-
-            # Process image in worker thread
-            image = Image.open(io.BytesIO(image_data))
-            
-            # Get frame size once and cache it
-            if not hasattr(self, '_cached_frame_size'):
-                self._cached_frame_size = (self.image_frame.winfo_width(), self.image_frame.winfo_height())
-            
-            frame_width, frame_height = self._cached_frame_size
-            
-            # Calculate scaling to fit within the frame while preserving aspect ratio
-            img_width, img_height = image.size
-            width_ratio = frame_width / img_width
-            height_ratio = frame_height / img_height
-            scale_factor = min(width_ratio, height_ratio) * 0.9  # 90% of available space
-            
-            # Calculate new dimensions
-            new_width = int(img_width * scale_factor)
-            new_height = int(img_height * scale_factor)
-            
-            # Resize the image
-            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            photo = ImageTk.PhotoImage(image)
-            
-            # Update UI in main thread
-            self.root.after(0, lambda: self._update_ui_image(photo))
-            
-        except Exception as e:
-            print(f">     [Dune] Error processing UI update: {str(e)}")
+    def _update_display(self):
+        """Update the UI display from VNC connection - following PrinterUIApp pattern"""
+        if not self.is_viewing_ui:
+            return
+        
+        # Get current frame like PrinterUIApp
+        image = self.vnc_connection.get_current_frame()
+        if image:
+            try:
+                # Resize image to fit display like PrinterUIApp
+                original_width, original_height = image.size
+                max_width, max_height = 700, 500
+                scale = min(max_width / original_width, max_height / original_height)
+                
+                if scale < 1:
+                    new_width = int(original_width * scale)
+                    new_height = int(original_height * scale)
+                    image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                photo = ImageTk.PhotoImage(image)
+                self._image_scale_info = {
+                    'original_size': (photo.width(), photo.height()),
+                    'display_size': (photo.width(), photo.height()),
+                    'scale_factor': scale if scale < 1 else 1.0
+                }
+                
+                self._update_ui_image(photo)
+            except Exception as e:
+                print(f">     [Dune] Error updating display: {str(e)}")
+        else:
+            # No frame yet - show waiting message like PrinterUIApp
+            if hasattr(self, 'image_label'):
+                self.image_label.config(image='')
+                self.image_label.image = None
 
     def _update_ui_image(self, photo):
-        """Update UI image in main thread"""
-        if self.is_viewing_ui:  # Only update if still viewing
-            self.image_label.config(image=photo)
-            self.image_label.image = photo  # Keep a reference
+        """Update the UI image display following PrinterUIApp pattern"""
+        try:
+            # Update image label like PrinterUIApp does
+            self.image_label.config(image=photo, text="")
+            self.image_label.image = photo  # Keep reference to prevent garbage collection
+            
+            # Update canvas scroll region for the new image size
+            self.image_canvas.configure(scrollregion=self.image_canvas.bbox("all"))
+            
+        except Exception as e:
+            print(f">     [Dune] Error updating UI image: {str(e)}")
 
     def stop_view_ui(self):
         print(f">     [Dune] Stopping UI view")
         self.is_viewing_ui = False
         self.continuous_ui_button.config(text=CONNECT_UI)
         
-        # Clear the image
+        # Stop VNC viewing like PrinterUIApp
+        if self.vnc_connection.viewing:
+            self.vnc_connection.stop_viewing()
+        
+        # Clear image and unbind events
+        try:
+            self.image_label.unbind("<Button-1>")
+            self.image_label.unbind("<Button-3>")
+        except:
+            pass
+        
         self.image_label.config(image='')
-        self.image_label.image = None  # Remove the reference
+        self.image_label.image = None
 
         if self.ui_update_job:
             self.root.after_cancel(self.ui_update_job)
             self.ui_update_job = None
         
-        # Disconnect the FPUI to ensure clean reconnection with new rotation
-        if self.dune_fpui.is_connected():
-            self.dune_fpui.disconnect()
+        if self.vnc_connection.connected:
+            self.vnc_connection.disconnect()
         
-        self._show_notification("Disconnected from Dune FPUI", "green") 
+        self._show_notification("Disconnected from VNC", "green")
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
@@ -778,20 +807,19 @@ class DuneTab(TabContent):
         super().cleanup()
 
     def _additional_cleanup(self):
-        """Additional cleanup specific to DuneTab"""
+        """Cleanup following PrinterUIApp pattern"""
         print(f"Additional cleanup for DuneTab")
         if self.is_connected:
-            print("Disconnecting from printer...")
             if self.sock:
                 self.sock.close()
             
-            if self.dune_fpui.is_connected():
-                print("Disconnecting DuneFPUI...")
-                self.dune_fpui.disconnect()
+            if self.vnc_connection.connected:
+                print("Disconnecting VNC...")
+                self.vnc_connection.disconnect()
         
-        # Stop the worker thread
-        self.task_queue.put((None, None))  # Sentinel to stop the thread
-        self.worker_thread.join(timeout=5)  # Add a timeout to prevent hanging
+        # Stop worker thread (existing code)
+        self.task_queue.put((None, None))
+        self.worker_thread.join(timeout=5)
         if self.worker_thread.is_alive():
             print("Warning: Worker thread did not stop within the timeout period")
 
@@ -924,15 +952,17 @@ class DuneTab(TabContent):
     # No need to implement it as it will call _get_telemetry_data
 
     def _execute_ssh_command(self, command: str) -> None:
-        """Executes an SSH command on the connected printer."""
+        """Execute SSH command using VNC connection - following PrinterUIApp pattern"""
         try:
-            if not self.dune_fpui.is_connected():
-                if not self.dune_fpui.connect(self.ip):
+            if not self.vnc_connection.connected:
+                # Set IP before connecting
+                self.vnc_connection.ip = self.ip
+                if not self.vnc_connection.connect(self.ip, self.rotation_var.get()):
                     self._show_notification("SSH connection failed", "red")
                     return
 
-            # Execute command via existing DuneFPUI connection
-            stdin, stdout, stderr = self.dune_fpui.ssh_client.exec_command(command)
+            # Access SSH client from VNC connection like PrinterUIApp
+            stdin, stdout, stderr = self.vnc_connection.ssh_client.exec_command(command)
             exit_status = stdout.channel.recv_exit_status()
             
             if exit_status == 0:
@@ -1027,31 +1057,26 @@ class DuneTab(TabContent):
             self._show_notification(f"Capture failed: {str(e)}", "red")
 
     def _save_ui_for_alert(self, base_name):
-        """Background task to save UI without dialog"""
         try:
-            # Generate safe filename with step prefix
             filepath, filename = self.get_safe_filepath(
-                self.directory,
-                base_name,
-                ".png",
-                step_number=self.step_var.get()
+                self.directory, base_name, ".png", step_number=self.step_var.get()
             )
             
-            if not self.dune_fpui.is_connected():
-                if not self.dune_fpui.connect(self.ip):
-                    raise ConnectionError("Failed to connect to Dune FPUI")
+            if not self.vnc_connection.connected:
+                # Set IP and rotation before connecting  
+                self.vnc_connection.ip = self.ip
+                self.vnc_connection.rotation = self.rotation_var.get()
+                if not self.vnc_connection.connect(self.ip, self.rotation_var.get()):
+                    raise ConnectionError("Failed to connect to VNC")
 
-            if not self.dune_fpui.save_ui(os.path.dirname(filepath), os.path.basename(filepath)):
+            if not self.vnc_connection.save_ui(os.path.dirname(filepath), os.path.basename(filepath)):
                 raise RuntimeError("UI capture failed")
 
-            # Show success notification with filename
-            self.root.after(0, lambda: self._show_notification(
-                f"UI captured: {filename}", "green", 5000))
+            self.root.after(0, lambda: self._show_notification(f"UI captured: {filename}", "green", 5000))
             
         except Exception as e:
-            error_msg = str(e)  # Capture error message before lambda
-            self.root.after(0, lambda msg=error_msg: self._show_notification(
-                f"Capture failed: {msg}", "red", 5000))
+            error_msg = str(e)
+            self.root.after(0, lambda msg=error_msg: self._show_notification(f"Capture failed: {msg}", "red", 5000))
 
     def show_cdm_context_menu(self, event, endpoint: str):
         """Show context menu for CDM items"""
@@ -1185,3 +1210,261 @@ class DuneTab(TabContent):
         """Display rotation menu on right-click of the View UI button."""
         if self.rotation_menu:
             self.rotation_menu.tk_popup(event.x_root, event.y_root)
+
+    def _on_mouse_down(self, event):
+        """Handle mouse button press"""
+        if not self.vnc_connection.connected or not self.vnc_connection.viewing:
+            self._show_notification("Not connected to VNC - cannot send click", "red")
+            return
+            
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+        self.is_dragging = False
+        
+        try:
+            display_width, display_height = self._image_scale_info['display_size']
+            screen_resolution = self.vnc_connection.screen_resolution
+            
+            if not screen_resolution:
+                return
+                
+            screen_width, screen_height = screen_resolution
+            scale_x = screen_width / display_width
+            scale_y = screen_height / display_height
+            
+            if screen_width < SMALL_SCREEN_WIDTH_THRESHOLD:
+                scale_x = scale_x * COORDINATE_SCALE_FACTOR
+            
+            vnc_x = int(event.x * scale_x)
+            vnc_y = int(event.y * scale_y)
+            
+            vnc_x = max(0, min(vnc_x, screen_width - 1))
+            vnc_y = max(0, min(vnc_y, screen_height - 1))
+            
+            self.vnc_connection.mouse_down(vnc_x, vnc_y)
+        except Exception as e:
+            self._show_notification(f"Mouse down error: {str(e)}", "red")
+            
+    def _on_mouse_drag(self, event):
+        """Handle mouse drag"""
+        if not self.vnc_connection.connected or not self.vnc_connection.viewing:
+            return
+            
+        if self.drag_start_x is None or self.drag_start_y is None:
+            return
+            
+        dx = event.x - self.drag_start_x
+        dy = event.y - self.drag_start_y
+        
+        if abs(dx) > DRAG_THRESHOLD_PIXELS or abs(dy) > DRAG_THRESHOLD_PIXELS:
+            self.is_dragging = True
+        
+        try:
+            display_width, display_height = self._image_scale_info['display_size']
+            screen_resolution = self.vnc_connection.screen_resolution
+            
+            if not screen_resolution:
+                return
+                
+            screen_width, screen_height = screen_resolution
+            scale_x = screen_width / display_width
+            scale_y = screen_height / display_height
+            
+            if screen_width < SMALL_SCREEN_WIDTH_THRESHOLD:
+                scale_x = scale_x * COORDINATE_SCALE_FACTOR
+            
+            vnc_x = int(event.x * scale_x)
+            vnc_y = int(event.y * scale_y)
+            
+            vnc_x = max(0, min(vnc_x, screen_width - 1))
+            vnc_y = max(0, min(vnc_y, screen_height - 1))
+            
+            self.vnc_connection.mouse_move(vnc_x, vnc_y)
+        except Exception as e:
+            self._show_notification(f"Mouse drag error: {str(e)}", "red")
+            
+    def _on_mouse_up(self, event):
+        """Handle mouse button release"""
+        if not self.vnc_connection.connected or not self.vnc_connection.viewing:
+            return
+            
+        try:
+            display_width, display_height = self._image_scale_info['display_size']
+            screen_resolution = self.vnc_connection.screen_resolution
+            
+            if not screen_resolution:
+                return
+                
+            screen_width, screen_height = screen_resolution
+            scale_x = screen_width / display_width
+            scale_y = screen_height / display_height
+            
+            if screen_width < SMALL_SCREEN_WIDTH_THRESHOLD:
+                scale_x = scale_x * COORDINATE_SCALE_FACTOR
+            
+            vnc_x = int(event.x * scale_x)
+            vnc_y = int(event.y * scale_y)
+            
+            vnc_x = max(0, min(vnc_x, screen_width - 1))
+            vnc_y = max(0, min(vnc_y, screen_height - 1))
+            
+            if not self.is_dragging:
+                # Simple click
+                self.vnc_connection.click_at(vnc_x, vnc_y)
+            else:
+                # End drag
+                self.vnc_connection.mouse_up(vnc_x, vnc_y)
+                
+            self.drag_start_x = None
+            self.drag_start_y = None
+            self.is_dragging = False
+            
+        except Exception as e:
+            self._show_notification(f"Mouse up error: {str(e)}", "red")
+            
+    def _on_mouse_wheel(self, event):
+        """Handle mouse wheel scrolling"""
+        if not self.vnc_connection.connected or not self.vnc_connection.viewing:
+            return
+            
+        try:
+            # Get display coordinates
+            display_width, display_height = self._image_scale_info['display_size']
+            screen_resolution = self.vnc_connection.screen_resolution
+            
+            if not screen_resolution:
+                return
+                
+            screen_width, screen_height = screen_resolution
+            scale_x = screen_width / display_width
+            scale_y = screen_height / display_height
+            
+            if screen_width < SMALL_SCREEN_WIDTH_THRESHOLD:
+                scale_x = scale_x * COORDINATE_SCALE_FACTOR
+            
+            # Transform coordinates
+            vnc_x = int(event.x * scale_x)
+            vnc_y = int(event.y * scale_y)
+            
+            # Ensure coordinates are within bounds
+            vnc_x = max(0, min(vnc_x, screen_width - 1))
+            vnc_y = max(0, min(vnc_y, screen_height - 1))
+            
+            # Determine scroll direction
+            scroll_up = False
+            if hasattr(event, 'delta') and event.delta != 0:
+                scroll_up = event.delta > 0
+            elif hasattr(event, 'num') and event.num in (4, 5):
+                scroll_up = event.num == 4
+            else:
+                return
+                
+            # Calculate drag distance based on direction
+            drag_distance = 20  # pixels to drag
+            if not scroll_up:
+                drag_distance = -drag_distance
+                
+            # Simulate drag
+            self.vnc_connection.mouse_down(vnc_x, vnc_y)
+            time.sleep(0.05)  # Small delay
+            
+            # Move to new position
+            new_y = max(0, min(vnc_y + drag_distance, screen_height - 1))
+            self.vnc_connection.mouse_move(vnc_x, new_y)
+            time.sleep(0.05)  # Small delay
+            
+            # Release
+            self.vnc_connection.mouse_up(vnc_x, new_y)
+                    
+        except Exception as e:
+            self._show_notification(f"Mouse wheel error: {str(e)}", "red")
+            
+    def _on_image_click(self, event):
+        """Handle right clicks following PrinterUIApp mouse pattern"""
+        if not self.vnc_connection.connected or not self.vnc_connection.viewing:
+            self._show_notification("Not connected to VNC - cannot send click", "red")
+            return
+        
+        if not hasattr(self, '_image_scale_info') or self._image_scale_info is None:
+            return
+        
+        try:
+            click_x = event.x
+            click_y = event.y
+            display_width, display_height = self._image_scale_info['display_size']
+            screen_resolution = self.vnc_connection.screen_resolution
+            
+            if not screen_resolution:
+                self._show_notification("Screen resolution not available", "red")
+                return
+                
+            screen_width, screen_height = screen_resolution
+            
+            if click_x < 0 or click_x >= display_width or click_y < 0 or click_y >= display_height:
+                return
+                
+            # Calculate scale factors
+            scale_x = screen_width / display_width
+            scale_y = screen_height / display_height
+            
+            # Apply small screen scaling if needed
+            if screen_width < SMALL_SCREEN_WIDTH_THRESHOLD:
+                scale_x = scale_x * COORDINATE_SCALE_FACTOR
+            
+            # Transform coordinates
+            vnc_x = int(click_x * scale_x)
+            vnc_y = int(click_y * scale_y)
+            
+            # Ensure coordinates are within bounds
+            vnc_x = max(0, min(vnc_x, screen_width - 1))
+            vnc_y = max(0, min(vnc_y, screen_height - 1))
+            
+            vnc_coords = (vnc_x, vnc_y)
+            if vnc_coords:
+                vnc_x, vnc_y = vnc_coords
+                button = getattr(event, 'num', 1)
+                
+                if button == 1:  # Left click
+                    success = self.vnc_connection.click_at(vnc_x, vnc_y)
+                else:  # Right click  
+                    success = self.vnc_connection.click_at_coordinates(vnc_x, vnc_y, button)
+                
+                if success:
+                    click_type = "Left" if button == 1 else "Right" if button == 3 else "Middle"
+                    self._show_notification(f"{click_type} click sent to ({vnc_x}, {vnc_y})", "green", 2000)
+                else:
+                    self._show_notification("Failed to send click", "red")
+            
+        except Exception as e:
+            self._show_notification(f"Click error: {str(e)}", "red")
+
+    def _bind_click_events(self):
+        """Bind click and drag events to the image label"""
+        try:
+            # Unbind any existing events
+            self.image_label.unbind("<Button-1>")
+            self.image_label.unbind("<Button-3>")
+            self.image_label.unbind("<B1-Motion>")
+            self.image_label.unbind("<ButtonRelease-1>")
+            
+            # Initialize drag state
+            self.drag_start_x = None
+            self.drag_start_y = None
+            self.is_dragging = False
+            
+            # Bind click and drag events
+            self.image_label.bind("<Button-1>", self._on_mouse_down)  # Left click
+            self.image_label.bind("<B1-Motion>", self._on_mouse_drag)  # Drag
+            self.image_label.bind("<ButtonRelease-1>", self._on_mouse_up)  # Release
+            self.image_label.bind("<Button-3>", self._on_image_click)  # Right click
+            
+            # Bind mouse wheel events
+            self.image_label.bind("<MouseWheel>", self._on_mouse_wheel)  # Windows
+            self.image_label.bind("<Button-4>", self._on_mouse_wheel)  # Linux scroll up
+            self.image_label.bind("<Button-5>", self._on_mouse_wheel)  # Linux scroll down
+            
+            if DEBUG:
+                print(f">     [Dune] Click events bound to UI image")
+                
+        except Exception as e:
+            print(f">     [Dune] Error binding click events: {e}")

@@ -32,7 +32,7 @@ class App(tk.Tk):
         print("> [App.__init__] Initializing App")
         super().__init__()
         self.title("FW Test Tool")
-        self.geometry("900x800")
+        self.geometry("900x1000")
         
         # Initialize config manager first
         self.config_manager = ConfigManager()
