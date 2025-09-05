@@ -1,15 +1,5 @@
-'''
-Script Name: Soaker Helper
-Author: Assistant <assistant@example.com>
-
-Updates:
-12/17/2024
-    - Initial version with GUI, ink monitoring, and drain functionality
-    - Added threaded ink level monitoring
-    - Implemented dynamic drain buttons with 10% decrements
-'''
-
 # Standard Libraries
+import subprocess
 import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -21,7 +11,7 @@ import logging
 
 # SFTE Libraries
 path.append("G:\\sfte\\env\\non_sirius\\dunetuf")
-from LIB_UDW import UDW_DUNE
+from LIB_UDW import UDW_DUNE, UDW_ARES
 from LIB_Print import PRINT
 
 # ============================================================================
@@ -42,14 +32,35 @@ INITIAL_DRAIN_TARGET = 94  # first drain target from 100%
 UI_UPDATE_BATCH_SIZE = 4  # number of colors to batch update
 PROGRESS_BAR_REFRESH_RATE = 100  # milliseconds for progress bar updates
 
-# Print file paths
-PCL_BASE_PATH = "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL"
-COLOR_FILE_MAPPING = {
-    "CYAN": "C_out_6x6_pn.pcl",
-    "MAGENTA": "M_out_6x6_pn.pcl", 
-    "YELLOW": "Y_out_6x6_pn.pcl",
-    "BLACK": "K_out_6x6_pn.pcl"
+# Printer type configurations
+PRINTER_TYPES = {
+    "IIC": {
+        "name": "IIC (4 Cartridges)",
+        "cartridges": ["CYAN", "MAGENTA", "YELLOW", "BLACK"],
+        "description": "Industrial Inkjet Cartridge printer with 4 individual color cartridges",
+        "pcl_base_path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL",
+        "color_file_mapping": {
+            "CYAN": "C_out_6x6_pn.pcl",
+            "MAGENTA": "M_out_6x6_pn.pcl", 
+            "YELLOW": "Y_out_6x6_pn.pcl",
+            "BLACK": "K_out_6x6_pn.pcl"
+        }
+    },
+    "IPH": {
+        "name": "IPH (2 Cartridges)", 
+        "cartridges": ["CMY", "K"],
+        "description": "Ink Print Head printer with 2 cartridges (CMY combined + Black)",
+        "pcl_base_path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid",
+        "color_file_mapping": {
+            "CMY": "25%_CMY.pcl",
+            "K": "ISO_K.pcl"
+        }
+    }
 }
+
+# Legacy configurations for backward compatibility
+PCL_BASE_PATH = PRINTER_TYPES["IIC"]["pcl_base_path"]
+COLOR_FILE_MAPPING = PRINTER_TYPES["IIC"]["color_file_mapping"]
 
 # Connection settings
 DEFAULT_IP = "15.8.177.144"
@@ -70,6 +81,10 @@ class testRunner:
         self.root.geometry("700x760")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        # Printer type variables
+        self.printer_type = tk.StringVar(value="IIC")
+        self.current_cartridges = PRINTER_TYPES["IIC"]["cartridges"]
+        
         # Connection variables
         self.ip_address = tk.StringVar(value=DEFAULT_IP)
         self.is_connected = False
@@ -78,8 +93,8 @@ class testRunner:
         # Monitoring variables
         self.monitoring_thread = None
         self.stop_monitoring = threading.Event()
-        self.ink_levels = {"CYAN": 0, "MAGENTA": 0, "YELLOW": 0, "BLACK": 0}
-        self.previous_ink_levels = {"CYAN": -1, "MAGENTA": -1, "YELLOW": -1, "BLACK": -1}  # Track changes
+        self._initializeInkLevels()
+        self.previous_ink_levels = {cart: -1 for cart in self.current_cartridges}  # Track changes
         
         # Initialize progress bars at 0%
         self.root.after(100, self._initializeProgressBars)
@@ -88,8 +103,8 @@ class testRunner:
         self.is_draining = False
         self.drain_thread = None
         self.stop_drain = threading.Event()
-        self.selected_color = tk.StringVar(value="CYAN")
-        self.next_drain_targets = {"CYAN": 94, "MAGENTA": 94, "YELLOW": 94, "BLACK": 94}
+        self.selected_color = tk.StringVar(value=self.current_cartridges[0])
+        self._initializeTargets()
         
         # Printer interfaces
         self.udw = None
@@ -97,6 +112,30 @@ class testRunner:
         
         # Create UI
         self._createInterface()
+    
+    def _initializeInkLevels(self):
+        """Initialize ink levels dictionary based on current printer type"""
+        self.ink_levels = {cart: 0 for cart in self.current_cartridges}
+    
+    def _initializeTargets(self):
+        """Initialize drain targets dictionary based on current printer type"""
+        self.next_drain_targets = {cart: 94 for cart in self.current_cartridges}
+    
+    def _updatePrinterType(self, new_type):
+        """Update printer type and reconfigure UI"""
+        if new_type not in PRINTER_TYPES:
+            return
+        
+        self.printer_type.set(new_type)
+        self.current_cartridges = PRINTER_TYPES[new_type]["cartridges"]
+        self._initializeInkLevels()
+        self._initializeTargets()
+        self.previous_ink_levels = {cart: -1 for cart in self.current_cartridges}
+        self.selected_color.set(self.current_cartridges[0])
+        
+        # Rebuild the UI with new cartridge configuration
+        self._rebuildInkLevelsUI()
+        self._updateColorDropdown()
         
     def _createInterface(self):
         """Create the main user interface"""
@@ -133,12 +172,12 @@ class testRunner:
         shadow_frame.pack(side="bottom", fill="x")
         
         # Card content
-        conn_content = tk.Frame(connection_card, bg="white", padx=15, pady=15)
+        conn_content = tk.Frame(connection_card, bg="white", padx=12, pady=10)
         conn_content.pack(fill="x")
         
         # Header with icon and title
         header_frame = tk.Frame(conn_content, bg="white")
-        header_frame.pack(fill="x", pady=(0, 10))
+        header_frame.pack(fill="x", pady=(0, 8))
         
         # Connection icon
         icon_canvas = tk.Canvas(header_frame, width=20, height=20, bg="white", highlightthickness=0)
@@ -155,23 +194,72 @@ class testRunner:
         
         # Connection form
         form_frame = tk.Frame(conn_content, bg="white")
-        form_frame.pack(fill="x", pady=(0, 10))
+        form_frame.pack(fill="x", pady=(0, 6))
         
-        # IP Address section
-        ip_section = tk.Frame(form_frame, bg="white")
-        ip_section.pack(fill="x", pady=(0, 12))
+        # Compact IP address and printer type row
+        connection_row = tk.Frame(form_frame, bg="white")
+        connection_row.pack(fill="x", pady=(0, 8))
+        
+        # IP Address section (left side of row)
+        ip_section = tk.Frame(connection_row, bg="white")
+        ip_section.pack(side="left", fill="x", expand=True, padx=(0, 15))
         
         ip_label = tk.Label(ip_section, text="IP Address", font=("Segoe UI", 9, "bold"), 
                            bg="white", fg="#495057")
-        ip_label.pack(anchor="w", pady=(0, 3))
+        ip_label.pack(anchor="w", pady=(0, 2))
         
-        # Modern input field
+        # Compact input field
         ip_input_frame = tk.Frame(ip_section, bg="#f8f9fa", relief="flat", bd=1)
-        ip_input_frame.pack(fill="x", pady=(0, 5))
+        ip_input_frame.pack(fill="x")
         
-        self.ip_entry = tk.Entry(ip_input_frame, textvariable=self.ip_address, font=("Segoe UI", 10),
+        self.ip_entry = tk.Entry(ip_input_frame, textvariable=self.ip_address, font=("Segoe UI", 9),
                                 bg="#f8f9fa", fg="#495057", relief="flat", bd=0)
-        self.ip_entry.pack(fill="x", padx=10, pady=6)
+        self.ip_entry.pack(fill="x", padx=8, pady=4)
+        
+        # Printer type section (right side of row)
+        type_section = tk.Frame(connection_row, bg="white")
+        type_section.pack(side="right", fill="x", expand=True)
+        
+        type_label = tk.Label(type_section, text="Type", font=("Segoe UI", 9, "bold"), 
+                             bg="white", fg="#495057")
+        type_label.pack(anchor="w", pady=(0, 2))
+        
+        # Compact radio buttons
+        radio_frame = tk.Frame(type_section, bg="white")
+        radio_frame.pack(anchor="w")
+        
+        self.iic_radio = tk.Radiobutton(
+            radio_frame, 
+            text="IIC", 
+            variable=self.printer_type,
+            value="IIC",
+            font=("Segoe UI", 9),
+            bg="white", 
+            fg="#495057",
+            selectcolor="#007bff",
+            command=lambda: self._onPrinterTypeChange("IIC")
+        )
+        self.iic_radio.pack(side="left", padx=(0, 15))
+        
+        self.iph_radio = tk.Radiobutton(
+            radio_frame, 
+            text="IPH", 
+            variable=self.printer_type,
+            value="IPH",
+            font=("Segoe UI", 9),
+            bg="white", 
+            fg="#495057",
+            selectcolor="#007bff",
+            command=lambda: self._onPrinterTypeChange("IPH")
+        )
+        self.iph_radio.pack(side="left")
+
+        # Ensure unselected radio's indicator appears white
+        self._applyTypeRadioColors()
+        try:
+            self.printer_type.trace_add("write", lambda *args: self._applyTypeRadioColors())
+        except Exception:
+            pass
         
         # Button and status row
         button_status_frame = tk.Frame(form_frame, bg="white")
@@ -199,79 +287,11 @@ class testRunner:
         self.status_label.pack(side="left")
         
         # Ink Levels Frame - Modern Card Design
-        levels_frame = tk.Frame(self.scrollable_frame, bg="#f8f9fa", relief="flat", bd=0)
-        levels_frame.pack(fill="x", padx=15, pady=10)
+        self.levels_frame = tk.Frame(self.scrollable_frame, bg="#f8f9fa", relief="flat", bd=0)
+        self.levels_frame.pack(fill="x", padx=15, pady=10)
         
-        # Header
-        header_frame = tk.Frame(levels_frame, bg="#f8f9fa")
-        header_frame.pack(fill="x", pady=(10, 15))
-        
-        title_label = tk.Label(header_frame, text="Ink Levels", font=("Segoe UI", 11, "bold"), 
-                              bg="#f8f9fa", fg="#2c3e50")
-        title_label.pack(side="left")
-        
-        # Create modern ink level displays
-        self.ink_level_labels = {}
-        self.ink_progress_bars = {}
-        self.ink_canvases = {}
-        colors = ["CYAN", "MAGENTA", "YELLOW", "BLACK"]
-        color_names = ["Cyan", "Magenta", "Yellow", "Black"]
-        color_hex = {"CYAN": "#00bcd4", "MAGENTA": "#e91e63", "YELLOW": "#ffc107", "BLACK": "#424242"}
-        color_light = {"CYAN": "#e0f7fa", "MAGENTA": "#fce4ec", "YELLOW": "#fff8e1", "BLACK": "#f5f5f5"}
-        color_gradients = {"CYAN": "#26c6da", "MAGENTA": "#ec407a", "YELLOW": "#ffca28", "BLACK": "#616161"}
-        
-        # Main container for all ink cards
-        cards_container = tk.Frame(levels_frame, bg="#f8f9fa")
-        cards_container.pack(fill="x", padx=10, pady=(0, 15))
-        
-        for i, color in enumerate(colors):
-            # Individual card for each ink color
-            card_frame = tk.Frame(cards_container, bg="white", relief="flat", bd=0)
-            card_frame.pack(side="left", fill="both", expand=True, padx=3, pady=0)
-            
-            # Add subtle shadow effect
-            shadow_frame = tk.Frame(card_frame, bg="#e0e0e0", height=1)
-            shadow_frame.pack(side="bottom", fill="x")
-            
-            # Card content
-            content_frame = tk.Frame(card_frame, bg="white", padx=10, pady=10)
-            content_frame.pack(fill="both", expand=True)
-            
-            # Color name and icon
-            header_row = tk.Frame(content_frame, bg="white")
-            header_row.pack(fill="x", pady=(0, 6))
-            
-            # Color indicator dot
-            dot_canvas = tk.Canvas(header_row, width=12, height=12, bg="white", highlightthickness=0)
-            dot_canvas.pack(side="left", padx=(0, 8))
-            dot_canvas.create_oval(2, 2, 10, 10, fill=color_hex[color], outline="")
-            
-            # Color name
-            name_label = tk.Label(header_row, text=color_names[i], font=("Segoe UI", 9, "bold"), 
-                                 bg="white", fg="#34495e")
-            name_label.pack(side="left")
-            
-            # Progress bar container with rounded corners effect
-            progress_container = tk.Frame(content_frame, bg="white")
-            progress_container.pack(fill="x", pady=(0, 6))
-            
-            # Modern progress bar
-            canvas = tk.Canvas(progress_container, height=20, width=100, bg="white", highlightthickness=0)
-            canvas.pack(fill="x", expand=True)
-            self.ink_canvases[color] = canvas
-            
-            # Store colors and gradients for progress bar
-            canvas.color_hex = color_hex[color]
-            canvas.color_light = color_light[color]
-            canvas.color_gradient = color_gradients[color]
-            
-            # Percentage display
-            percentage_label = tk.Label(content_frame, text="0%", font=("Segoe UI", 10, "bold"), 
-                                      bg="white", fg="#2c3e50")
-            percentage_label.pack()
-            
-            # Store reference for updates
-            self.ink_level_labels[color] = percentage_label
+        # Create the ink levels UI
+        self._createInkLevelsUI()
         
         # Drain Controls Card - Modern Design
         drain_card = tk.Frame(self.scrollable_frame, bg="white", relief="flat", bd=0)
@@ -314,7 +334,7 @@ class testRunner:
         self.color_dropdown = ttk.Combobox(
             controls_frame,
             textvariable=self.selected_color,
-            values=colors,
+            values=self.current_cartridges,
             state="readonly",
             width=12,
             font=("Segoe UI", 9)
@@ -471,16 +491,151 @@ class testRunner:
         self._logMessage("Application started. Please connect to printer.")
         self._logMessage(f"Configuration: Print wait={PRINT_JOB_WAIT_TIME}s, Check interval={INK_LEVEL_CHECK_INTERVAL}s")
     
+    def _onPrinterTypeChange(self, printer_type):
+        """Handle printer type selection change"""
+        if self.is_connected:
+            messagebox.showwarning("Warning", "Please disconnect before changing printer type")
+            # Reset the radio button to current type
+            self.printer_type.set(list(PRINTER_TYPES.keys())[list(PRINTER_TYPES.values()).index(
+                next(config for config in PRINTER_TYPES.values() if config["cartridges"] == self.current_cartridges)
+            )])
+            return
+        
+        self._updatePrinterType(printer_type)
+        self._logMessage(f"Printer type changed to {PRINTER_TYPES[printer_type]['name']}")
+        # Refresh radio colors so only the selected one shows blue
+        try:
+            self._applyTypeRadioColors()
+        except Exception:
+            pass
+
+    def _applyTypeRadioColors(self):
+        """Ensure only the selected type radio shows blue; others appear white."""
+        current = self.printer_type.get()
+        # Selected color is blue, unselected should be white
+        selected_color = "#007bff"
+        unselected_color = "white"
+        if hasattr(self, 'iic_radio'):
+            self.iic_radio.config(selectcolor=selected_color if current == "IIC" else unselected_color)
+        if hasattr(self, 'iph_radio'):
+            self.iph_radio.config(selectcolor=selected_color if current == "IPH" else unselected_color)
+    
+    def _createInkLevelsUI(self):
+        """Create ink levels UI based on current printer type"""
+        # Clear existing ink level widgets
+        for widget in self.levels_frame.winfo_children():
+            widget.destroy()
+        
+        # Header
+        header_frame = tk.Frame(self.levels_frame, bg="#f8f9fa")
+        header_frame.pack(fill="x", pady=(10, 15))
+        
+        title_label = tk.Label(header_frame, text="Ink Levels", font=("Segoe UI", 11, "bold"), 
+                              bg="#f8f9fa", fg="#2c3e50")
+        title_label.pack(side="left")
+        
+        # Create modern ink level displays
+        self.ink_level_labels = {}
+        self.ink_progress_bars = {}
+        self.ink_canvases = {}
+        
+        # Color configurations for both IIC and IPH
+        all_color_configs = {
+            "CYAN": {"name": "Cyan", "hex": "#00bcd4", "light": "#e0f7fa", "gradient": "#26c6da"},
+            "MAGENTA": {"name": "Magenta", "hex": "#e91e63", "light": "#fce4ec", "gradient": "#ec407a"},
+            "YELLOW": {"name": "Yellow", "hex": "#ffc107", "light": "#fff8e1", "gradient": "#ffca28"},
+            "BLACK": {"name": "Black", "hex": "#424242", "light": "#f5f5f5", "gradient": "#616161"},
+            "CMY": {"name": "CMY", "hex": "#ff6b35", "light": "#fff3e0", "gradient": "#ff8a65"},
+            "K": {"name": "Black", "hex": "#424242", "light": "#f5f5f5", "gradient": "#616161"}
+        }
+        
+        # Main container for all ink cards
+        cards_container = tk.Frame(self.levels_frame, bg="#f8f9fa")
+        cards_container.pack(fill="x", padx=10, pady=(0, 15))
+        
+        for cartridge in self.current_cartridges:
+            color_config = all_color_configs[cartridge]
+            
+            # Individual card for each ink color
+            card_frame = tk.Frame(cards_container, bg="white", relief="flat", bd=0)
+            card_frame.pack(side="left", fill="both", expand=True, padx=3, pady=0)
+            
+            # Add subtle shadow effect
+            shadow_frame = tk.Frame(card_frame, bg="#e0e0e0", height=1)
+            shadow_frame.pack(side="bottom", fill="x")
+            
+            # Card content
+            content_frame = tk.Frame(card_frame, bg="white", padx=10, pady=10)
+            content_frame.pack(fill="both", expand=True)
+            
+            # Color name and icon
+            header_row = tk.Frame(content_frame, bg="white")
+            header_row.pack(fill="x", pady=(0, 6))
+            
+            # Color indicator dot
+            dot_canvas = tk.Canvas(header_row, width=12, height=12, bg="white", highlightthickness=0)
+            dot_canvas.pack(side="left", padx=(0, 8))
+            dot_canvas.create_oval(2, 2, 10, 10, fill=color_config["hex"], outline="")
+            
+            # Color name
+            name_label = tk.Label(header_row, text=color_config["name"], font=("Segoe UI", 9, "bold"), 
+                                 bg="white", fg="#34495e")
+            name_label.pack(side="left")
+            
+            # Progress bar container with rounded corners effect
+            progress_container = tk.Frame(content_frame, bg="white")
+            progress_container.pack(fill="x", pady=(0, 6))
+            
+            # Modern progress bar
+            canvas = tk.Canvas(progress_container, height=20, width=100, bg="white", highlightthickness=0)
+            canvas.pack(fill="x", expand=True)
+            self.ink_canvases[cartridge] = canvas
+            
+            # Store colors and gradients for progress bar
+            canvas.color_hex = color_config["hex"]
+            canvas.color_light = color_config["light"]
+            canvas.color_gradient = color_config["gradient"]
+            
+            # Redraw progress bar when the canvas resizes to prevent stale widths
+            def _on_canvas_resize(event, cart=cartridge):
+                level = self.ink_levels.get(cart, 0)
+                self._updateProgressBar(cart, level)
+            canvas.bind("<Configure>", _on_canvas_resize)
+            
+            # Percentage display
+            percentage_label = tk.Label(content_frame, text="0%", font=("Segoe UI", 10, "bold"), 
+                                      bg="white", fg="#2c3e50")
+            percentage_label.pack()
+            
+            # Store reference for updates
+            self.ink_level_labels[cartridge] = percentage_label
+    
+    def _rebuildInkLevelsUI(self):
+        """Rebuild the ink levels UI when printer type changes"""
+        self._createInkLevelsUI()
+        # Reinitialize progress bars
+        self.root.after(100, self._initializeProgressBars)
+    
+    def _updateColorDropdown(self):
+        """Update the color dropdown values when printer type changes"""
+        self.color_dropdown['values'] = self.current_cartridges
+        if self.current_cartridges:
+            self.selected_color.set(self.current_cartridges[0])
+    
     def _displayCurrentConfig(self):
         """Display current configuration in log for reference"""
+        current_type = self.printer_type.get()
+        current_config = PRINTER_TYPES[current_type]
         self._logMessage("=== CURRENT CONFIGURATION ===")
+        self._logMessage(f"Printer Type: {current_config['name']}")
+        self._logMessage(f"Cartridges: {', '.join(current_config['cartridges'])}")
         self._logMessage(f"Print Job Wait Time: {PRINT_JOB_WAIT_TIME} seconds")
         self._logMessage(f"Ink Level Check Interval: {INK_LEVEL_CHECK_INTERVAL} seconds")
         self._logMessage(f"Connection Timeout: {CONNECTION_TIMEOUT} seconds")
         self._logMessage(f"Drain Increment: {DRAIN_INCREMENT}%")
         self._logMessage(f"Minimum Drain Level: {MIN_DRAIN_LEVEL}%")
         self._logMessage(f"Initial Drain Target: {INITIAL_DRAIN_TARGET}%")
-        self._logMessage(f"PCL Base Path: {PCL_BASE_PATH}")
+        self._logMessage(f"PCL Base Path: {current_config['pcl_base_path']}")
         self._logMessage("==============================")
     
     def _bind_mousewheel(self):
@@ -505,8 +660,8 @@ class testRunner:
     
     def _initializeProgressBars(self):
         """Initialize progress bars to show 0% with light colors"""
-        for color in ["CYAN", "MAGENTA", "YELLOW", "BLACK"]:
-            self._updateProgressBar(color, 0)
+        for cartridge in self.current_cartridges:
+            self._updateProgressBar(cartridge, 0)
         
     def _toggleConnection(self):
         """Toggle printer connection"""
@@ -537,16 +692,29 @@ class testRunner:
     def _performConnection(self, ip):
         """Perform the actual connection (runs in separate thread)"""
         try:
-            # Test basic socket connection
-            self.connection_socket = socket.create_connection((ip, PRINTER_PORT), timeout=CONNECTION_TIMEOUT)
-            
-            # Initialize printer interfaces
-            self.udw = UDW_DUNE(ip, True, False)
-            self.printer = PRINT(ip)
-            self._logMessage("Printer interfaces initialized successfully")
-            
-            # Update UI in main thread
-            self.root.after(0, self._onConnectionSuccess)
+            current_type = self.printer_type.get()
+            if current_type == "IPH":
+                # IPH is not a Dune product: just ping to verify it is online
+                self._logMessage("IPH selected: verifying reachability via ping")
+                ping_cmd = ["ping", "-n", "1", "-w", str(CONNECTION_TIMEOUT * 1000), ip]
+                result = subprocess.run(ping_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if result.returncode != 0:
+                    raise RuntimeError("Ping failed; printer appears offline")
+                # Initialize UDW_ARES for IPH ink monitoring
+                self.udw = UDW_ARES(ip, True, False)
+                # Initialize print interface
+                self.printer = PRINT(ip)
+                self._logMessage("IPH reachable; interfaces initialized")
+                # Update UI in main thread
+                self.root.after(0, self._onConnectionSuccess)
+            else:
+                # IIC: use socket connect + UDW
+                self.connection_socket = socket.create_connection((ip, PRINTER_PORT), timeout=CONNECTION_TIMEOUT)
+                self.udw = UDW_DUNE(ip, True, False)
+                self.printer = PRINT(ip)
+                self._logMessage("Printer interfaces initialized successfully")
+                # Update UI in main thread
+                self.root.after(0, self._onConnectionSuccess)
             
         except Exception as e:
             error_msg = f"Connection failed: {str(e)}"
@@ -631,13 +799,15 @@ class testRunner:
         self._updateDrainButtonText()
         
         # Reset progress bars to 0% and clear change tracking
-        for color in self.ink_levels:
-            self.ink_levels[color] = 0
-            self.previous_ink_levels[color] = -1  # Reset change tracking
-            self._updateProgressBar(color, 0)
+        for cartridge in self.current_cartridges:
+            if cartridge in self.ink_levels:
+                self.ink_levels[cartridge] = 0
+            if cartridge in self.previous_ink_levels:
+                self.previous_ink_levels[cartridge] = -1  # Reset change tracking
+            self._updateProgressBar(cartridge, 0)
             # Reset percentage labels
-            if color in self.ink_level_labels:
-                self.ink_level_labels[color].config(text="0%")
+            if cartridge in self.ink_level_labels:
+                self.ink_level_labels[cartridge].config(text="0%")
         
         self._logMessage("Disconnected from printer")
     
@@ -657,34 +827,41 @@ class testRunner:
             self.monitoring_thread.join(timeout=2)
     
     def _monitorInkLevels(self):
-        """Monitor ink levels (runs in separate thread)"""
-        colors = ["CYAN", "MAGENTA", "YELLOW", "BLACK"]
-        
+        """Monitor ink levels (runs in separate thread)"""        
         while not self.stop_monitoring.wait(INK_LEVEL_CHECK_INTERVAL):  # Check at configured interval
             if not self.is_connected:
                 break
             
             try:
                 # Batch get ink levels for efficiency
-                updated_colors = []
+                updated_cartridges = []
+                printer_type = self.printer_type.get()
                 
-                for color in colors:
-                    # Get ink levels using UDW
-                    result = self.udw.udw(cmd=f"constat.get_raw_percent_remaining {color}")
-                    level = int(result.split(",")[2].replace(";", ""))
+                for cartridge in self.current_cartridges:
+                    if printer_type == "IIC":
+                        # IIC uses individual color monitoring
+                        result = self.udw.udw(cmd=f"constat.get_raw_percent_remaining {cartridge}")
+                        level = int(result.split(",")[2].replace(";", ""))
+                    elif printer_type == "IPH":
+                        # IPH uses gas gauge monitoring
+                        result = self.udw.udw(cmd=f"constat.get_gas_gauge {cartridge}")
+                        level = int(result.split(",")[4].replace(";", ""))
+                    else:
+                        continue
                     
                     # Only update if level has changed
-                    if level != self.previous_ink_levels[color]:
-                        self.previous_ink_levels[color] = level
-                        self.ink_levels[color] = level
-                        updated_colors.append((color, level))
+                    if level != self.previous_ink_levels[cartridge]:
+                        self.previous_ink_levels[cartridge] = level
+                        self.ink_levels[cartridge] = level
+                        updated_cartridges.append((cartridge, level))
                 
                 # Batch update UI for all changed levels
-                if updated_colors:
-                    self.root.after(0, lambda colors_list=updated_colors: self._batchUpdateInkDisplay(colors_list))
+                if updated_cartridges:
+                    self.root.after(0, lambda cartridges_list=updated_cartridges: self._batchUpdateInkDisplay(cartridges_list))
                 
             except Exception as e:
-                self.root.after(0, lambda: self._logMessage(f"Error reading ink levels: {str(e)}"))
+                error_msg = f"Error reading ink levels: {str(e)}"
+                self.root.after(0, lambda msg=error_msg: self._logMessage(msg))
                 break
     
     def _batchUpdateInkDisplay(self, updated_colors):
@@ -721,23 +898,16 @@ class testRunner:
         canvas = self.ink_canvases[color]
         canvas.delete("all")  # Clear previous drawing
         
-        # Get canvas dimensions (cache for efficiency)
-        if not hasattr(canvas, '_cached_width'):
-            width = canvas.winfo_width()
-            height = canvas.winfo_height()
-            
-            # Use configured dimensions if not yet rendered
-            if width <= 1:
-                width = 100
-            if height <= 1:
-                height = 20
-                
-            # Cache dimensions
-            canvas._cached_width = width
-            canvas._cached_height = height
-        else:
-            width = canvas._cached_width
-            height = canvas._cached_height
+        # Get current canvas dimensions (use actual size; handles resizes)
+        width = canvas.winfo_width()
+        height = canvas.winfo_height()
+        # Fallbacks before first layout pass
+        if width <= 1:
+            requested = int(canvas.winfo_reqwidth()) if canvas.winfo_reqwidth() > 1 else 100
+            width = requested
+        if height <= 1:
+            requested_h = int(canvas.winfo_reqheight()) if canvas.winfo_reqheight() > 1 else 20
+            height = requested_h
             
         # Calculate fill width based on percentage
         fill_width = int((level / 100.0) * width)
@@ -855,21 +1025,26 @@ class testRunner:
         # Send print job in separate thread
         threading.Thread(target=self._performSinglePrint, args=(color,), daemon=True).start()
     
-    def _performSinglePrint(self, color):
-        """Perform single print job (runs in separate thread)"""
-        color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
-        
+    def _performSinglePrint(self, cartridge):
+        """Perform single print job (runs in separate thread)"""        
         try:
-            # Print ink trigger job
-            if color in COLOR_FILE_MAPPING:
-                pcl_file = f'{PCL_BASE_PATH}\\{COLOR_FILE_MAPPING[color]}'
+            printer_type = self.printer_type.get()
+            printer_config = PRINTER_TYPES[printer_type]
+            
+            # Get the appropriate PCL file based on printer type
+            if cartridge in printer_config["color_file_mapping"]:
+                pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
             else:
-                # Fallback to old naming convention
-                color_code = color_codes[color]
-                pcl_file = f'{PCL_BASE_PATH}\\{color_code}_out_6x6_pn.pcl'
+                # Fallback for IIC legacy naming
+                color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
+                if cartridge in color_codes:
+                    color_code = color_codes[cartridge]
+                    pcl_file = f'{printer_config["pcl_base_path"]}\\{color_code}_out_6x6_pn.pcl'
+                else:
+                    raise ValueError(f"Unknown cartridge type: {cartridge}")
             
             self.printer.printPCL(pcl_file)
-            self.root.after(0, lambda: self._logMessage(f"✅ {color} print job sent successfully"))
+            self.root.after(0, lambda: self._logMessage(f"✅ {cartridge} print job sent successfully"))
             
             # Re-enable button after a short delay
             time.sleep(1)
@@ -879,7 +1054,7 @@ class testRunner:
             ))
             
         except Exception as e:
-            error_msg = f"Error sending {color} print job: {str(e)}"
+            error_msg = f"Error sending {cartridge} print job: {str(e)}"
             self.root.after(0, lambda: self._logMessage(f"❌ {error_msg}"))
             # Re-enable button on error
             self.root.after(0, lambda: self.single_print_button.config(
@@ -990,35 +1165,41 @@ class testRunner:
         )
         self.drain_thread.start()
     
-    def _performDrain(self, color, target_level):
-        """Perform the actual ink draining (runs in separate thread)"""
-        color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
-        
+    def _performDrain(self, cartridge, target_level):
+        """Perform the actual ink draining (runs in separate thread)"""        
         try:
+            printer_type = self.printer_type.get()
+            printer_config = PRINTER_TYPES[printer_type]
+            
             while not self.stop_drain.is_set():
-                current_level = self.ink_levels.get(color, 0)
+                current_level = self.ink_levels.get(cartridge, 0)
                 
                 if current_level <= target_level:
                     self.root.after(0, lambda: self._onDrainComplete(cancelled=False))
                     break
                 
-                # Print ink trigger job
-                if color in COLOR_FILE_MAPPING:
-                    pcl_file = f'{PCL_BASE_PATH}\\{COLOR_FILE_MAPPING[color]}'
+                # Get the appropriate PCL file based on printer type
+                if cartridge in printer_config["color_file_mapping"]:
+                    pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
                 else:
-                    # Fallback to old naming convention
-                    color_code = color_codes[color]
-                    pcl_file = f'{PCL_BASE_PATH}\\{color_code}_out_6x6_pn.pcl'
+                    # Fallback for IIC legacy naming
+                    color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
+                    if cartridge in color_codes:
+                        color_code = color_codes[cartridge]
+                        pcl_file = f'{printer_config["pcl_base_path"]}\\{color_code}_out_6x6_pn.pcl'
+                    else:
+                        raise ValueError(f"Unknown cartridge type: {cartridge}")
                 
                 self.printer.printPCL(pcl_file)
-                self.root.after(0, lambda: self._logMessage(f"Printing {color} drain job... (waiting {PRINT_JOB_WAIT_TIME}s)"))
+                self.root.after(0, lambda: self._logMessage(f"Printing {cartridge} drain job... (waiting {PRINT_JOB_WAIT_TIME}s)"))
                 
                 # Wait for print job completion using configurable time
                 if self.stop_drain.wait(PRINT_JOB_WAIT_TIME):
                     break
                     
         except Exception as e:
-            self.root.after(0, lambda: self._logMessage(f"Error during {color} drain: {str(e)}"))
+            error_msg = f"Error during {cartridge} drain: {str(e)}"
+            self.root.after(0, lambda msg=error_msg: self._logMessage(msg))
             self.root.after(0, lambda: self._onDrainComplete(cancelled=False))
     
     def _stopDrain(self):

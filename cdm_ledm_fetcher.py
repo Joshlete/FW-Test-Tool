@@ -170,7 +170,8 @@ class DuneFetcher(BaseFetcher):
             "cdm/supply/v1/regionReset",
             "cdm/supply/v1/platformInfo",
             "cdm/supply/v1/supplyHistory",
-            "cdm/eventing/v1/events/dcrSupplyData"
+            "cdm/eventing/v1/events/dcrSupplyData",
+            "cdm/system/v1/identity"
         ]
 
     def get_url(self, endpoint):
