@@ -1,5 +1,5 @@
 from .base import TabContent
-from vncapp import VNCConnection
+from src.printers.universal.vncapp import VNCConnection
 from tkinter import simpledialog, ttk, Toplevel, Checkbutton, IntVar, Button, Canvas, RIGHT, Text, filedialog
 import threading
 import socket

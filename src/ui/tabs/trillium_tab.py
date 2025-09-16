@@ -1,6 +1,6 @@
 import tkinter as tk
 from .base import TabContent
-from ews_capture import EWSScreenshotCapturer
+from src.printers.universal.ews_capture import EWSScreenshotCapturer
 from tkinter import ttk, simpledialog, Toplevel, IntVar, Text, Canvas, LEFT, RIGHT, X
 import threading
 import queue

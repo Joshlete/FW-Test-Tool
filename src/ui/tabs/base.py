@@ -8,8 +8,8 @@ import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import os
-from dune_fpui import DEBUG
-from udw import UDW
+from src.printers.dune.fpui import DEBUG
+from src.printers.universal.udw import UDW
 from .notification_manager import NotificationManager
 
 

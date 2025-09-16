@@ -1,6 +1,6 @@
 import threading
-from ews_capture import EWSScreenshotCapturer
-from sirius_ui_capture import SiriusConnection
+from src.printers.universal.ews_capture import EWSScreenshotCapturer
+from src.printers.sirius.ui_capture import SiriusConnection
 from .base import TabContent
 from tkinter import ttk, filedialog, Canvas, IntVar, simpledialog, Toplevel, Text, messagebox, StringVar
 from PIL import Image, ImageTk
@@ -11,7 +11,7 @@ import os
 import tkinter as tk
 import xml.etree.ElementTree as ET
 import json
-from telemetry_manager import TelemetryManager
+from src.printers.universal.telemetry_manager import TelemetryManager
 
 # Suppress InsecureRequestWarning
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

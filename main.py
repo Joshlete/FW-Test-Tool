@@ -3,21 +3,21 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from typing import Dict, List, Callable
 import ipaddress
-from snip_tool import CaptureManager
-from keybindings import KeybindingManager
-from gui_tabs.sirius import SiriusTab
-from gui_tabs.settings import SettingsTab
-from gui_tabs.dune import DuneTab
-from gui_tabs.trillium import TrilliumTab
-from cdm_ledm_fetcher import create_fetcher
+from src.tools.snip_tool import CaptureManager
+from src.tools.keybindings import KeybindingManager
+from src.ui.tabs.sirius_tab import SiriusTab
+from src.ui.tabs.settings_tab import SettingsTab
+from src.ui.tabs.dune_tab import DuneTab
+from src.ui.tabs.trillium_tab import TrilliumTab
+from src.network.cdm_ledm_fetcher import create_fetcher
 import json
 import os
 import time
 import sys
 from pathlib import Path
-from config_manager import ConfigManager
-from print import Print
-from styles import ModernStyle, ModernComponents
+from src.core.config_manager import ConfigManager
+from src.printers.universal.print import Print
+from src.ui.styles import ModernStyle, ModernComponents
 
 # Playwright browser path handling for PyInstaller
 if getattr(sys, 'frozen', False):
