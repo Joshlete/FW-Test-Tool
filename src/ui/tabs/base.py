@@ -12,6 +12,7 @@ from src.printers.dune.fpui import DEBUG
 from src.printers.universal.udw import UDW
 from .notification_manager import NotificationManager
 from ..components.step_manager import StepManager
+from src.core.file_manager import FileManager
 
 
 class TabContent(ABC):
@@ -101,6 +102,18 @@ class TabContent(ABC):
 
         # Create notification manager for this tab
         self.notifications = NotificationManager(self.main_frame)
+        
+        # Initialize file manager
+        self.file_manager = FileManager(
+            default_directory=getattr(self, 'directory', '.'),
+            step_manager=self.step_manager,
+            notification_manager=self.notifications,
+            debug=DEBUG
+        )
+        
+        # Update file manager when directory changes
+        if hasattr(self, 'directory'):
+            self.file_manager.set_default_directory(self.directory)
 
         # Create a central content frame that will hold our quadrants
         self.content_frame = ttk.Frame(self.main_frame)
@@ -726,7 +739,7 @@ class TabContent(ABC):
             base_filename = f"Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
             
             # Use the automatic JSON saving method
-            success, filepath = self.save_json_data(event, base_filename)
+            success, filepath = self.file_manager.save_json_data(event, base_filename)
             
             if success:
                 self.notifications.show_success(f"Telemetry saved as {os.path.basename(filepath)}")
@@ -900,175 +913,8 @@ class TabContent(ABC):
                 self.udw_cmd_entry.insert(0,
                                           self.udw.commands_sent[len(self.udw.commands_sent) - 1 - self.udw_history_index])
 
-    def get_safe_filepath(self, directory, base_filename, extension=".json", step_number=None):
-        """
-        Creates a safe filepath that won't overwrite existing files.
-        
-        Args:
-            directory: Directory to save the file in
-            base_filename: Base name for the file (without step prefix)
-            extension: File extension including the dot (default: .json)
-            step_number: Explicit step number to use, or None to use current
-            
-        Returns:
-            A tuple of (safe_filepath, filename_used)
-        """
-        # Get step prefix from provided step number or current value
-        if step_number is not None:
-            try:
-                step_prefix = self.step_manager.get_step_prefix(step_number)
-            except ValueError:
-                step_prefix = self.step_manager.get_step_prefix()  # Fall back to current step
-        else:
-            step_prefix = self.step_manager.get_step_prefix()
-        
-        # Add step prefix to filename
-        prefixed_filename = f"{step_prefix}{base_filename}"
-        
-        # Clean up filename - remove invalid characters
-        clean_filename = ''.join(c for c in prefixed_filename if c.isalnum() or c in '._- ')
-        
-        # Create initial filepath
-        filepath = os.path.join(directory, f"{clean_filename}{extension}")
-        filename = f"{clean_filename}{extension}"
-        
-        # First, check if the _0 version exists
-        filepath_0 = os.path.join(directory, f"{clean_filename}_0{extension}")
-        if os.path.exists(filepath_0):
-            # If _0 exists, start incrementing from the highest existing number
-            counter = 1
-            while True:
-                filename = f"{clean_filename}_{counter}{extension}"
-                filepath = os.path.join(directory, filename)
-                if not os.path.exists(filepath):
-                    break
-                counter += 1
-        else:
-            # If _0 doesn't exist, check if the original file exists
-            if os.path.exists(filepath):
-                # Rename the original file to _0
-                os.rename(filepath, filepath_0)
-                # Now, the new file will be _1
-                filename = f"{clean_filename}_1{extension}"
-                filepath = os.path.join(directory, filename)
-        
-        return filepath, filename
-
-    def save_json_data(self, data, base_filename, directory=None, step_number=None):
-        """
-        Saves JSON data to a file with step prefix and no overwriting.
-        
-        Args:
-            data: The JSON data to save (dict or JSON string)
-            base_filename: Base name for the file without step prefix or extension
-            directory: Directory to save to (uses self.directory if None)
-            step_number: Explicit step number to use, or None to use current
-            
-        Returns:
-            tuple: (success, filepath)
-        """
-        if directory is None:
-            directory = self.directory
-        
-        try:
-            # Convert string to dict if needed
-            if isinstance(data, str):
-                try:
-                    data_dict = json.loads(data)
-                except json.JSONDecodeError:
-                    # If not valid JSON, keep as string
-                    return self.save_text_data(data, base_filename, directory, ".json", step_number)
-            else:
-                data_dict = data
-            
-            # Get safe filepath
-            filepath, filename = self.get_safe_filepath(directory, base_filename, ".json", step_number)
-            
-            # Write with pretty formatting
-            with open(filepath, 'w', encoding='utf-8') as file:
-                json.dump(data_dict, file, indent=4)
-            
-            if DEBUG:
-                print(f"JSON saved to: {filepath}")
-            return True, filepath
-        except Exception as e:
-            if DEBUG:
-                print(f"Error saving JSON: {str(e)}")
-            self.notifications.show_error(f"File Save Failed: {str(e)}")
-            return False, None
-
-    def save_image_data(self, image_data, base_filename, directory=None, format='PNG', step_number=None):
-        """
-        Saves image data to a file with step prefix and no overwriting.
-        
-        Args:
-            image_data: The image data (bytes or PIL Image)
-            base_filename: Base name for the file without step prefix or extension
-            directory: Directory to save to (uses self.directory if None)
-            format: Image format (default: 'PNG')
-            step_number: Explicit step number to use, or None to use current
-            
-        Returns:
-            tuple: (success, filepath)
-        """
-        if directory is None:
-            directory = self.directory
-        
-        extension = f".{format.lower()}"
-        
-        try:
-            # Get safe filepath
-            filepath, filename = self.get_safe_filepath(directory, base_filename, extension, step_number)
-            
-            # Handle different image data types
-            if isinstance(image_data, bytes):
-                with open(filepath, 'wb') as file:
-                    file.write(image_data)
-            else:
-                # Assume PIL Image
-                image_data.save(filepath, format=format)
-            
-            if DEBUG:   
-                print(f"Image saved to: {filepath}")
-
-            self.notifications.show_success(f"File Saved: {filename}")
-            return True, filepath
-        except Exception as e:
-            if DEBUG:
-                print(f"Error saving image: {str(e)}")
-            self.notifications.show_error(f"File Save Failed: {str(e)}")
-            return False, None
-        
-    def save_text_data(self, text_data, base_filename, directory=None, extension=".txt", step_number=None):
-        """
-        Saves text data to a file with step prefix and no overwriting.
-        
-        Args:
-            text_data: The text data to save
-            base_filename: Base name for the file without step prefix or extension
-            directory: Directory to save to (uses self.directory if None)
-            extension: File extension (default: .txt)
-            step_number: Explicit step number to use, or None to use current
-            
-        Returns:
-            tuple: (success, filepath)
-        """
-        if directory is None:
-            directory = self.directory
-        
-        try:
-            # Get safe filepath
-            filepath, filename = self.get_safe_filepath(directory, base_filename, extension, step_number)
-            
-            # Write text data
-            with open(filepath, 'w', encoding='utf-8') as file:
-                file.write(text_data)
-            
-            if DEBUG:
-                print(f"Text saved to: {filepath}")
-            return True, filepath
-        except Exception as e:
-            if DEBUG:
-                print(f"Error saving text: {str(e)}")
-            self.notifications.show_error(f"File Save Failed: {str(e)}")
-            return False, None
+    
+    def update_file_manager_directory(self, new_directory: str) -> None:
+        """Update the FileManager's default directory when tab directory changes."""
+        if hasattr(self, 'file_manager'):
+            self.file_manager.set_default_directory(new_directory)

@@ -276,7 +276,7 @@ class TrilliumTab(TabContent):
                         modified_description = f"{variant}. {description}"
                     
                     # Save each screenshot using the base class method, passing the captured step
-                    success, filepath = self.save_image_data(image_bytes, modified_description, step_number=step_number)
+                    success, filepath = self.file_manager.save_image_data(image_bytes, modified_description, step_number=step_number)
                     save_results.append((success, modified_description, filepath))
                     print(f"DEBUG: Save result: success={success}, filepath={filepath}")
                 
@@ -373,7 +373,7 @@ class TrilliumTab(TabContent):
                 else:
                     filename = f"CDM {endpoint_name}"
                 
-                success, filepath = self.save_json_data(content, filename, step_number=step_number)
+                success, filepath = self.file_manager.save_json_data(content, filename, step_number=step_number)
                 save_results.append((success, endpoint, filepath))
             
             # Notify about results
@@ -746,7 +746,7 @@ class TrilliumTab(TabContent):
                         filename = f"CDM_{base_filename}"
                     
                     # Save the JSON data
-                    success, filepath = self.save_json_data(json_data, filename)
+                    success, filepath = self.file_manager.save_json_data(json_data, filename)
                     
                     if success:
                         success_count += 1
@@ -861,7 +861,7 @@ class TrilliumTab(TabContent):
                 base_filename = f"Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
                 
                 # Save the JSON data using the base class method (same as telemetry table)
-                success, filepath = self.save_json_data(json_data, base_filename, step_number=current_step)
+                success, filepath = self.file_manager.save_json_data(json_data, base_filename, step_number=current_step)
                 
                 if success:
                     status_label.config(text=f"Telemetry saved to: {os.path.basename(filepath)}")
@@ -931,7 +931,7 @@ class TrilliumTab(TabContent):
                 base_filename = f"OpenSearch_Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
                 
                 # Save the JSON data using the base class method
-                success, filepath = self.save_json_data(json_data, base_filename, step_number=current_step)
+                success, filepath = self.file_manager.save_json_data(json_data, base_filename, step_number=current_step)
                 
                 if success:
                     status_label.config(text=f"OpenSearch telemetry saved to: {os.path.basename(filepath)}")

@@ -559,7 +559,7 @@ class SiriusTab(TabContent):
                     try:
                         # Generate filename from description
                         base_name = f"UI {description}"
-                        success, filepath = self.save_image_data(
+                        success, filepath = self.file_manager.save_image_data(
                             response.content,
                             base_name,
                             step_number=self.step_manager.get_current_step()
@@ -622,7 +622,7 @@ class SiriusTab(TabContent):
                         # Format filename with EWS prefix
                         filename = f"EWS {description}"
                         
-                        success, filepath = self.save_image_data(
+                        success, filepath = self.file_manager.save_image_data(
                             image_bytes, 
                             filename,
                             step_number=step_num
@@ -891,7 +891,7 @@ class SiriusTab(TabContent):
             print(f"DEBUG: Saving telemetry with sequence number {seq_number}")
             
             # Save using base class method
-            success, filepath = self.save_json_data(
+            success, filepath = self.file_manager.save_json_data(
                 matching_data['raw_data'], 
                 base_filename, 
                 step_number=self.step_manager.get_current_step()

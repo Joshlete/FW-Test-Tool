@@ -566,7 +566,7 @@ class DuneTab(TabContent):
                     
                 # Save with CDM prefix
                 filename = f"CDM {endpoint_name}"
-                success, filepath = self.save_json_data(content, filename)
+                success, filepath = self.file_manager.save_json_data(content, filename)
                 save_results.append((success, endpoint, filepath))
             
             # Notify about results
@@ -609,7 +609,7 @@ class DuneTab(TabContent):
         """Automatically generate a filename and save the UI image without prompting"""
         try:
             # Generate safe filepath with step prefix
-            filepath, filename = self.get_safe_filepath(
+            filepath, filename = self.file_manager.get_safe_filepath(
                 self.directory,
                 base_name,
                 ".png",
@@ -891,7 +891,7 @@ class DuneTab(TabContent):
                 capture_manager._copy_to_clipboard(image)
                 
                 # Save using TabContent's mechanism
-                success, filepath = self.save_image_data(image, default_filename)
+                success, filepath = self.file_manager.save_image_data(image, default_filename)
                 
                 # Show result notification
                 if success:
@@ -1039,7 +1039,7 @@ class DuneTab(TabContent):
 
     def _save_ui_for_alert(self, base_name):
         try:
-            filepath, filename = self.get_safe_filepath(
+            filepath, filename = self.file_manager.get_safe_filepath(
                 self.directory, base_name, ".png", step_number=self.step_manager.get_current_step()
             )
             
@@ -1177,7 +1177,7 @@ class DuneTab(TabContent):
             # Save with CDM prefix
             filename = f"CDM {endpoint_name}"
             
-            success, filepath = self.save_json_data(json_data, filename)
+            success, filepath = self.file_manager.save_json_data(json_data, filename)
             
             if success:
                 self.notifications.show_success(f"Saved CDM data to {os.path.basename(filepath)}")
