@@ -400,13 +400,10 @@ class TrilliumTab(TabContent):
         finally:
             self.root.after(0, lambda: self.capture_cdm_button.config(state="normal"))
 
-    def on_ip_change(self, new_ip):
-        self.ip = new_ip
+    def _on_ip_change_hook(self, new_ip):
+        """TrilliumTab-specific IP change behavior."""
         if self.is_connected:
             self.toggle_connection()
-
-    def on_directory_change(self, new_directory):
-        self.directory = new_directory
 
     def _run_async_loop(self):
         """Run the asyncio event loop in a separate thread"""

@@ -660,18 +660,11 @@ class DuneTab(TabContent):
             
         self.notifications.show_success("Screenshot Captured")
 
-    def on_ip_change(self, new_ip):
-        self.ip = new_ip
-        print(f">     [Dune] IP address changed to: {self.ip}")
+    def _on_ip_change_hook(self, new_ip):
+        """DuneTab-specific IP change behavior."""
         if self.is_connected:
             # Disconnect from the current printer
             self._disconnect_from_printer()
-
-    def on_directory_change(self, new_directory):
-        """Update the stored directory when it changes"""
-        self.directory = new_directory
-        print(f">     [Dune] Directory changed to: {self.directory}")
-        # Add any additional actions you want to perform when the directory changes
 
     def toggle_view_ui(self):
         print(f">     [Dune] View UI button pressed. Current state: {'Viewing' if self.is_viewing_ui else 'Not viewing'}")

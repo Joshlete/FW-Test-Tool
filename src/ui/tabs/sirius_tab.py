@@ -32,7 +32,6 @@ class SiriusTab(TabContent):
         self.root = parent.winfo_toplevel()
         self.ip = self.app.get_ip_address()
         self.directory = self.app.get_directory()
-        self._directory = self.directory
         self.is_connected = False
         self.update_thread = None
         self.stop_update = threading.Event()
@@ -65,18 +64,14 @@ class SiriusTab(TabContent):
     def ip(self, value):
         self._ip = value
 
-    def on_ip_change(self, new_ip):
+    def _on_ip_change_hook(self, new_ip):
+        """SiriusTab-specific IP change behavior."""
         self._ip = new_ip
         if self.ui_connection:
             self.ui_connection.update_ip(new_ip)
         self.telemetry_mgr.ip = new_ip
         self.telemetry_mgr.disconnect()
 
-    def on_directory_change(self, new_directory):
-        """Handle changes to the directory"""
-        print(f"> [SiriusTab.update_directory] Updating directory to: {new_directory}")
-        self.directory = new_directory
-        self._directory = new_directory  # Keep both attributes in sync
 
     def stop_listeners(self):
         """Stop the update thread and clean up resources"""

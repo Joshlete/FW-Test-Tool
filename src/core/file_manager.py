@@ -29,10 +29,25 @@ class FileManager:
         self.step_manager = step_manager
         self.notification_manager = notification_manager
         self.debug = debug
+        
+        # Track directory change callbacks for automatic sync
+        self._directory_change_callbacks = []
     
     def set_default_directory(self, directory: str) -> None:
         """Set the default directory for file operations."""
+        old_directory = self.default_directory
         self.default_directory = directory
+        
+        if self.debug and old_directory != directory:
+            print(f"FileManager: Directory changed from {old_directory} to {directory}")
+    
+    def register_directory_change_callback(self, callback):
+        """Register a callback to be notified of directory changes."""
+        self._directory_change_callbacks.append(callback)
+    
+    def connect_to_app_directory_changes(self, app):
+        """Connect to app's directory change system for automatic sync."""
+        app.register_directory_callback(self.set_default_directory)
     
     def get_safe_filepath(self, directory: Optional[str], base_filename: str, 
                          extension: str = ".json", step_number: Optional[int] = None) -> Tuple[str, str]:

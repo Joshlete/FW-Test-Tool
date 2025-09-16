@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 from src.printers.dune.fpui import DEBUG
 from src.printers.universal.udw import UDW
-from .notification_manager import NotificationManager
+from ..components.notification_manager import NotificationManager
 from ..components.step_manager import StepManager
 from src.core.file_manager import FileManager
 
@@ -103,7 +103,7 @@ class TabContent(ABC):
         # Create notification manager for this tab
         self.notifications = NotificationManager(self.main_frame)
         
-        # Initialize file manager
+        # Initialize file manager with auto-sync to app directory changes
         self.file_manager = FileManager(
             default_directory=getattr(self, 'directory', '.'),
             step_manager=self.step_manager,
@@ -111,9 +111,9 @@ class TabContent(ABC):
             debug=DEBUG
         )
         
-        # Update file manager when directory changes
-        if hasattr(self, 'directory'):
-            self.file_manager.set_default_directory(self.directory)
+        # Auto-connect FileManager to app directory changes (if app is available)
+        if hasattr(self, 'app'):
+            self.file_manager.connect_to_app_directory_changes(self.app)
 
         # Create a central content frame that will hold our quadrants
         self.content_frame = ttk.Frame(self.main_frame)
@@ -918,3 +918,28 @@ class TabContent(ABC):
         """Update the FileManager's default directory when tab directory changes."""
         if hasattr(self, 'file_manager'):
             self.file_manager.set_default_directory(new_directory)
+    
+    def on_directory_change(self, new_directory: str) -> None:
+        """Standard directory change handler for all tabs."""
+        print(f"> [{self.__class__.__name__}] Directory changed to: {new_directory}")
+        self.directory = new_directory
+        # FileManager is auto-synced via app callbacks, no manual update needed
+        
+        # Hook for tab-specific directory change behavior
+        self._on_directory_change_hook(new_directory)
+    
+    def _on_directory_change_hook(self, new_directory: str) -> None:
+        """Override this in subclasses for tab-specific directory change behavior."""
+        pass
+    
+    def on_ip_change(self, new_ip: str) -> None:
+        """Standard IP change handler for all tabs."""
+        print(f"> [{self.__class__.__name__}] IP changed to: {new_ip}")
+        self.ip = new_ip
+        
+        # Hook for tab-specific IP change behavior
+        self._on_ip_change_hook(new_ip)
+    
+    def _on_ip_change_hook(self, new_ip: str) -> None:
+        """Override this in subclasses for tab-specific IP change behavior."""
+        pass
