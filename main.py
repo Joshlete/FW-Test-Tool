@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from config_manager import ConfigManager
 from print import Print
+from styles import ModernStyle, ModernComponents
 
 # Playwright browser path handling for PyInstaller
 if getattr(sys, 'frozen', False):
@@ -33,6 +34,7 @@ class App(tk.Tk):
         super().__init__()
         self.title("FW Test Tool")
         self.geometry("900x1000")
+        self.configure(bg=ModernStyle.COLORS['bg_light'])
         
         # Initialize config manager first
         self.config_manager = ConfigManager()
@@ -50,8 +52,7 @@ class App(tk.Tk):
         self._directory_callbacks: List[Callable[[str], None]] = []
 
         # Create UI components
-        self.create_ip_input()
-        self.create_directory_input()
+        self.create_configuration_input()
         # Pass config_manager to CaptureManager
         self.capture_manager = CaptureManager(current_directory=self._directory, config_manager=self.config_manager)
 
@@ -81,17 +82,31 @@ class App(tk.Tk):
         print("> [App.__init__] App initialization complete")
 
     def create_toolbar(self):
-        toolbar_frame = ttk.Frame(self)
-        toolbar_frame.pack(fill="x", padx=10, pady=5)
-        self.create_snip_tool(toolbar_frame)
-        toolbar_frame.pack(fill="x", padx=10, pady=5)
-        self.create_print_dropdown(toolbar_frame)
+        # Create modern toolbar card
+        toolbar_card, toolbar_content = ModernComponents.create_card(self)
+        toolbar_card.pack(fill="x", padx=ModernStyle.SPACING['lg'], pady=ModernStyle.SPACING['sm'])
+        
+        # Toolbar header
+        header_frame = ModernComponents.create_card_header(
+            toolbar_content, 
+            "Tools", 
+            icon_callback=ModernComponents.draw_activity_icon
+        )
+        
+        # Add tools directly after the header text (no big gap)
+        self.create_snip_tool(header_frame)
+        self.create_print_dropdown(header_frame)
 
-    def create_snip_tool(self, master=None) -> ttk.Button:
+    def create_snip_tool(self, master=None) -> tk.Button:
         print("> [App.create_snip_tool] Creating Snip Tool")
-        # Create a frame and button for the Snip Tool functionality
-        snip_button = ttk.Button(master, text="Snip Tool", command=self.snip_tool)
-        snip_button.pack(side="left", padx=5)
+        # Create a modern snip tool button
+        snip_button = ModernComponents.create_modern_button(
+            master, 
+            "Snip Tool", 
+            style='success',
+            command=self.snip_tool
+        )
+        snip_button.pack(side="left", padx=ModernStyle.SPACING['md'])
         return snip_button
 
     def snip_tool(self) -> None:
@@ -100,16 +115,33 @@ class App(tk.Tk):
         root = self.winfo_toplevel()
         self.capture_manager.capture_screen_region(root, "screenshot", self._directory, None)
 
-    def create_print_dropdown(self, master=None) -> ttk.Menubutton:
+    def create_print_dropdown(self, master=None) -> tk.Menubutton:
         print("> [App.create_print_dropdown] Creating Print Dropdown")
-        # Create print menu dropdown
-        print_dropdown = ttk.Menubutton(
-            master=master,
+        # Create modern print menu dropdown
+        print_dropdown = tk.Menubutton(
+            master,
             text="Print PCL Page",
-            style='TButton'
+            font=ModernStyle.FONTS['bold'],
+            bg=ModernStyle.COLORS['purple'],
+            fg=ModernStyle.COLORS['white'],
+            relief="flat",
+            bd=0,
+            padx=ModernStyle.SPACING['lg'],
+            pady=ModernStyle.SPACING['sm'],
+            cursor="hand2"
         )
-        print_dropdown.pack(side="left", padx=5)
-        print_dropdown_menu = tk.Menu(print_dropdown, tearoff=0)
+        print_dropdown.pack(side="left", padx=ModernStyle.SPACING['sm'])
+        
+        # Create modern menu
+        print_dropdown_menu = tk.Menu(
+            print_dropdown, 
+            tearoff=0,
+            font=ModernStyle.FONTS['default'],
+            bg=ModernStyle.COLORS['white'],
+            fg=ModernStyle.COLORS['text_primary'],
+            activebackground=ModernStyle.COLORS['primary'],
+            activeforeground=ModernStyle.COLORS['white']
+        )
 
         # add menu options
         for file in Print.pcl_dict:
@@ -126,14 +158,77 @@ class App(tk.Tk):
         print_dropdown["menu"] = print_dropdown_menu
         return print_dropdown
 
-    def create_ip_input(self) -> None:
-        print("> [App.create_ip_input] Creating IP input field")
-        # Create an input field for the IP address
-        ip_frame = ttk.Frame(self)
-        ip_frame.pack(fill="x", padx=10, pady=10)
-        ttk.Label(ip_frame, text="IP Address:").pack(side="left")
-        self.ip_entry = ttk.Entry(ip_frame, textvariable=self.ip_var)
-        self.ip_entry.pack(side="left", padx=5)
+    def create_configuration_input(self) -> None:
+        print("> [App.create_configuration_input] Creating configuration input fields")
+        
+        # Create single modern configuration card
+        config_card, config_content = ModernComponents.create_card(self)
+        config_card.pack(fill="x", padx=ModernStyle.SPACING['lg'], pady=(ModernStyle.SPACING['md'], ModernStyle.SPACING['sm']))
+        
+        # Card header with printer icon
+        header_frame = ModernComponents.create_card_header(
+            config_content, 
+            "Configuration", 
+            icon_callback=ModernComponents.draw_printer_icon
+        )
+        
+        # Main form container
+        form_frame = tk.Frame(config_content, bg=ModernStyle.COLORS['bg_card'])
+        form_frame.pack(fill="x")
+        
+        # Create two-column layout (IP left, Directory right)
+        left_column = tk.Frame(form_frame, bg=ModernStyle.COLORS['bg_card'])
+        left_column.pack(side="left", fill="x", expand=True, padx=(0, ModernStyle.SPACING['md']))
+        
+        right_column = tk.Frame(form_frame, bg=ModernStyle.COLORS['bg_card'])
+        right_column.pack(side="left", fill="x", expand=True)
+        
+        # IP Address section (left column)
+        ip_label = ModernComponents.create_section_label(left_column, "IP Address")
+        ip_label.pack(anchor="w", pady=(0, 2))
+        
+        ip_input_frame, self.ip_entry = ModernComponents.create_modern_input(
+            left_column, 
+            textvariable=self.ip_var
+        )
+        ip_input_frame.pack(fill="x")
+        
+        # Output Directory section (right column)
+        dir_label = ModernComponents.create_section_label(right_column, "Output Directory")
+        dir_label.pack(anchor="w", pady=(0, 2))
+        
+        # Clickable directory input field with visual indicators
+        dir_container = tk.Frame(right_column, bg=ModernStyle.COLORS['bg_card'])
+        dir_container.pack(fill="x")
+        
+        # Create input frame with folder icon
+        dir_input_frame, self.dir_entry = ModernComponents.create_modern_input(
+            dir_container, 
+            textvariable=self.directory_var
+        )
+        self.dir_entry.config(state="readonly", cursor="hand2")
+        dir_input_frame.pack(side="left", fill="x", expand=True, padx=(0, ModernStyle.SPACING['xs']))
+        
+        # Add folder icon to indicate it's clickable
+        folder_icon = tk.Canvas(dir_container, width=24, height=24, 
+                               bg=ModernStyle.COLORS['bg_card'], highlightthickness=0,
+                               cursor="hand2")
+        folder_icon.pack(side="right", padx=(0, 2))
+        
+        # Draw folder icon
+        self._draw_folder_icon(folder_icon)
+        
+        # Make everything clickable to browse
+        self.dir_entry.bind("<Button-1>", lambda e: self.browse_directory())
+        dir_input_frame.bind("<Button-1>", lambda e: self.browse_directory())
+        folder_icon.bind("<Button-1>", lambda e: self.browse_directory())
+        
+        # Add hover effects to make it more obvious
+        self._add_hover_effects(self.dir_entry, dir_input_frame, folder_icon)
+        
+        # Add tooltip to show full path on hover
+        self._create_tooltip(self.dir_entry, self._directory)
+        
         self._on_ip_change()  # Validate initial IP
 
     def _on_ip_change(self, *args) -> None:
@@ -160,16 +255,6 @@ class App(tk.Tk):
             print(f">! [App._on_ip_change] Invalid IP address: {ip} - {str(e)}")
             # You might want to show an error message to the user here
 
-    def create_directory_input(self) -> None:
-        print("> [App.create_directory_input] Creating Directory input field")
-        dir_frame = ttk.Frame(self)
-        dir_frame.pack(fill="x", padx=20, pady=5)
-        ttk.Label(dir_frame, text="Directory:").pack(side="left")
-        self.dir_entry = ttk.Entry(dir_frame, textvariable=self.directory_var, state="readonly")
-        self.dir_entry.pack(side="left", fill="x", expand=True, padx=5)
-        self.dir_button = ttk.Button(dir_frame, text="Browse", command=self.browse_directory)
-        self.dir_button.pack(side="left")
-
     def browse_directory(self) -> None:
         print("> [App.browse_directory] Opening directory browser")
         directory = filedialog.askdirectory()
@@ -180,6 +265,11 @@ class App(tk.Tk):
             # Update the directory display
             self.directory_var.set(shortened_directory)
             self.config_manager.set("directory", directory)
+            
+            # Update tooltip to reflect new directory (recreate tooltip binding)
+            if hasattr(self, 'dir_entry'):
+                self._create_tooltip(self.dir_entry, self._directory)
+            
             for callback in self._directory_callbacks:
                 callback(directory)
 
@@ -199,10 +289,100 @@ class App(tk.Tk):
         self._directory_callbacks.append(callback)
 
     def shorten_directory(self, directory: str) -> str:
-        """Shorten the directory path to show only the last 3 components."""
-        path_components = directory.split('/')
-        last_three_components = '/'.join(path_components[-3:])
-        return f".../{last_three_components}" if len(path_components) > 3 else directory
+        """Shorten the directory path to show a user-friendly shortened version."""
+        if not directory:
+            return directory
+            
+        try:
+            path = Path(directory)
+            path_parts = path.parts
+            
+            # If path is short enough, show it all
+            if len(path_parts) <= 3:
+                return str(path)
+            
+            # For longer paths, show drive + ... + last 2 components
+            # Example: C:\...\Test Logs\Capture instead of .../Test Logs/Capture
+            if len(path_parts) > 3:
+                if path.is_absolute() and path_parts[0]:  # Has drive letter on Windows
+                    return f"{path_parts[0]}\\...\\{path_parts[-2]}\\{path_parts[-1]}"
+                else:
+                    return f"...\\{path_parts[-2]}\\{path_parts[-1]}"
+            
+        except Exception as e:
+            print(f">! [App.shorten_directory] Error processing path: {str(e)}")
+            # Fallback to original path if there's any error
+            return directory
+        
+        return directory
+    
+    def _create_tooltip(self, widget, text):
+        """Create a tooltip that shows the full path on hover"""
+        def show_tooltip(event):
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            tooltip.configure(bg=ModernStyle.COLORS['gray_800'])
+            
+            label = tk.Label(
+                tooltip, 
+                text=self._directory,  # Show current full directory
+                font=ModernStyle.FONTS['small'],
+                bg=ModernStyle.COLORS['gray_800'],
+                fg=ModernStyle.COLORS['white'],
+                padx=8,
+                pady=4
+            )
+            label.pack()
+            
+            # Store tooltip reference to destroy it later
+            widget.tooltip = tooltip
+        
+        def hide_tooltip(event):
+            if hasattr(widget, 'tooltip'):
+                widget.tooltip.destroy()
+                delattr(widget, 'tooltip')
+        
+        widget.bind("<Enter>", show_tooltip)
+        widget.bind("<Leave>", hide_tooltip)
+    
+    def _draw_folder_icon(self, canvas):
+        """Draw a folder icon to indicate the field is clickable"""
+        # Clear canvas
+        canvas.delete("all")
+        
+        # Draw folder shape
+        canvas.create_rectangle(4, 8, 20, 18, fill=ModernStyle.COLORS['info'], outline="")
+        canvas.create_polygon([4, 8, 4, 6, 10, 6, 12, 8], fill=ModernStyle.COLORS['info'], outline="")
+        canvas.create_rectangle(5, 9, 19, 17, fill=ModernStyle.COLORS['white'], outline="")
+    
+    def _add_hover_effects(self, entry, input_frame, icon_canvas):
+        """Add hover effects to make the clickable nature more obvious"""
+        original_bg = ModernStyle.COLORS['bg_input']
+        hover_bg = ModernStyle.COLORS['gray_200']
+        
+        def on_enter(event):
+            entry.config(bg=hover_bg)
+            input_frame.config(bg=hover_bg)
+            # Redraw icon with highlight
+            icon_canvas.delete("all")
+            icon_canvas.create_rectangle(4, 8, 20, 18, fill=ModernStyle.COLORS['primary'], outline="")
+            icon_canvas.create_polygon([4, 8, 4, 6, 10, 6, 12, 8], fill=ModernStyle.COLORS['primary'], outline="")
+            icon_canvas.create_rectangle(5, 9, 19, 17, fill=ModernStyle.COLORS['white'], outline="")
+        
+        def on_leave(event):
+            entry.config(bg=original_bg)
+            input_frame.config(bg=original_bg)
+            # Redraw icon normal
+            self._draw_folder_icon(icon_canvas)
+        
+        # Bind hover events to all clickable elements
+        entry.bind("<Enter>", on_enter)
+        entry.bind("<Leave>", on_leave)
+        input_frame.bind("<Enter>", on_enter)
+        input_frame.bind("<Leave>", on_leave)
+        icon_canvas.bind("<Enter>", on_enter)
+        icon_canvas.bind("<Leave>", on_leave)
 
     def create_tabs(self) -> None:
         print("> [App.create_tabs] Creating tabs")
