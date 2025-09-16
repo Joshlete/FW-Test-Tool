@@ -11,6 +11,7 @@ import os
 from src.printers.dune.fpui import DEBUG
 from src.printers.universal.udw import UDW
 from .notification_manager import NotificationManager
+from ..components.step_manager import StepManager
 
 
 class TabContent(ABC):
@@ -18,16 +19,8 @@ class TabContent(ABC):
         self.parent = parent
         self.frame = ttk.Frame(self.parent)
         
-        # Setup step counter variables (before creating layout)
-        self.step_var = tk.StringVar(value="1")
-        # If app has config manager, try to load saved step
-        if hasattr(self, 'app') and hasattr(self.app, 'config_manager'):
-            tab_name = self.__class__.__name__.lower().replace('tab', '')
-            saved_step = self.app.config_manager.get(f"{tab_name}_step_number", 1)
-            self.step_var.set(str(saved_step))
-        
-        # Add trace to save step changes if possible
-        self.step_var.trace_add("write", self._handle_step_change)
+        # Setup step manager (will be created after base layout)
+        self.step_manager = None
         
         # Setup async infrastructure that all tabs can use
         self.loop = asyncio.new_event_loop()
@@ -94,8 +87,12 @@ class TabContent(ABC):
         self.connection_frame = ttk.Frame(self.main_frame)
         self.connection_frame.pack(fill="x", padx=5, pady=5)
         
-        # Add step control elements to connection frame
-        self._create_step_controls()
+        # Initialize step manager and create controls
+        app = getattr(self, 'app', None)
+        tab_name = self.__class__.__name__.lower().replace('tab', '')
+        self.step_manager = StepManager(self.connection_frame, app, tab_name)
+        self.step_manager.create_controls()
+        
         self._create_udw_command_controls()
         
         # Separator line under connection frame
@@ -739,13 +736,6 @@ class TabContent(ABC):
         except Exception as e:
             self.notifications.show_error(f"Error saving telemetry: {str(e)}")
 
-    def _get_step_prefix(self):
-        """Returns the current step prefix in format '1. '"""
-        try:
-            current_step = int(self.step_var.get())
-            return f"{current_step}. " if current_step >= 1 else ""
-        except ValueError:
-            return ""
 
     def populate_telemetry_tree(self, tree, telemetry_items, events_data, is_dune_format=False):
         """
@@ -852,78 +842,7 @@ class TabContent(ABC):
         """
         raise NotImplementedError("Subclasses must implement _get_telemetry_data")
 
-    def _handle_step_change(self, *args):
-        """Save current step number to configuration if app has config manager"""
-        if hasattr(self, 'app') and hasattr(self.app, 'config_manager'):
-            try:
-                step_num = int(self.step_var.get())
-                tab_name = self.__class__.__name__.lower().replace('tab', '')
-                self.app.config_manager.set(f"{tab_name}_step_number", step_num)
-            except (ValueError, AttributeError):
-                pass
 
-    def _create_step_controls(self):
-        """Creates step number controls in the connection frame"""
-        # Create step control frame
-        self.step_control_frame = ttk.Frame(self.connection_frame)
-        self.step_control_frame.pack(side="left", pady=5, padx=10)
-        
-        # Add step label
-        step_label = ttk.Label(self.step_control_frame, text="STEP:")
-        step_label.pack(side="left", padx=(0, 5))
-        
-        # Add step number controls
-        self.step_down_button = ttk.Button(
-            self.step_control_frame,
-            text="-",
-            width=2,
-            command=lambda: self.update_step_number(-1)
-        )
-        self.step_down_button.pack(side="left")
-        
-        # Add step entry
-        self.step_entry = ttk.Entry(
-            self.step_control_frame,
-            width=4,
-            validate="key",
-            validatecommand=(self.frame.register(self.validate_step_input), '%P'),
-            textvariable=self.step_var
-        )
-        self.step_entry.pack(side="left", padx=2)
-        self.step_entry.bind('<FocusOut>', self._handle_step_focus_out)
-        
-        # Add step up button
-        self.step_up_button = ttk.Button(
-            self.step_control_frame,
-            text="+",
-            width=2,
-            command=lambda: self.update_step_number(1)
-        )
-        self.step_up_button.pack(side="left")
-
-    def validate_step_input(self, value):
-        """Validate that the step entry only contains numbers"""
-        if value == "":
-            return True  # Allow empty input during editing
-        try:
-            int(value)
-            return True
-        except ValueError:
-            return False
-
-    def _handle_step_focus_out(self, event):
-        """Handle empty input when focus leaves the entry"""
-        if self.step_var.get().strip() == "":
-            self.step_var.set("1")
-
-    def update_step_number(self, delta):
-        """Update the current step number with bounds checking"""
-        try:
-            current = int(self.step_var.get())
-            new_value = max(1, current + delta)
-            self.step_var.set(str(new_value))
-        except ValueError:
-            self.step_var.set("1")
 
     def _create_udw_command_controls(self):
         """Create the controls to handle udw interactions with the printer"""
@@ -997,11 +916,11 @@ class TabContent(ABC):
         # Get step prefix from provided step number or current value
         if step_number is not None:
             try:
-                step_prefix = f"{int(step_number)}. "
+                step_prefix = self.step_manager.get_step_prefix(step_number)
             except ValueError:
-                step_prefix = self._get_step_prefix()  # Fall back to current step
+                step_prefix = self.step_manager.get_step_prefix()  # Fall back to current step
         else:
-            step_prefix = self._get_step_prefix()
+            step_prefix = self.step_manager.get_step_prefix()
         
         # Add step prefix to filename
         prefixed_filename = f"{step_prefix}{base_filename}"

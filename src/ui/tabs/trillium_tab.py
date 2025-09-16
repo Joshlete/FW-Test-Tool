@@ -245,7 +245,7 @@ class TrilliumTab(TabContent):
         self.capture_ews_button.config(text="Capturing...", state="disabled")
         
         # Capture the current step number when button is clicked
-        current_step = self.step_var.get()
+        current_step = str(self.step_manager.get_current_step())
         
         # Use async function to handle the capture with variant
         asyncio.run_coroutine_threadsafe(self._capture_ews_async(variant, current_step), self.loop)
@@ -330,7 +330,7 @@ class TrilliumTab(TabContent):
         self.notifications.show_info("Capturing CDM...")
         
         # Capture current step number when button is clicked
-        current_step = self.step_var.get()
+        current_step = str(self.step_manager.get_current_step())
         
         # Create and run coroutine
         asyncio.run_coroutine_threadsafe(self._capture_cdm_async(selected_endpoints, variant, current_step), self.loop)
@@ -831,7 +831,7 @@ class TrilliumTab(TabContent):
                 json_data = json.loads(text)
                 
                 # Capture current step number
-                current_step = self.step_var.get()
+                current_step = str(self.step_manager.get_current_step())
                 
                 # Extract the same fields used in save_telemetry_to_file for consistency
                 
@@ -889,7 +889,7 @@ class TrilliumTab(TabContent):
                 json_data = json.loads(text)
                 
                 # Capture current step number
-                current_step = self.step_var.get()
+                current_step = str(self.step_manager.get_current_step())
                 
                 # The OpenSearch format may have events in an array
                 # Extract the first event if it exists
@@ -957,7 +957,7 @@ class TrilliumTab(TabContent):
             text = text_area.get("1.0", "end-1c")
             
             # Get current step number
-            current_step = self.step_var.get()
+            current_step = str(self.step_manager.get_current_step())
             
             # Save the raw text
             success, filepath = self.save_text_data(text, f"Script Output")

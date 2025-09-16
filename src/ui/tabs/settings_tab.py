@@ -11,8 +11,8 @@ class SettingsTab(TabContent):
         super().__init__(parent)
         
         # Disable step controls
-        if hasattr(self, 'step_control_frame'):
-            self.step_control_frame.pack_forget()
+        if hasattr(self, 'step_manager') and self.step_manager:
+            self.step_manager.hide_controls()
 
     def get_layout_config(self) -> tuple:
         """Override to disable quadrant layout"""

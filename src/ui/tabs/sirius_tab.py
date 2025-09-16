@@ -123,14 +123,14 @@ class SiriusTab(TabContent):
         self.connection_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
         # Add password field to step control frame
-        self.password_frame = ttk.Frame(self.step_control_frame)
+        self.password_frame = ttk.Frame(self.step_manager.step_control_frame)
         self.password_frame.pack(side="left", padx=10)
         ttk.Label(self.password_frame, text="Password:").pack(side="left")
         self.password_entry = ttk.Entry(self.password_frame, width=15, textvariable=self.password_var)
         self.password_entry.pack(side="left", padx=5)
 
         # Create EWS button in step control frame after password
-        self.ews_button = ttk.Button(self.step_control_frame, text="Capture EWS", command=self.capture_ews)
+        self.ews_button = ttk.Button(self.step_manager.step_control_frame, text="Capture EWS", command=self.capture_ews)
         self.ews_button.pack(side="left", padx=5)
 
         # Add separator line
@@ -475,12 +475,8 @@ class SiriusTab(TabContent):
                         endpoint_name = os.path.basename(endpoint).replace('.xml', '')
                         filename = f"LEDM {endpoint_name}"
                         
-                        # Use current step number from step_var
-                        step_num = None
-                        try:
-                            step_num = int(self.step_var.get())
-                        except ValueError:
-                            pass
+                        # Use current step number from step_manager
+                        step_num = self.step_manager.get_current_step()
                         
                         success, filepath = self.save_text_data(content, filename, extension=".xml", step_number=step_num)
                         save_results.append((success, endpoint, filepath))
@@ -532,11 +528,8 @@ class SiriusTab(TabContent):
 
                 if not description:  # Main UI capture - show save dialog
                     # Build filename with step number
-                    try:
-                        step_num = int(self.step_var.get())
-                        suggested_filename = f"{step_num}. UI.png"
-                    except ValueError:
-                        suggested_filename = "UI.png"
+                    step_num = self.step_manager.get_current_step()
+                    suggested_filename = f"{step_num}. UI.png"
 
                     def show_save_dialog():
                         filepath = filedialog.asksaveasfilename(
@@ -569,7 +562,7 @@ class SiriusTab(TabContent):
                         success, filepath = self.save_image_data(
                             response.content,
                             base_name,
-                            step_number=self.step_var.get()
+                            step_number=self.step_manager.get_current_step()
                         )
                         
                         if success:
@@ -600,7 +593,7 @@ class SiriusTab(TabContent):
         self.ews_button.config(state="disabled", text="Capturing...")
         
         # Ask the user for an optional number prefix
-        number = self.step_var.get()
+        number = str(self.step_manager.get_current_step())
         
         # If user clicks the X to close the dialog, don't proceed
         if number is None:
@@ -901,7 +894,7 @@ class SiriusTab(TabContent):
             success, filepath = self.save_json_data(
                 matching_data['raw_data'], 
                 base_filename, 
-                step_number=self.step_var.get()
+                step_number=self.step_manager.get_current_step()
             )
             
             if success:

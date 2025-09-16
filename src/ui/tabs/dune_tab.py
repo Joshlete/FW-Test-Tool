@@ -45,11 +45,6 @@ class DuneTab(TabContent):
         self.cdm_options = self.app.dune_fetcher.get_endpoints()
         self.cdm_vars = {option: IntVar() for option in self.cdm_options}
         
-        # Initialize step_var before parent class
-        self.step_var = tk.StringVar(value=str(self.app.config_manager.get("dune_step_number", 1)))
-        self.step_var.trace_add("write", self._save_step_to_config)
-        self.current_step = 1
-
         super().__init__(parent)
         
         self.task_queue = queue.Queue()
@@ -618,7 +613,7 @@ class DuneTab(TabContent):
                 self.directory,
                 base_name,
                 ".png",
-                step_number=self.step_var.get()
+                step_number=self.step_manager.get_current_step()
             )
             
             # Use the existing _continue_save_fpui_image method 
@@ -879,7 +874,7 @@ class DuneTab(TabContent):
         """
         try:
             # Import here to avoid circular imports
-            from snip_tool import CaptureManager
+            from src.tools.snip_tool import CaptureManager
             
             # Create capture manager with config manager support
             capture_manager = CaptureManager(self.directory, config_manager=self.app.config_manager)
@@ -923,25 +918,15 @@ class DuneTab(TabContent):
 
     def _handle_step_focus_out(self, event):
         """Handle empty input when focus leaves the entry"""
-        if self.step_var.get().strip() == "":
-            self.step_var.set("1")
+        # This is now handled by StepManager
 
     def update_filename_prefix(self, delta):
         """Update the current step number with bounds checking"""
-        try:
-            current = int(self.step_var.get())
-            new_value = max(1, current + delta)
-            self.step_var.set(str(new_value))
-        except ValueError:
-            pass
+        self.step_manager.update_step_number(delta)
 
     def get_step_prefix(self):
         """Returns the current step prefix if >= 1"""
-        try:
-            current_step = int(self.step_var.get())
-            return f"{current_step}. " if current_step >= 1 else ""
-        except ValueError:
-            return ""
+        return self.step_manager.get_step_prefix()
 
     def _handle_telemetry_update(self):
         """Ensure telemetry window exists before updating"""
@@ -978,11 +963,7 @@ class DuneTab(TabContent):
 
     def _save_step_to_config(self, *args):
         """Save current Dune step number to configuration"""
-        try:
-            step_num = int(self.step_var.get())
-            self.app.config_manager.set("dune_step_number", step_num)
-        except ValueError:
-            pass
+        # This is now handled by StepManager
 
     def _refresh_alerts_after_action(self):
         """Implementation of abstract method from base class"""
@@ -1059,7 +1040,7 @@ class DuneTab(TabContent):
     def _save_ui_for_alert(self, base_name):
         try:
             filepath, filename = self.get_safe_filepath(
-                self.directory, base_name, ".png", step_number=self.step_var.get()
+                self.directory, base_name, ".png", step_number=self.step_manager.get_current_step()
             )
             
             if not self.vnc_connection.connected:
