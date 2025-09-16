@@ -1,4 +1,5 @@
-import threading
+import time
+import os
 import tkinter as tk
 from tkinter import ttk, filedialog
 from typing import Dict, List, Callable
@@ -11,8 +12,6 @@ from src.ui.tabs.dune_tab import DuneTab
 from src.ui.tabs.trillium_tab import TrilliumTab
 from src.network.cdm_ledm_fetcher import create_fetcher
 import json
-import os
-import time
 import sys
 from pathlib import Path
 from src.core.config_manager import ConfigManager
@@ -462,40 +461,22 @@ class App(tk.Tk):
         except ImportError:
             print("Twisted is not used in this application.")
 
-        # Stop listeners for all tabs
+        # Clean up all tabs (this handles AsyncManager cleanup)
+        print("Cleaning up tabs...")
         for tab_name, tab in self.tabs.items():
+            print(f"Cleaning up tab: {tab_name}")
+            if hasattr(tab, 'cleanup'):
+                tab.cleanup()
             if hasattr(tab, 'stop_listeners'):
-                print(f"Stopping listeners for tab: {tab_name}")
                 tab.stop_listeners()
 
         # Stop snip tool listeners
         print("Stopping snip tool listeners...")
         self.keybinding_manager.stop_listeners()
 
-        # Join remaining threads with a timeout
-        timeout = 3  # 3 seconds timeout for graceful shutdown
-        start_time = time.time()
-        threads_still_running = []
-        
-        for thread in threading.enumerate():
-            if thread != threading.main_thread():
-                remaining_time = max(0, timeout - (time.time() - start_time))
-                if remaining_time <= 0:
-                    threads_still_running.append(thread.name)
-                    break
-                print(f"Waiting for thread to stop: {thread.name}")
-                thread.join(timeout=remaining_time)
-                if thread.is_alive():
-                    threads_still_running.append(thread.name)
-
-        # Force close if threads are still running
-        if threads_still_running:
-            print(f"Force closing application - threads still running: {threads_still_running}")
-            os._exit(0)  # Force exit without cleanup
-        else:
-            print("All threads stopped gracefully. Closing application...")
-            self.quit()
-            self.destroy()
+        print("All cleanup completed. Closing application...")
+        self.quit()
+        self.destroy()
 
     def _setup_tab_persistence(self) -> None:
         """Initialize tab persistence functionality"""

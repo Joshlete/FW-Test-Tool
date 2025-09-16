@@ -12,6 +12,7 @@ from src.printers.dune.fpui import DEBUG
 from src.printers.universal.udw import UDW
 from ..components.notification_manager import NotificationManager
 from ..components.step_manager import StepManager
+from src.core.async_manager import AsyncManager
 from src.core.file_manager import FileManager
 
 
@@ -24,11 +25,7 @@ class TabContent(ABC):
         self.step_manager = None
         
         # Setup async infrastructure that all tabs can use
-        self.loop = asyncio.new_event_loop()
-        self.executor = ThreadPoolExecutor(max_workers=2)
-        asyncio.set_event_loop(self.loop)
-        self.async_thread = threading.Thread(target=self._run_async_loop, daemon=True)
-        self.async_thread.start()
+        self.async_manager = AsyncManager(max_workers=2)
         
         # Continue with regular initialization
         self.layout_config = self.get_layout_config()  # Let subclass define layout first
@@ -443,25 +440,14 @@ class TabContent(ABC):
         """
         raise NotImplementedError("Subclasses must implement _acknowledge_alert")
 
-    def _run_async_loop(self):
-        """Run the asyncio event loop in a separate thread"""
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()
 
     def cleanup(self):
         """Clean up resources when tab is destroyed"""
         print(f"Starting cleanup for {self.__class__.__name__}")
-        if hasattr(self, 'loop') and self.loop:
-            print(f"Stopping loop for {self.__class__.__name__}")
-            self.loop.call_soon_threadsafe(self.loop.stop)
         
-        if hasattr(self, 'executor') and self.executor:
-            self.executor.shutdown(wait=False)
-        
-        if hasattr(self, 'async_thread') and self.async_thread:
-            print(f"Async thread alive: {self.async_thread.is_alive()}")
-            self.async_thread.join(timeout=1)
-            print(f"After join, alive: {self.async_thread.is_alive()}")
+        # Clean up async manager
+        if hasattr(self, 'async_manager'):
+            self.async_manager.cleanup()
         
         # Let subclasses add their own cleanup
         self._additional_cleanup()
@@ -469,18 +455,6 @@ class TabContent(ABC):
     def _additional_cleanup(self):
         """Subclasses can override this to add their own cleanup logic"""
         pass
-
-    def run_async(self, coro):
-        """Utility method to run a coroutine in the async loop"""
-        if hasattr(self, 'loop') and self.loop:
-            return asyncio.run_coroutine_threadsafe(coro, self.loop)
-        return None
-
-    async def run_in_executor(self, func, *args):
-        """Run a blocking function in the thread pool executor"""
-        if not hasattr(self, 'executor') or not self.executor:
-            raise RuntimeError("Executor not available")
-        return await self.loop.run_in_executor(self.executor, lambda: func(*args))
 
     def update_ui(self, callback, *args):
         """Safely update UI from non-main thread"""
@@ -493,7 +467,7 @@ class TabContent(ABC):
     # Standardized alert fetch process
     def fetch_alerts(self):
         """Standard implementation for fetching alerts asynchronously"""
-        self.run_async(self._fetch_alerts_async())
+        self.async_manager.run_async(self._fetch_alerts_async())
 
     async def _fetch_alerts_async(self):
         """Asynchronous operation to fetch and display alerts"""
@@ -507,7 +481,7 @@ class TabContent(ABC):
             self.update_ui(lambda: self.alert_items.clear())
             
             # Fetch alerts using executor to avoid blocking
-            alerts = await self.run_in_executor(self._get_alerts_data)
+            alerts = await self.async_manager.run_in_executor(self._get_alerts_data)
             
             if not alerts:
                 self.update_ui(lambda: self.notifications.show_info("No alerts found"))
@@ -817,7 +791,7 @@ class TabContent(ABC):
 
     def fetch_telemetry(self):
         """Standard implementation for fetching telemetry asynchronously"""
-        self.run_async(self._fetch_telemetry_async())
+        self.async_manager.run_async(self._fetch_telemetry_async())
 
     async def _fetch_telemetry_async(self):
         """Asynchronous operation to fetch and display telemetry"""
@@ -827,7 +801,7 @@ class TabContent(ABC):
                 state="disabled", text="Fetching..."))
             
             # Fetch telemetry using executor to avoid blocking
-            events = await self.run_in_executor(self._get_telemetry_data)
+            events = await self.async_manager.run_in_executor(self._get_telemetry_data)
             
             if not events:
                 self.update_ui(lambda: self.notifications.show_info("No telemetry data found"))

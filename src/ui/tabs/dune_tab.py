@@ -3,7 +3,6 @@ from src.printers.universal.vncapp import VNCConnection
 from tkinter import simpledialog, ttk, Toplevel, Checkbutton, IntVar, Button, Canvas, RIGHT, Text, filedialog
 import threading
 import socket
-import queue
 from PIL import Image, ImageTk
 import io
 import requests
@@ -47,9 +46,6 @@ class DuneTab(TabContent):
         
         super().__init__(parent)
         
-        self.task_queue = queue.Queue()
-        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
-        self.worker_thread.start()
 
         # Register callbacks for IP address and directory changes
         self.app.register_ip_callback(self.on_ip_change)
@@ -158,7 +154,7 @@ class DuneTab(TabContent):
         for label, cmd in ssh_commands:
             ssh_menu.add_command(
                 label=label,
-                command=lambda c=cmd: self.queue_task(self._execute_ssh_command, c)
+                command=lambda c=cmd: self.async_manager.run_async(self._execute_ssh_command_async(c))
             )
 
         self.ssh_menu_button["menu"] = ssh_menu
@@ -320,9 +316,9 @@ class DuneTab(TabContent):
     def fetch_alerts(self):
         """Initiates asynchronous fetch of alerts."""
         self.fetch_alerts_button.config(state="disabled", text="Fetching...")
-        self.queue_task(self._fetch_alerts_async)
+        self.async_manager.run_async(self._fetch_alerts_async())
 
-    def _fetch_alerts_async(self):
+    async def _fetch_alerts_async(self):
         """Asynchronous operation to fetch and display alerts."""
         print(f">     [Dune] Fetch Alerts button pressed")
         try:
@@ -331,8 +327,8 @@ class DuneTab(TabContent):
             self.root.after(0, lambda: self.alerts_tree.delete(*self.alerts_tree.get_children()))
             self.root.after(0, lambda: self.alert_items.clear())
 
-            # Use the DuneFetcher to get alerts
-            alerts_data = self.app.dune_fetcher.fetch_alerts()
+            # Use the DuneFetcher to get alerts (run in executor to avoid blocking)
+            alerts_data = await self.async_manager.run_in_executor(self.app.dune_fetcher.fetch_alerts)
             
             if not alerts_data:
                 self.root.after(0, lambda: self.notifications.show_info("No alerts found"))
@@ -378,13 +374,13 @@ class DuneTab(TabContent):
         """Initiates asynchronous fetch of telemetry data."""
         print(f">     [Dune] Fetch Telemetry button pressed")
         self.telemetry_update_button.config(state="disabled", text="Fetching...")
-        self.queue_task(self._fetch_telemetry_async)
+        self.async_manager.run_async(self._fetch_telemetry_async())
 
-    def _fetch_telemetry_async(self):
+    async def _fetch_telemetry_async(self):
         """Background operation to fetch and display telemetry"""
         try:
-            # Fetch telemetry data directly (already in background thread)
-            events = self._get_telemetry_data()
+            # Fetch telemetry data using executor to avoid blocking
+            events = await self.async_manager.run_in_executor(self._get_telemetry_data)
             
             if not events:
                 self.root.after(0, lambda: self.telemetry_tree.delete(*self.telemetry_tree.get_children()))
@@ -403,29 +399,15 @@ class DuneTab(TabContent):
             self.root.after(0, lambda: self.telemetry_update_button.config(
                 state="normal", text="Update Telemetry"))
 
-    def _worker(self):
-        while True:
-            task, args = self.task_queue.get()
-            if task is None:
-                break  # Exit the loop if we receive a sentinel value
-            try:
-                task(*args)
-            except Exception as e:
-                print(f"Error in worker thread: {e}")
-            finally:
-                self.task_queue.task_done()
-
-    def queue_task(self, task, *args):
-        self.task_queue.put((task, args))
 
     def toggle_printer_connection(self):
         print(f">     [Dune] Connection button pressed. Current state: {'Connected' if self.is_connected else 'Disconnected'}")
         if not self.is_connected:
-            self.queue_task(self._connect_to_printer)
+            self.async_manager.run_async(self._connect_to_printer_async())
         else:
-            self.queue_task(self._disconnect_from_printer)
+            self.async_manager.run_async(self._disconnect_from_printer_async())
 
-    def _connect_to_printer(self):
+    async def _connect_to_printer_async(self):
         ip = self.ip
         self.root.after(0, lambda: self.connect_button.config(state="disabled", text=CONNECTING))
         
@@ -451,7 +433,7 @@ class DuneTab(TabContent):
             print(f"Connection to printer failed: {error_message}")
             self.root.after(0, lambda: self.notifications.show_error(f"Failed to connect to printer: {error_message}"))
 
-    def _disconnect_from_printer(self):
+    async def _disconnect_from_printer_async(self):
         self.root.after(0, lambda: self.connect_button.config(state="disabled", text=DISCONNECTING))
         
         try:
@@ -535,13 +517,14 @@ class DuneTab(TabContent):
         self.notifications.show_info("Capturing CDM...")
         
         # Queue the CDM save task
-        self.queue_task(self._save_cdm_async, selected_endpoints)
+        self.async_manager.run_async(self._save_cdm_async(selected_endpoints))
 
-    def _save_cdm_async(self, selected_endpoints):
+    async def _save_cdm_async(self, selected_endpoints):
         """Asynchronous function to save CDM data"""
         try:
-            # Fetch data from endpoints
-            data = self.app.dune_fetcher.fetch_data(selected_endpoints)
+            # Fetch data from endpoints using executor
+            data = await self.async_manager.run_in_executor(
+                self.app.dune_fetcher.fetch_data, selected_endpoints)
             
             # Save the data using the base class save methods
             save_results = []
@@ -600,12 +583,12 @@ class DuneTab(TabContent):
         print(f">     [Dune] Capture UI button pressed")
         if auto_save:
             # For auto-save, generate filename and save directly
-            self.queue_task(self._auto_save_fpui_image, base_name)
+            self.async_manager.run_async(self._auto_save_fpui_image_async(base_name))
         else:
             # For manual save, ask for filename
-            self.queue_task(self._ask_for_filename, base_name)
+            self.async_manager.run_async(self._ask_for_filename_async(base_name))
             
-    def _auto_save_fpui_image(self, base_name):
+    async def _auto_save_fpui_image_async(self, base_name):
         """Automatically generate a filename and save the UI image without prompting"""
         try:
             # Generate safe filepath with step prefix
@@ -618,12 +601,12 @@ class DuneTab(TabContent):
             
             # Use the existing _continue_save_fpui_image method 
             # which already handles the connection and saving
-            self._continue_save_fpui_image(filepath)
+            self.async_manager.run_async(self._continue_save_fpui_image_async(filepath))
             
         except Exception as e:
             self.notifications.show_error(f"Failed to auto-save UI: {str(e)}")
 
-    def _ask_for_filename(self, base_name):
+    async def _ask_for_filename_async(self, base_name):
         """Handles file saving with a proper save dialog."""
         # Modified base name
         base_name = self.get_step_prefix() + base_name
@@ -640,9 +623,9 @@ class DuneTab(TabContent):
             return
         
         # Continue with the screenshot capture in the background thread
-        self.queue_task(self._continue_save_fpui_image, full_path)
+        self.async_manager.run_async(self._continue_save_fpui_image_async(full_path))
 
-    def _continue_save_fpui_image(self, full_path):
+    async def _continue_save_fpui_image_async(self, full_path):
         """Save UI screenshot to file"""
         directory = os.path.dirname(full_path)
         filename = os.path.basename(full_path)
@@ -805,18 +788,13 @@ class DuneTab(TabContent):
                 print("Disconnecting VNC...")
                 self.vnc_connection.disconnect()
         
-        # Stop worker thread (existing code)
-        self.task_queue.put((None, None))
-        self.worker_thread.join(timeout=5)
-        if self.worker_thread.is_alive():
-            print("Warning: Worker thread did not stop within the timeout period")
 
     def handle_alert_action(self, alert_id, action_value, action_link):
         """Initiates asynchronous alert action."""
         print(f">     [Dune] Alert action button pressed - Alert ID: {alert_id}, Action: {action_value}")
-        self.queue_task(self._handle_alert_action_async, alert_id, action_value, action_link)
+        self.async_manager.run_async(self._handle_alert_action_async(alert_id, action_value, action_link))
 
-    def _handle_alert_action_async(self, alert_id, action_value, action_link):
+    async def _handle_alert_action_async(self, alert_id, action_value, action_link):
         """
         Handles button clicks for alert actions asynchronously.
         
@@ -1024,13 +1002,13 @@ class DuneTab(TabContent):
             
             # Format: step_num. UI string_id category
             base_name = f"UI_{string_id}_{category}"
-            self.queue_task(self._save_ui_for_alert, base_name)
+            self.async_manager.run_async(self._save_ui_for_alert_async(base_name))
             self.notifications.show_info("Starting UI capture...")
             
         except Exception as e:
             self.notifications.show_error(f"Capture failed: {str(e)}")
 
-    def _save_ui_for_alert(self, base_name):
+    async def _save_ui_for_alert_async(self, base_name):
         try:
             filepath, filename = self.file_manager.get_safe_filepath(
                 self.directory, base_name, ".png", step_number=self.step_manager.get_current_step()

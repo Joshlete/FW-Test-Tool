@@ -3,7 +3,6 @@ from .base import TabContent
 from src.printers.universal.ews_capture import EWSScreenshotCapturer
 from tkinter import ttk, simpledialog, Toplevel, IntVar, Text, Canvas, LEFT, RIGHT, X
 import threading
-import queue
 import asyncio
 import requests
 import urllib3
@@ -39,10 +38,6 @@ class TrilliumTab(TabContent):
         self.app.register_ip_callback(self.on_ip_change)
         self.app.register_directory_callback(self.on_directory_change)
 
-        # Setup task queue for background operations
-        self.task_queue = queue.Queue()
-        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
-        self.worker_thread.start()
 
     def get_layout_config(self) -> tuple:
         """
@@ -189,20 +184,6 @@ class TrilliumTab(TabContent):
             self.fetch_telemetry
         )
 
-    def _worker(self):
-        while True:
-            task, args = self.task_queue.get()
-            if task is None:
-                break
-            try:
-                task(*args)
-            except Exception as e:
-                print(f"Error in worker thread: {e}")
-            finally:
-                self.task_queue.task_done()
-
-    def queue_task(self, task, *args):
-        self.task_queue.put((task, args))
 
     def toggle_connection(self):
         if not self.is_connected:
@@ -248,7 +229,7 @@ class TrilliumTab(TabContent):
         current_step = str(self.step_manager.get_current_step())
         
         # Use async function to handle the capture with variant
-        asyncio.run_coroutine_threadsafe(self._capture_ews_async(variant, current_step), self.loop)
+        self.async_manager.run_async(self._capture_ews_async(variant, current_step))
 
     async def _capture_ews_async(self, variant="", step_number=None):
         """Asynchronous EWS capture operation using base class save methods"""
@@ -256,8 +237,7 @@ class TrilliumTab(TabContent):
             capturer = EWSScreenshotCapturer(self.frame, self.ip, self.directory)
             
             # Just get the screenshots as data, don't save them in the capturer
-            screenshots = await self.loop.run_in_executor(
-                self.executor,
+            screenshots = await self.async_manager.run_in_executor(
                 capturer._capture_ews_screenshots  # Use the internal method that doesn't save
             )
             
@@ -333,15 +313,14 @@ class TrilliumTab(TabContent):
         current_step = str(self.step_manager.get_current_step())
         
         # Create and run coroutine
-        asyncio.run_coroutine_threadsafe(self._capture_cdm_async(selected_endpoints, variant, current_step), self.loop)
+        self.async_manager.run_async(self._capture_cdm_async(selected_endpoints, variant, current_step))
 
     async def _capture_cdm_async(self, selected_endpoints, variant="", step_number=None):
         """Asynchronous CDM capture operation using base class save methods"""
         try:
             
             # Fetch data from endpoints but don't save it
-            data = await self.loop.run_in_executor(
-                self.executor,
+            data = await self.async_manager.run_in_executor(
                 lambda: self.app.dune_fetcher.fetch_data(selected_endpoints)
             )
             
@@ -405,10 +384,6 @@ class TrilliumTab(TabContent):
         if self.is_connected:
             self.toggle_connection()
 
-    def _run_async_loop(self):
-        """Run the asyncio event loop in a separate thread"""
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()
 
     def stop_listeners(self):
         """Stop the worker thread and clean up resources"""
@@ -421,7 +396,7 @@ class TrilliumTab(TabContent):
         self.fetch_alerts_button.config(state="disabled", text="Fetching...")
         
         # Create and run coroutine
-        asyncio.run_coroutine_threadsafe(self._fetch_alerts_async(), self.loop)
+        self.async_manager.run_async(self._fetch_alerts_async())
 
     async def _fetch_alerts_async(self):
         """Asynchronous operation to fetch and display alerts."""
@@ -431,8 +406,7 @@ class TrilliumTab(TabContent):
             self.root.after(0, lambda: self.alert_items.clear())
             
             # Fetch alerts using executor to avoid blocking
-            alerts = await self.loop.run_in_executor(
-                self.executor,
+            alerts = await self.async_manager.run_in_executor(
                 self.app.dune_fetcher.fetch_alerts
             )
             
@@ -450,10 +424,12 @@ class TrilliumTab(TabContent):
             self.root.after(0, lambda: self.fetch_alerts_button.config(
                 state="normal", text="Fetch Alerts"))
 
-    def _get_telemetry_data(self):
+    async def _get_telemetry_data(self):
         """Implementation of abstract method from parent class - fetches telemetry data"""
         # Use the DuneFetcher instance to get telemetry data with refresh=True
-        return self.app.dune_fetcher.get_telemetry_data(refresh=True)
+        return await self.async_manager.run_in_executor(
+            lambda: self.app.dune_fetcher.get_telemetry_data(refresh=True)
+        )
 
     def clear_cdm_checkboxes(self):
         """Clears all selected CDM endpoints."""
@@ -486,12 +462,6 @@ class TrilliumTab(TabContent):
         if self.is_connected:
             self.toggle_connection()
         
-        # Stop the task queue
-        self.task_queue.put((None, None))
-        self.worker_thread.join(timeout=5)
-        
-        if self.worker_thread.is_alive():
-            print("Warning: Worker thread did not stop within the timeout period")
         
         print("TrilliumTab listeners stopped")
 
@@ -504,11 +474,17 @@ class TrilliumTab(TabContent):
 
     def view_cdm_data(self, endpoint: str):
         """Display CDM data in a viewer window"""
+        self.async_manager.run_async(self._view_cdm_data_async(endpoint))
+    
+    async def _view_cdm_data_async(self, endpoint: str):
+        """Asynchronous CDM data display"""
         try:
-            data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
-            self._show_json_viewer(endpoint, data)
+            data = await self.async_manager.run_in_executor(
+                lambda: self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
+            )
+            self.root.after(0, lambda: self._show_json_viewer(endpoint, data))
         except Exception as e:
-            self.notifications.show_error(f"Failed to fetch {endpoint}: {str(e)}")
+            self.root.after(0, lambda: self.notifications.show_error(f"Failed to fetch {endpoint}: {str(e)}"))
 
     def _show_json_viewer(self, endpoint: str, json_data: str):
         """Create a window to display JSON data with formatting"""
@@ -560,31 +536,40 @@ class TrilliumTab(TabContent):
 
     def _refresh_cdm_data(self, endpoint: str, text_widget: Text):
         """Refresh CDM data in the viewer window"""
+        self.async_manager.run_async(self._refresh_cdm_data_async(endpoint, text_widget))
+    
+    async def _refresh_cdm_data_async(self, endpoint: str, text_widget: Text):
+        """Refresh CDM data in the viewer window"""
         try:
-            # Fetch latest data
-            new_data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
+            # Fetch latest data using async executor
+            new_data = await self.async_manager.run_in_executor(
+                lambda: self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
+            )
             
-            # Update the text widget
-            text_widget.config(state='normal')
-            text_widget.delete('1.0', 'end')
+            # Update the text widget on main thread for thread safety
+            def update_ui():
+                text_widget.config(state='normal')
+                text_widget.delete('1.0', 'end')
+                
+                try:
+                    # Try to parse and pretty-print JSON
+                    parsed_data = json.loads(new_data) if isinstance(new_data, str) else new_data
+                    formatted_json = json.dumps(parsed_data, indent=4)
+                    text_widget.insert('end', formatted_json)
+                except json.JSONDecodeError:
+                    # If not valid JSON, just display as plain text
+                    text_widget.insert('end', new_data)
+                
+                text_widget.config(state='disabled')
+                
+                # Add status message
+                print(f"DEBUG: Refreshed CDM data for {endpoint}")
+                self.notifications.show_success(f"Refreshed CDM data for {os.path.basename(endpoint)}")
             
-            try:
-                # Try to parse and pretty-print JSON
-                parsed_data = json.loads(new_data) if isinstance(new_data, str) else new_data
-                formatted_json = json.dumps(parsed_data, indent=4)
-                text_widget.insert('end', formatted_json)
-            except json.JSONDecodeError:
-                # If not valid JSON, just display as plain text
-                text_widget.insert('end', new_data)
-            
-            text_widget.config(state='disabled')
-            
-            # Add status message
-            print(f"DEBUG: Refreshed CDM data for {endpoint}")
-            self.notifications.show_success(f"Refreshed CDM data for {os.path.basename(endpoint)}")
+            self.root.after(0, update_ui)
         except Exception as e:
             print(f"DEBUG: Error refreshing CDM data: {str(e)}")
-            self.notifications.show_error(f"Error refreshing data: {str(e)}")
+            self.root.after(0, lambda: self.notifications.show_error(f"Error refreshing data: {str(e)}"))
             import traceback
             traceback.print_exc()
 
