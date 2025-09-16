@@ -67,11 +67,12 @@ class App(tk.Tk):
         self.dune_fetcher = None
         self.update_fetchers()
 
-        # Create and set up the tab control
+        # Create and set up the tab control with modern styling
         self.tab_control = ttk.Notebook(self)
+        self._apply_modern_tab_styling()
         self.tabs: Dict[str, ttk.Frame] = {}
         self.create_tabs()
-        self.tab_control.pack(expand=1, fill="both")
+        self.tab_control.pack(expand=1, fill="both", padx=ModernStyle.SPACING['sm'], pady=(ModernStyle.SPACING['sm'], 0))
         
         # Register IP change callback
         self.register_ip_callback(self.update_fetchers)
@@ -80,6 +81,41 @@ class App(tk.Tk):
         self._setup_tab_persistence()
 
         print("> [App.__init__] App initialization complete")
+
+    def _apply_modern_tab_styling(self):
+        """Apply modern styling to the tab control for better visual consistency"""
+        style = ttk.Style()
+        
+        # Configure modern notebook container styling
+        style.configure('Modern.TNotebook', 
+                       background=ModernStyle.COLORS['bg_light'],
+                       borderwidth=0,
+                       tabmargins=[0, 0, 0, 0])
+        
+        # Configure modern tab styling
+        style.configure('Modern.TNotebook.Tab',
+                       background=ModernStyle.COLORS['gray_200'],
+                       foreground=ModernStyle.COLORS['text_secondary'],
+                       padding=[ModernStyle.SPACING['lg'], ModernStyle.SPACING['md']],
+                       font=ModernStyle.FONTS['default'],
+                       borderwidth=1,
+                       focuscolor='none')  # Remove focus ring
+        
+        # Configure tab appearance states (hover, selected, etc.)
+        style.map('Modern.TNotebook.Tab',
+                 background=[('selected', ModernStyle.COLORS['white']),
+                            ('active', ModernStyle.COLORS['gray_100']),
+                            ('!active', ModernStyle.COLORS['gray_200'])],
+                 foreground=[('selected', ModernStyle.COLORS['text_primary']),
+                            ('active', ModernStyle.COLORS['text_primary']),
+                            ('!active', ModernStyle.COLORS['text_secondary'])],
+                 borderwidth=[('selected', 1), ('!selected', 1)],
+                 relief=[('selected', 'flat'), ('!selected', 'flat')])
+        
+        # Apply the modern style to the notebook
+        self.tab_control.configure(style='Modern.TNotebook')
+        
+        print("> [App._apply_modern_tab_styling] Applied modern styling to tab control")
 
     def create_toolbar(self):
         # Create modern toolbar card

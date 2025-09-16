@@ -213,7 +213,7 @@ class TrilliumTab(TabContent):
             self.capture_cdm_button.config(state="normal")
             self.fetch_alerts_button.config(state="normal")
             self.telemetry_update_button.config(state="normal")
-            self._show_notification("Connected", "green")
+            self.notifications.show_success("Connected")
         else:
             self.connect_button.config(state="disabled", text=DISCONNECTING)
             self.is_connected = False
@@ -222,7 +222,7 @@ class TrilliumTab(TabContent):
             self.capture_cdm_button.config(state="disabled")
             self.fetch_alerts_button.config(state="disabled")
             self.telemetry_update_button.config(state="disabled")
-            self._show_notification("Disconnected", "green")
+            self.notifications.show_success("Disconnected")
 
     def show_ews_context_menu(self, event):
         """Show context menu for EWS capture with variant options"""
@@ -286,20 +286,20 @@ class TrilliumTab(TabContent):
                 print(f"DEBUG: Save complete - {success_count}/{total} successful")
                 
                 if success_count == total:
-                    self.root.after(0, lambda: self._show_notification(
-                        f"Successfully saved {success_count} EWS screenshots", "green"))
+                    self.root.after(0, lambda: self.notifications.show_success(
+                        f"Successfully saved {success_count} EWS screenshots"))
                 else:
-                    self.root.after(0, lambda: self._show_notification(
-                        f"Partially saved EWS screenshots ({success_count}/{total})", "yellow"))
+                    self.root.after(0, lambda: self.notifications.show_warning(
+                        f"Partially saved EWS screenshots ({success_count}/{total})"))
             else:
                 print("DEBUG: No screenshots were captured")
-                self.root.after(0, lambda: self._show_notification(
-                    "Failed to capture EWS screenshots", "red"))
+                self.root.after(0, lambda: self.notifications.show_error(
+                    "Failed to capture EWS screenshots"))
         except Exception as e:
             print(f"DEBUG: Error in _capture_ews_async: {str(e)}")
             import traceback
             traceback.print_exc()
-            self.root.after(0, lambda: self._show_notification(f"Error capturing EWS: {str(e)}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(f"Error capturing EWS: {str(e)}"))
         finally:
             self.root.after(0, lambda: self.capture_ews_button.config(text="Capture EWS", state="normal"))
 
@@ -323,11 +323,11 @@ class TrilliumTab(TabContent):
         selected_endpoints = [option for option, var in self.cdm_vars.items() if var.get()]
         
         if not selected_endpoints:
-            self._show_notification("No CDM endpoints selected", "red")
+            self.notifications.show_error("No CDM endpoints selected")
             return
 
         self.capture_cdm_button.config(state="disabled")
-        self._show_notification("Capturing CDM...", "blue")
+        self.notifications.show_info("Capturing CDM...")
         
         # Capture current step number when button is clicked
         current_step = self.step_var.get()
@@ -352,11 +352,11 @@ class TrilliumTab(TabContent):
                 # Skip error responses
                 if content.startswith("Error:"):
                     if "401" in content or "Unauthorized" in content:
-                        self.root.after(0, lambda: self._show_notification(
-                            "Error: Authentication required - Send Auth command", "red"))
+                        self.root.after(0, lambda: self.notifications.show_error(
+                            "Error: Authentication required - Send Auth command"))
                     else:
-                        self.root.after(0, lambda: self._show_notification(
-                            f"Error fetching {endpoint}: {content}", "red"))
+                        self.root.after(0, lambda: self.notifications.show_error(
+                            f"Error fetching {endpoint}: {content}"))
                     save_results.append((False, endpoint, None))
                     continue
                     
@@ -381,22 +381,22 @@ class TrilliumTab(TabContent):
             success_count = sum(1 for res in save_results if res[0])
             
             if success_count == 0:
-                self.root.after(0, lambda: self._show_notification(
-                    "Failed to save any CDM data", "red"))
+                self.root.after(0, lambda: self.notifications.show_error(
+                    "Failed to save any CDM data"))
             elif success_count < total:
-                self.root.after(0, lambda: self._show_notification(
-                    f"Partially saved CDM data ({success_count}/{total} files)", "yellow"))
+                self.root.after(0, lambda: self.notifications.show_warning(
+                    f"Partially saved CDM data ({success_count}/{total} files)"))
             else:
-                self.root.after(0, lambda: self._show_notification(
-                    "CDM data saved successfully", "green"))
+                self.root.after(0, lambda: self.notifications.show_success(
+                    "CDM data saved successfully"))
             
         except Exception as e:
             print(f"DEBUG: Error in _capture_cdm_async: {str(e)}")
             import traceback
             traceback.print_exc()
             error_msg = str(e)  # Capture the error message
-            self.root.after(0, lambda: self._show_notification(
-                f"Error in CDM capture: {error_msg}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(
+                f"Error in CDM capture: {error_msg}"))
         finally:
             self.root.after(0, lambda: self.capture_cdm_button.config(state="normal"))
 
@@ -440,15 +440,15 @@ class TrilliumTab(TabContent):
             )
             
             if not alerts:
-                self.root.after(0, lambda: self._show_notification("No alerts found", "blue"))
+                self.root.after(0, lambda: self.notifications.show_info("No alerts found"))
             else:
                 # Display alerts in the main thread using the base class method
                 self.root.after(0, lambda: self.populate_alerts_tree(self.alerts_tree, self.alert_items, alerts))
-                self.root.after(0, lambda: self._show_notification(
-                    f"Successfully fetched {len(alerts)} alerts", "green"))
+                self.root.after(0, lambda: self.notifications.show_success(
+                    f"Successfully fetched {len(alerts)} alerts"))
         except Exception as e:
-            self.root.after(0, lambda e=e: self._show_notification(
-                f"Failed to fetch alerts: {str(e)}", "red"))
+            self.root.after(0, lambda e=e: self.notifications.show_error(
+                f"Failed to fetch alerts: {str(e)}"))
         finally:
             self.root.after(0, lambda: self.fetch_alerts_button.config(
                 state="normal", text="Fetch Alerts"))
@@ -511,7 +511,7 @@ class TrilliumTab(TabContent):
             data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
             self._show_json_viewer(endpoint, data)
         except Exception as e:
-            self._show_notification(f"Failed to fetch {endpoint}: {str(e)}", "red")
+            self.notifications.show_error(f"Failed to fetch {endpoint}: {str(e)}")
 
     def _show_json_viewer(self, endpoint: str, json_data: str):
         """Create a window to display JSON data with formatting"""
@@ -584,10 +584,10 @@ class TrilliumTab(TabContent):
             
             # Add status message
             print(f"DEBUG: Refreshed CDM data for {endpoint}")
-            self._show_notification(f"Refreshed CDM data for {os.path.basename(endpoint)}", "green")
+            self.notifications.show_success(f"Refreshed CDM data for {os.path.basename(endpoint)}")
         except Exception as e:
             print(f"DEBUG: Error refreshing CDM data: {str(e)}")
-            self._show_notification(f"Error refreshing data: {str(e)}", "red")
+            self.notifications.show_error(f"Error refreshing data: {str(e)}")
             import traceback
             traceback.print_exc()
 

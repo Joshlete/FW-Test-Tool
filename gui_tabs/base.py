@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 from dune_fpui import DEBUG
 from udw import UDW
+from .notification_manager import NotificationManager
 
 
 class TabContent(ABC):
@@ -101,11 +102,8 @@ class TabContent(ABC):
         self.separator = ttk.Separator(self.main_frame, orient='horizontal')
         self.separator.pack(fill="x", pady=5)
 
-        # Create notification frame BEFORE content frame to ensure it gets proper layout priority
-        self.notification_frame = ttk.Frame(self.main_frame)
-        self.notification_frame.pack(fill="x", pady=5, padx=5, side="bottom")
-        self.notification_label = ttk.Label(self.notification_frame, text="", foreground="red", anchor="center")
-        self.notification_label.pack(fill="x")
+        # Create notification manager for this tab
+        self.notifications = NotificationManager(self.main_frame)
 
         # Create a central content frame that will hold our quadrants
         self.content_frame = ttk.Frame(self.main_frame)
@@ -201,22 +199,7 @@ class TabContent(ABC):
         frame.pack(fill="both", expand=True, padx=2, pady=2)
         return frame
 
-    def _show_notification(self, message: str, color: str, duration: int = 10000) -> None:
-        """Display a notification message and log to terminal"""
-        # Log to terminal
-        print(f"[Notification] {color.upper()}: {message}")
-        
-        # Update UI
-        self.notification_label.config(text=message, foreground=color)
-        
-        # Make sure notification frame is visible
-        self.notification_frame.lift()
-        
-        # Ensure it has reasonable height for visibility
-        self.notification_label.config(font=("TkDefaultFont", 10, "bold"))
-        
-        # Clear after duration
-        self.frame.after(duration, lambda: self.notification_label.config(text=""))
+    # Notification methods removed - use self.notifications.show_success(), etc.
 
     @abstractmethod
     def create_widgets(self) -> None:
@@ -361,17 +344,17 @@ class TabContent(ABC):
             response = requests.put(url, json=payload, verify=False, timeout=10)
             
             if response.status_code == 200:
-                self._show_notification(f"Action '{action_value}' successfully sent", "green")
+                self.notifications.show_success(f"Action '{action_value}' successfully sent")
                 # Refresh alerts using a delay - tabs should implement this method
                 self._refresh_alerts_after_action()
                 return True
             else:
-                self._show_notification(
-                    f"Failed to send action: Server returned status {response.status_code}", "red")
+                self.notifications.show_error(
+                    f"Failed to send action: Server returned status {response.status_code}")
                 return False
             
         except Exception as e:
-            self._show_notification(f"Request error: {str(e)}", "red")
+            self.notifications.show_error(f"Request error: {str(e)}")
             return False
 
     def _refresh_alerts_after_action(self):
@@ -418,13 +401,13 @@ class TabContent(ABC):
         """
         selected = tree.selection()
         if not selected:
-            self._show_notification("No alert selected", "red")
+            self.notifications.show_error("No alert selected")
             return
         
         try:
             item_id = selected[0]
             if item_id not in alert_items:
-                self._show_notification("Alert data not found", "red")
+                self.notifications.show_error("Alert data not found")
                 return
             
             # Get the alert directly from our stored reference
@@ -432,14 +415,14 @@ class TabContent(ABC):
             alert_id = alert.get('id')
             
             if not alert_id:
-                self._show_notification("Alert ID not found", "red")
+                self.notifications.show_error("Alert ID not found")
                 return
             
             # Call the subclass implementation to do the actual acknowledgment
             self._acknowledge_alert(alert_id)
             
         except Exception as e:
-            self._show_notification(f"Error acknowledging alert: {str(e)}", "red")
+            self.notifications.show_error(f"Error acknowledging alert: {str(e)}")
 
     def _acknowledge_alert(self, alert_id):
         """
@@ -517,17 +500,17 @@ class TabContent(ABC):
             alerts = await self.run_in_executor(self._get_alerts_data)
             
             if not alerts:
-                self.update_ui(lambda: self._show_notification("No alerts found", "blue"))
+                self.update_ui(lambda: self.notifications.show_info("No alerts found"))
             else:
                 # Display alerts in the main thread
                 self.update_ui(lambda: self.populate_alerts_tree(
                     self.alerts_tree, self.alert_items, alerts))
-                self.update_ui(lambda: self._show_notification(
-                    f"Successfully fetched {len(alerts)} alerts", "green"))
+                self.update_ui(lambda: self.notifications.show_success(
+                    f"Successfully fetched {len(alerts)} alerts"))
         except Exception as e:
             error_msg = str(e)  # Capture error message outside lambda
-            self.update_ui(lambda: self._show_notification(
-                f"Failed to fetch alerts: {error_msg}", "red"))
+            self.update_ui(lambda: self.notifications.show_error(
+                f"Failed to fetch alerts: {error_msg}"))
         finally:
             self.update_ui(lambda: self.fetch_alerts_button.config(
                 state="normal", text="Fetch Alerts"))
@@ -622,13 +605,13 @@ class TabContent(ABC):
         """Shows detailed information about the selected telemetry event"""
         selected = tree.selection()
         if not selected:
-            self._show_notification("No telemetry event selected", "red")
+            self.notifications.show_error("No telemetry event selected")
             return
         
         try:
             item_id = selected[0]
             if item_id not in telemetry_items:
-                self._show_notification("Telemetry data not found", "red")
+                self.notifications.show_error("Telemetry data not found")
                 return
             
             # Get the telemetry data
@@ -666,7 +649,7 @@ class TabContent(ABC):
             x_scrollbar.pack(side="bottom", fill="x")
             
         except Exception as e:
-            self._show_notification(f"Error showing telemetry details: {str(e)}", "red")
+            self.notifications.show_error(f"Error showing telemetry details: {str(e)}")
 
     def show_text_context_menu(self, event, text_widget, menu):
         """Shows context menu for text selection"""
@@ -684,21 +667,21 @@ class TabContent(ABC):
                 selected_text = text_widget.get("sel.first", "sel.last")
                 self.frame.clipboard_clear()
                 self.frame.clipboard_append(selected_text)
-                self._show_notification("Text copied to clipboard", "blue")
+                self.notifications.show_info("Text copied to clipboard")
         except Exception as e:
-            self._show_notification(f"Error copying text: {str(e)}", "red")
+            self.notifications.show_error(f"Error copying text: {str(e)}")
 
     def save_telemetry_to_file(self, tree, telemetry_items):
         """Saves the selected telemetry to a JSON file"""
         selected = tree.selection()
         if not selected:
-            self._show_notification("No telemetry event selected", "red")
+            self.notifications.show_error("No telemetry event selected")
             return
         
         try:
             item_id = selected[0]
             if item_id not in telemetry_items:
-                self._show_notification("Telemetry data not found", "red")
+                self.notifications.show_error("Telemetry data not found")
                 return
             
             # Get the telemetry data
@@ -749,12 +732,12 @@ class TabContent(ABC):
             success, filepath = self.save_json_data(event, base_filename)
             
             if success:
-                self._show_notification(f"Telemetry saved as {os.path.basename(filepath)}", "green")
+                self.notifications.show_success(f"Telemetry saved as {os.path.basename(filepath)}")
             else:
-                self._show_notification("Failed to save telemetry data", "red")
+                self.notifications.show_error("Failed to save telemetry data")
             
         except Exception as e:
-            self._show_notification(f"Error saving telemetry: {str(e)}", "red")
+            self.notifications.show_error(f"Error saving telemetry: {str(e)}")
 
     def _get_step_prefix(self):
         """Returns the current step prefix in format '1. '"""
@@ -844,17 +827,17 @@ class TabContent(ABC):
             events = await self.run_in_executor(self._get_telemetry_data)
             
             if not events:
-                self.update_ui(lambda: self._show_notification("No telemetry data found", "blue"))
+                self.update_ui(lambda: self.notifications.show_info("No telemetry data found"))
             else:
                 # Display telemetry in the main thread
                 self.update_ui(lambda: self.populate_telemetry_tree(
                     self.telemetry_tree, self.telemetry_items, events))
-                self.update_ui(lambda: self._show_notification(
-                    f"Successfully fetched {len(events)} telemetry events", "green"))
+                self.update_ui(lambda: self.notifications.show_success(
+                    f"Successfully fetched {len(events)} telemetry events"))
         except Exception as e:
             error_msg = str(e)  # Capture error message outside lambda
-            self.update_ui(lambda: self._show_notification(
-                f"Failed to fetch telemetry: {error_msg}", "red"))
+            self.update_ui(lambda: self.notifications.show_error(
+                f"Failed to fetch telemetry: {error_msg}"))
         finally:
             self.update_ui(lambda: self.telemetry_update_button.config(
                 state="normal", text="Update Telemetry"))
@@ -1092,7 +1075,7 @@ class TabContent(ABC):
         except Exception as e:
             if DEBUG:
                 print(f"Error saving JSON: {str(e)}")
-            self._show_notification(f"File Save Failed: {str(e)}", "red")
+            self.notifications.show_error(f"File Save Failed: {str(e)}")
             return False, None
 
     def save_image_data(self, image_data, base_filename, directory=None, format='PNG', step_number=None):
@@ -1129,12 +1112,12 @@ class TabContent(ABC):
             if DEBUG:   
                 print(f"Image saved to: {filepath}")
 
-            self._show_notification(f"File Saved: {filename}", "green")
+            self.notifications.show_success(f"File Saved: {filename}")
             return True, filepath
         except Exception as e:
             if DEBUG:
                 print(f"Error saving image: {str(e)}")
-            self._show_notification(f"File Save Failed: {str(e)}", "red")
+            self.notifications.show_error(f"File Save Failed: {str(e)}")
             return False, None
         
     def save_text_data(self, text_data, base_filename, directory=None, extension=".txt", step_number=None):
@@ -1168,5 +1151,5 @@ class TabContent(ABC):
         except Exception as e:
             if DEBUG:
                 print(f"Error saving text: {str(e)}")
-            self._show_notification(f"File Save Failed: {str(e)}", "red")
+            self.notifications.show_error(f"File Save Failed: {str(e)}")
             return False, None

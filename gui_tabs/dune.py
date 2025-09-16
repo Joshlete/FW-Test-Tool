@@ -340,17 +340,17 @@ class DuneTab(TabContent):
             alerts_data = self.app.dune_fetcher.fetch_alerts()
             
             if not alerts_data:
-                self.root.after(0, lambda: self._show_notification("No alerts found", "blue"))
+                self.root.after(0, lambda: self.notifications.show_info("No alerts found"))
                 return
             
             # Display alerts using the base class method
             self.root.after(0, lambda: self.populate_alerts_tree(self.alerts_tree, self.alert_items, alerts_data))
-            self.root.after(0, lambda: self._show_notification("Alerts fetched successfully", "green"))
+            self.root.after(0, lambda: self.notifications.show_success("Alerts fetched successfully"))
             
         except Exception as error:
             error_msg = str(error)
-            self.root.after(0, lambda: self._show_notification(
-                f"Failed to fetch alerts: {error_msg}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(
+                f"Failed to fetch alerts: {error_msg}"))
         finally:
             self.root.after(0, lambda: self.fetch_alerts_button.config(
                 state="normal", text="Fetch Alerts"))
@@ -367,16 +367,16 @@ class DuneTab(TabContent):
             success, message = self.app.dune_fetcher.acknowledge_alert(alert_id)
             
             if success:
-                self._show_notification(message, "green")
+                self.notifications.show_success(message)
                 # Refresh alerts after acknowledgment
                 self.frame.after(1000, self.fetch_alerts)
                 return True
             else:
-                self._show_notification(message, "red")
+                self.notifications.show_error(message)
                 return False
                 
         except Exception as e:
-            self._show_notification(f"Error acknowledging alert: {str(e)}", "red")
+            self.notifications.show_error(f"Error acknowledging alert: {str(e)}")
             return False
 
     def fetch_telemetry(self):
@@ -393,17 +393,17 @@ class DuneTab(TabContent):
             
             if not events:
                 self.root.after(0, lambda: self.telemetry_tree.delete(*self.telemetry_tree.get_children()))
-                self.root.after(0, lambda: self._show_notification("No telemetry data found", "blue"))
+                self.root.after(0, lambda: self.notifications.show_info("No telemetry data found"))
             else:
                 # Display telemetry in the main thread with is_dune_format=True
                 self.root.after(0, lambda: self.populate_telemetry_tree(
                     self.telemetry_tree, self.telemetry_items, events, is_dune_format=True))
-                self.root.after(0, lambda: self._show_notification(
-                    f"Successfully fetched {len(events)} telemetry events", "green"))
+                self.root.after(0, lambda: self.notifications.show_success(
+                    f"Successfully fetched {len(events)} telemetry events"))
         except Exception as e:
             error_msg = str(e)  # Capture error message outside lambda
-            self.root.after(0, lambda: self._show_notification(
-                f"Failed to fetch telemetry: {error_msg}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(
+                f"Failed to fetch telemetry: {error_msg}"))
         finally:
             self.root.after(0, lambda: self.telemetry_update_button.config(
                 state="normal", text="Update Telemetry"))
@@ -447,14 +447,14 @@ class DuneTab(TabContent):
                 self.ecl_menu_button.config(state="normal"),  # Enable ECL menu button
                 self.ssh_menu_button.config(state="normal")  # Enable SSH menu button
             ])
-            self.root.after(0, lambda: self._show_notification("Connected to printer", "green"))
+            self.root.after(0, lambda: self.notifications.show_success("Connected to printer"))
         except Exception as e:
             error_message = str(e)
             self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
             self.is_connected = False
             self.sock = None
             print(f"Connection to printer failed: {error_message}")
-            self.root.after(0, lambda: self._show_notification(f"Failed to connect to printer: {error_message}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(f"Failed to connect to printer: {error_message}"))
 
     def _disconnect_from_printer(self):
         self.root.after(0, lambda: self.connect_button.config(state="disabled", text=DISCONNECTING))
@@ -497,7 +497,7 @@ class DuneTab(TabContent):
             self.stop_view_ui()
 
             # Show success notification
-            self.root.after(0, lambda: self._show_notification("Disconnected from printer", "green"))
+            self.root.after(0, lambda: self.notifications.show_success("Disconnected from printer"))
 
             # Clear telemetry window if it exists
             if self.telemetry_window is not None and hasattr(self.telemetry_window, 'file_listbox'):
@@ -506,7 +506,7 @@ class DuneTab(TabContent):
         except Exception as e:
             print(f"An error occurred while disconnecting: {e}")
             # Show error notification
-            self.root.after(0, lambda: self._show_notification(f"Disconnection error: {str(e)}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(f"Disconnection error: {str(e)}"))
             # Ensure connection state is reset even on error
             self.is_connected = False
             self.is_viewing_ui = False
@@ -527,7 +527,7 @@ class DuneTab(TabContent):
         
         if not selected_endpoints:
             print(">     [Dune] No endpoints selected. Save CDM action aborted.")
-            self._show_notification("No endpoints selected. Please select at least one.", "red")
+            self.notifications.show_error("No endpoints selected. Please select at least one.")
             return
 
         print(f">     [Dune] Selected endpoints: {selected_endpoints}")
@@ -537,7 +537,7 @@ class DuneTab(TabContent):
         
         print(f">     [Dune] Starting CDM capture with prefix: {step_prefix}")
         self.fetch_json_button.config(state="disabled")
-        self._show_notification("Capturing CDM...", "blue")
+        self.notifications.show_info("Capturing CDM...")
         
         # Queue the CDM save task
         self.queue_task(self._save_cdm_async, selected_endpoints)
@@ -554,11 +554,11 @@ class DuneTab(TabContent):
                 # Skip error responses
                 if content.startswith("Error:"):
                     if "401" in content or "Unauthorized" in content:
-                        self.root.after(0, lambda: self._show_notification(
-                            "Error: Authentication required - Send Auth command", "red"))
+                        self.root.after(0, lambda: self.notifications.show_error(
+                            "Error: Authentication required - Send Auth command"))
                     else:
-                        self.root.after(0, lambda: self._show_notification(
-                            f"Error fetching {endpoint}: {content}", "red"))
+                        self.root.after(0, lambda: self.notifications.show_error(
+                            f"Error fetching {endpoint}: {content}"))
                     save_results.append((False, endpoint, None))
                     continue
                     
@@ -579,19 +579,19 @@ class DuneTab(TabContent):
             success_count = sum(1 for res in save_results if res[0])
             
             if success_count == 0:
-                self.root.after(0, lambda: self._show_notification(
-                    "Failed to save any CDM data", "red"))
+                self.root.after(0, lambda: self.notifications.show_error(
+                    "Failed to save any CDM data"))
             elif success_count < total:
-                self.root.after(0, lambda: self._show_notification(
-                    f"Partially saved CDM data ({success_count}/{total} files)", "yellow"))
+                self.root.after(0, lambda: self.notifications.show_warning(
+                    f"Partially saved CDM data ({success_count}/{total} files)"))
             else:
-                self.root.after(0, lambda: self._show_notification(
-                    "CDM data saved successfully", "green"))
+                self.root.after(0, lambda: self.notifications.show_success(
+                    "CDM data saved successfully"))
             
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda: self._show_notification(
-                f"Error in CDM capture: {error_msg}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(
+                f"Error in CDM capture: {error_msg}"))
         finally:
             self.root.after(0, lambda: self.fetch_json_button.config(state="normal"))
 
@@ -626,7 +626,7 @@ class DuneTab(TabContent):
             self._continue_save_fpui_image(filepath)
             
         except Exception as e:
-            self._show_notification(f"Failed to auto-save UI: {str(e)}", "red")
+            self.notifications.show_error(f"Failed to auto-save UI: {str(e)}")
 
     def _ask_for_filename(self, base_name):
         """Handles file saving with a proper save dialog."""
@@ -641,7 +641,7 @@ class DuneTab(TabContent):
             filetypes=[("PNG files", "*.png")]
         )
         if not full_path:
-            self._show_notification("Screenshot capture cancelled", "blue")
+            self.notifications.show_info("Screenshot capture cancelled")
             return
         
         # Continue with the screenshot capture in the background thread
@@ -655,15 +655,15 @@ class DuneTab(TabContent):
         # Follow PrinterUIApp connection pattern
         if not self.vnc_connection.connected:
             if not self.vnc_connection.connect(self.ip, rotation=self.rotation_var.get()):
-                self._show_notification("Failed to connect to VNC", "red", duration=10000)
+                self.notifications.show_error("Failed to connect to VNC")
                 return
             
         captured = self.vnc_connection.save_ui(directory, filename)
         if not captured:
-            self._show_notification("Failed to capture UI", "red", duration=10000)
+            self.notifications.show_error("Failed to capture UI")
             return
             
-        self._show_notification("Screenshot Captured", "green", duration=10000)
+        self.notifications.show_success("Screenshot Captured")
 
     def on_ip_change(self, new_ip):
         self.ip = new_ip
@@ -702,17 +702,17 @@ class DuneTab(TabContent):
             self.vnc_connection.ip = self.ip
             self.vnc_connection.rotation = self.rotation_var.get()
             if not self.vnc_connection.connect(self.ip, self.rotation_var.get()):
-                self._show_notification("Failed to connect to VNC", "red")
+                self.notifications.show_error("Failed to connect to VNC")
                 self.stop_view_ui()
                 return
             else:
-                self._show_notification(f"Connected to VNC with rotation {self.rotation_var.get()}°", "green")
+                self.notifications.show_success(f"Connected to VNC with rotation {self.rotation_var.get()}°")
                 self._bind_click_events()
 
         # Follow PrinterUIApp viewing pattern
         if self.is_viewing_ui and not self.vnc_connection.viewing:
             if not self.vnc_connection.start_viewing():
-                self._show_notification("Failed to start viewing", "red")
+                self.notifications.show_error("Failed to start viewing")
                 self.stop_view_ui()
                 return
 
@@ -799,7 +799,7 @@ class DuneTab(TabContent):
         if self.vnc_connection.connected:
             self.vnc_connection.disconnect()
         
-        self._show_notification("Disconnected from VNC", "green")
+        self.notifications.show_success("Disconnected from VNC")
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
@@ -847,16 +847,16 @@ class DuneTab(TabContent):
             
             # Check if the request was successful
             if response.status_code == 200:
-                self.root.after(0, lambda: self._show_notification(
-                    f"Action '{action_value}' successfully sent for alert {alert_id}", "green"))
+                self.root.after(0, lambda: self.notifications.show_success(
+                    f"Action '{action_value}' successfully sent for alert {alert_id}"))
                 self._refresh_alerts_after_action()
             else:
-                self.root.after(0, lambda: self._show_notification(
-                    f"Failed to send action: Server returned status {response.status_code}", "red"))
+                self.root.after(0, lambda: self.notifications.show_error(
+                    f"Failed to send action: Server returned status {response.status_code}"))
             
         except Exception as e:
-            self.root.after(0, lambda: self._show_notification(
-                f"Failed to send action: {str(e)}", "red"))
+            self.root.after(0, lambda: self.notifications.show_error(
+                f"Failed to send action: {str(e)}"))
 
     def clear_cdm_checkboxes(self):
         """Clears all selected CDM endpoints."""
@@ -901,15 +901,15 @@ class DuneTab(TabContent):
                 # Show result notification
                 if success:
                     filename = os.path.basename(filepath)
-                    self._show_notification(f"Screenshot saved: {filename} (Region: {region_name})", "green")
+                    self.notifications.show_success(f"Screenshot saved: {filename} (Region: {region_name})")
                 else:
-                    self._show_notification("Failed to save screenshot", "red")
+                    self.notifications.show_error("Failed to save screenshot")
                 
         except Exception as e:
             # Handle any unexpected errors
             error_msg = f"Failed to capture screenshot: {str(e)}"
             print(f"> [DuneTab.start_snip] {error_msg}")
-            self._show_notification(error_msg, "red")
+            self.notifications.show_error(error_msg)
 
     def validate_step_input(self, value):
         """Validate that the step entry only contains numbers"""
@@ -958,7 +958,7 @@ class DuneTab(TabContent):
                 # Set IP before connecting
                 self.vnc_connection.ip = self.ip
                 if not self.vnc_connection.connect(self.ip, self.rotation_var.get()):
-                    self._show_notification("SSH connection failed", "red")
+                    self.notifications.show_error("SSH connection failed")
                     return
 
             # Access SSH client from VNC connection like PrinterUIApp
@@ -967,14 +967,14 @@ class DuneTab(TabContent):
             
             if exit_status == 0:
                 output = stdout.read().decode()
-                self._show_notification(f"Command executed successfully", "green")
+                self.notifications.show_success(f"Command executed successfully")
                 print(f"SSH Command Output:\n{output}")
             else:
                 error = stderr.read().decode()
-                self._show_notification(f"Command failed: {error}", "red")
+                self.notifications.show_error(f"Command failed: {error}")
             
         except Exception as e:
-            self._show_notification(f"SSH Error: {str(e)}", "red")
+            self.notifications.show_error(f"SSH Error: {str(e)}")
 
     def _save_step_to_config(self, *args):
         """Save current Dune step number to configuration"""
@@ -1039,7 +1039,7 @@ class DuneTab(TabContent):
         """Handles UI capture for selected alert with formatted filename"""
         selected = tree.selection()
         if not selected:
-            self._show_notification("No alert selected", "red")
+            self.notifications.show_error("No alert selected")
             return
             
         try:
@@ -1051,10 +1051,10 @@ class DuneTab(TabContent):
             # Format: step_num. UI string_id category
             base_name = f"UI_{string_id}_{category}"
             self.queue_task(self._save_ui_for_alert, base_name)
-            self._show_notification("Starting UI capture...", "blue")
+            self.notifications.show_info("Starting UI capture...")
             
         except Exception as e:
-            self._show_notification(f"Capture failed: {str(e)}", "red")
+            self.notifications.show_error(f"Capture failed: {str(e)}")
 
     def _save_ui_for_alert(self, base_name):
         try:
@@ -1072,11 +1072,11 @@ class DuneTab(TabContent):
             if not self.vnc_connection.save_ui(os.path.dirname(filepath), os.path.basename(filepath)):
                 raise RuntimeError("UI capture failed")
 
-            self.root.after(0, lambda: self._show_notification(f"UI captured: {filename}", "green", 5000))
+            self.root.after(0, lambda: self.notifications.show_success(f"UI captured: {filename}"))
             
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda msg=error_msg: self._show_notification(f"Capture failed: {msg}", "red", 5000))
+            self.root.after(0, lambda msg=error_msg: self.notifications.show_error(f"Capture failed: {msg}"))
 
     def show_cdm_context_menu(self, event, endpoint: str):
         """Show context menu for CDM items"""
@@ -1091,7 +1091,7 @@ class DuneTab(TabContent):
             data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
             self._show_json_viewer(endpoint, data)
         except Exception as e:
-            self._show_notification(f"Failed to fetch {endpoint}: {str(e)}", "red")
+            self.notifications.show_error(f"Failed to fetch {endpoint}: {str(e)}")
 
     def _show_json_viewer(self, endpoint: str, json_data: str):
         """Create a window to display JSON data with formatting"""
@@ -1154,7 +1154,7 @@ class DuneTab(TabContent):
             
         except Exception as e:
             print(f"Error in _show_json_viewer: {str(e)}")
-            self._show_notification(f"Error displaying JSON: {str(e)}", "red")
+            self.notifications.show_error(f"Error displaying JSON: {str(e)}")
 
     def _refresh_cdm_data(self, endpoint: str, text_widget: Text):
         """Refresh CDM data in the viewer window"""
@@ -1179,10 +1179,10 @@ class DuneTab(TabContent):
             
             # Add status message
             print(f"DEBUG: Refreshed CDM data for {endpoint}")
-            self._show_notification(f"Refreshed CDM data for {os.path.basename(endpoint)}", "green")
+            self.notifications.show_success(f"Refreshed CDM data for {os.path.basename(endpoint)}")
         except Exception as e:
             print(f"DEBUG: Error refreshing CDM data: {str(e)}")
-            self._show_notification(f"Error refreshing data: {str(e)}", "red")
+            self.notifications.show_error(f"Error refreshing data: {str(e)}")
 
     def save_viewed_cdm(self, endpoint: str, json_data: str):
         """Save currently viewed CDM data to a file"""
@@ -1199,12 +1199,12 @@ class DuneTab(TabContent):
             success, filepath = self.save_json_data(json_data, filename)
             
             if success:
-                self._show_notification(f"Saved CDM data to {os.path.basename(filepath)}", "green")
+                self.notifications.show_success(f"Saved CDM data to {os.path.basename(filepath)}")
             else:
-                self._show_notification("Failed to save CDM data", "red")
+                self.notifications.show_error("Failed to save CDM data")
             
         except Exception as e:
-            self._show_notification(f"Error saving CDM data: {str(e)}", "red")
+            self.notifications.show_error(f"Error saving CDM data: {str(e)}")
 
     def show_rotation_menu(self, event):
         """Display rotation menu on right-click of the View UI button."""
@@ -1214,7 +1214,7 @@ class DuneTab(TabContent):
     def _on_mouse_down(self, event):
         """Handle mouse button press"""
         if not self.vnc_connection.connected or not self.vnc_connection.viewing:
-            self._show_notification("Not connected to VNC - cannot send click", "red")
+            self.notifications.show_error("Not connected to VNC - cannot send click")
             return
             
         self.drag_start_x = event.x
@@ -1243,7 +1243,7 @@ class DuneTab(TabContent):
             
             self.vnc_connection.mouse_down(vnc_x, vnc_y)
         except Exception as e:
-            self._show_notification(f"Mouse down error: {str(e)}", "red")
+            self.notifications.show_error(f"Mouse down error: {str(e)}")
             
     def _on_mouse_drag(self, event):
         """Handle mouse drag"""
@@ -1281,7 +1281,7 @@ class DuneTab(TabContent):
             
             self.vnc_connection.mouse_move(vnc_x, vnc_y)
         except Exception as e:
-            self._show_notification(f"Mouse drag error: {str(e)}", "red")
+            self.notifications.show_error(f"Mouse drag error: {str(e)}")
             
     def _on_mouse_up(self, event):
         """Handle mouse button release"""
@@ -1320,7 +1320,7 @@ class DuneTab(TabContent):
             self.is_dragging = False
             
         except Exception as e:
-            self._show_notification(f"Mouse up error: {str(e)}", "red")
+            self.notifications.show_error(f"Mouse up error: {str(e)}")
             
     def _on_mouse_wheel(self, event):
         """Handle mouse wheel scrolling"""
@@ -1377,12 +1377,12 @@ class DuneTab(TabContent):
             self.vnc_connection.mouse_up(vnc_x, new_y)
                     
         except Exception as e:
-            self._show_notification(f"Mouse wheel error: {str(e)}", "red")
+            self.notifications.show_error(f"Mouse wheel error: {str(e)}")
             
     def _on_image_click(self, event):
         """Handle right clicks following PrinterUIApp mouse pattern"""
         if not self.vnc_connection.connected or not self.vnc_connection.viewing:
-            self._show_notification("Not connected to VNC - cannot send click", "red")
+            self.notifications.show_error("Not connected to VNC - cannot send click")
             return
         
         if not hasattr(self, '_image_scale_info') or self._image_scale_info is None:
@@ -1395,7 +1395,7 @@ class DuneTab(TabContent):
             screen_resolution = self.vnc_connection.screen_resolution
             
             if not screen_resolution:
-                self._show_notification("Screen resolution not available", "red")
+                self.notifications.show_error("Screen resolution not available")
                 return
                 
             screen_width, screen_height = screen_resolution
@@ -1431,12 +1431,12 @@ class DuneTab(TabContent):
                 
                 if success:
                     click_type = "Left" if button == 1 else "Right" if button == 3 else "Middle"
-                    self._show_notification(f"{click_type} click sent to ({vnc_x}, {vnc_y})", "green", 2000)
+                    self.notifications.show_success(f"{click_type} click sent to ({vnc_x}, {vnc_y})")
                 else:
-                    self._show_notification("Failed to send click", "red")
+                    self.notifications.show_error("Failed to send click")
             
         except Exception as e:
-            self._show_notification(f"Click error: {str(e)}", "red")
+            self.notifications.show_error(f"Click error: {str(e)}")
 
     def _bind_click_events(self):
         """Bind click and drag events to the image label"""

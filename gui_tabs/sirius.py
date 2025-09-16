@@ -101,10 +101,6 @@ class SiriusTab(TabContent):
         """Get the current IP address from the app"""
         return self.app.get_ip_address()
     
-    def _show_notification(self, message, color, duration=5000):
-        """Display notification using base class implementation"""
-        super()._show_notification(message, color, duration)
-
     def get_layout_config(self):
         return (
             {
@@ -394,7 +390,7 @@ class SiriusTab(TabContent):
         """Toggle printer connection state and update UI"""
         if not self.password:
             print(f"> [SiriusTab.toggle_ui_connection] Password is required: {self.password}")
-            self._show_notification("Password is required", "red")
+            self.notifications.show_error("Password is required")
             return
 
         self.connect_button.config(state="disabled", text=CONNECTING if not self.is_connected else DISCONNECTING)
@@ -431,7 +427,7 @@ class SiriusTab(TabContent):
                 self.image_label.image = photo  # Keep a reference to prevent garbage collection
             except Exception as e:
                 print(f"Error displaying image: {str(e)}")
-                self._show_notification("Error displaying image", "red")
+                self.notifications.show_error("Error displaying image")
 
         def _update_connection_status(is_connected, message):
             self.is_connected = is_connected
@@ -439,13 +435,13 @@ class SiriusTab(TabContent):
                 text=DISCONNECT if is_connected else CONNECT,
                 state="normal"
             )
-            self._show_notification(message, "green")
+            self.notifications.show_success(message)
 
         def _handle_connection_error(error_message):
             """Handle connection/disconnection errors"""
             print(f"Operation failed: {error_message}")
             self.connect_button.config(text=CONNECT if not self.is_connected else DISCONNECT, state="normal")
-            self._show_notification(f"Connection failed: {error_message}", "red", duration=10000)
+            self.notifications.show_error(f"Connection failed: {error_message}")
 
         # Start the connection handling in a separate thread
         threading.Thread(target=_handle_connection).start()
@@ -455,12 +451,12 @@ class SiriusTab(TabContent):
         selected_endpoints = [option for option, var in self.ledm_vars.items() if var.get()]
         
         if not selected_endpoints:
-            self._show_notification("No endpoints selected", "red")
+            self.notifications.show_error("No endpoints selected")
             return
 
         def _fetch_ledm_thread():
             try:    
-                self._show_notification("Fetching LEDM data...", "blue")
+                self.notifications.show_info("Fetching LEDM data...")
                 fetcher = self.app.sirius_fetcher
                 if fetcher:
                     # Fetch the data from selected endpoints
@@ -471,7 +467,7 @@ class SiriusTab(TabContent):
                     for endpoint, content in data.items():
                         # Skip error responses
                         if isinstance(content, str) and content.startswith("Error:"):
-                            self._show_notification(f"Error fetching {endpoint}: {content}", "red")
+                            self.notifications.show_error(f"Error fetching {endpoint}: {content}")
                             save_results.append((False, endpoint, None))
                             continue
                         
@@ -494,22 +490,22 @@ class SiriusTab(TabContent):
                     success_count = sum(1 for res in save_results if res[0])
                     
                     if success_count == 0:
-                        self._show_notification("Failed to save any LEDM data", "red")
+                        self.notifications.show_error("Failed to save any LEDM data")
                     elif success_count < total:
-                        self._show_notification(f"Partially saved LEDM data ({success_count}/{total} files)", "yellow")
+                        self.notifications.show_warning(f"Partially saved LEDM data ({success_count}/{total} files)")
                     else:
-                        self._show_notification(f"Successfully saved {success_count} LEDM files", "green")
+                        self.notifications.show_success(f"Successfully saved {success_count} LEDM files")
                 else:
                     raise ValueError("Sirius fetcher not initialized")
             except Exception as e:
-                self._show_notification(f"Error fetching LEDM data: {str(e)}", "red")
+                self.notifications.show_error(f"Error fetching LEDM data: {str(e)}")
 
         threading.Thread(target=_fetch_ledm_thread).start()
 
     def capture_ui(self, description: str = ""):
         """Handle UI screenshot capture with different save behaviors"""
         if not self.password:
-            self._show_notification("Password is required", "red")
+            self.notifications.show_error("Password is required")
             return
 
         # Disable buttons during capture
@@ -526,7 +522,7 @@ class SiriusTab(TabContent):
                 )
                 
                 if response.status_code != 200:
-                    self._show_notification(f"Capture failed: {response.status_code}", "red")
+                    self.notifications.show_error(f"Capture failed: {response.status_code}")
                     self.frame.after(0, reenable_buttons)  # Make sure buttons are re-enabled
                     return
 
@@ -554,15 +550,15 @@ class SiriusTab(TabContent):
                         reenable_buttons()
                         
                         if not filepath:
-                            self._show_notification("Capture canceled", "blue")
+                            self.notifications.show_info("Capture canceled")
                             return
                         
                         try:
                             with open(filepath, 'wb') as f:
                                 f.write(response.content)
-                            self._show_notification(f"Screenshot saved as {os.path.basename(filepath)}", "green")
+                            self.notifications.show_success(f"Screenshot saved as {os.path.basename(filepath)}")
                         except Exception as e:
-                            self._show_notification(f"Save error: {str(e)}", "red")
+                            self.notifications.show_error(f"Save error: {str(e)}")
                     
                     self.frame.after(0, show_save_dialog)
                     
@@ -577,19 +573,19 @@ class SiriusTab(TabContent):
                         )
                         
                         if success:
-                            self._show_notification(f"ECL screenshot saved to {os.path.basename(filepath)}", "green")
+                            self.notifications.show_success(f"ECL screenshot saved to {os.path.basename(filepath)}")
                         else:
-                            self._show_notification("Failed to save ECL screenshot", "red")
+                            self.notifications.show_error("Failed to save ECL screenshot")
                     except Exception as e:
-                        self._show_notification(f"Save error: {str(e)}", "red")
+                        self.notifications.show_error(f"Save error: {str(e)}")
                     finally:
                         self.frame.after(0, reenable_buttons)
 
             except requests.RequestException as e:
-                self._show_notification(f"Capture error: {str(e)}", "red")
+                self.notifications.show_error(f"Capture error: {str(e)}")
                 self.frame.after(0, reenable_buttons)
             except Exception as e:
-                self._show_notification(f"Error: {str(e)}", "red")
+                self.notifications.show_error(f"Error: {str(e)}")
                 self.frame.after(0, reenable_buttons)
 
         threading.Thread(target=_capture_ui_thread).start()
@@ -597,7 +593,7 @@ class SiriusTab(TabContent):
     def capture_ews(self):
         """Capture EWS screenshots in a separate thread"""
         if not self.password:
-            self._show_notification("Password is required", "red")
+            self.notifications.show_error("Password is required")
             return
 
         # Disable button during capture
@@ -608,7 +604,7 @@ class SiriusTab(TabContent):
         
         # If user clicks the X to close the dialog, don't proceed
         if number is None:
-            self._show_notification("EWS capture cancelled", "blue")
+            self.notifications.show_info("EWS capture cancelled")
             self.ews_button.config(state="normal", text="Capture EWS")
             return
 
@@ -645,19 +641,19 @@ class SiriusTab(TabContent):
                     success_count = sum(1 for res in save_results if res[0])
                     
                     if success_count == total:
-                        self.frame.after(0, lambda: self._show_notification(
-                            f"Successfully saved {success_count} EWS screenshots", "green"))
+                        self.frame.after(0, lambda: self.notifications.show_success(
+                            f"Successfully saved {success_count} EWS screenshots"))
                     else:
-                        self.frame.after(0, lambda: self._show_notification(
-                            f"Partially saved EWS screenshots ({success_count}/{total})", "yellow"))
+                        self.frame.after(0, lambda: self.notifications.show_warning(
+                            f"Partially saved EWS screenshots ({success_count}/{total})"))
                 else:
-                    self.frame.after(0, lambda: self._show_notification(
-                        "Failed to capture EWS screenshots", "red"))
+                    self.frame.after(0, lambda: self.notifications.show_error(
+                        "Failed to capture EWS screenshots"))
                 
             except Exception as e:
                 # Fix the lambda scope issue by using a function with a parameter
                 error_msg = str(e)  # Capture error message outside lambda
-                self.frame.after(0, lambda: self._show_notification(f"Error capturing EWS screenshot: {error_msg}", "red"))
+                self.frame.after(0, lambda: self.notifications.show_error(f"Error capturing EWS screenshot: {error_msg}"))
             finally:
                 # Re-enable button when done
                 self.frame.after(0, lambda: self.ews_button.config(
@@ -682,9 +678,9 @@ class SiriusTab(TabContent):
             xml_data = self.fetch_product_status_dyn()
             alerts = self.parse_status_dyn_xml(xml_data)
             self._populate_tree(self.alerts_tree, alerts)
-            self._show_notification("Alerts refreshed successfully", "green")
+            self.notifications.show_success("Alerts refreshed successfully")
         except Exception as e:
-            self._show_notification(f"Error loading alerts: {str(e)}", "red")
+            self.notifications.show_error(f"Error loading alerts: {str(e)}")
         finally:
             self.refresh_btn.config(text="Refresh", state="normal")
 
@@ -802,7 +798,7 @@ class SiriusTab(TabContent):
         self.telemetry_refresh_btn.config(text="Updating...", state="disabled")
         
         self.telemetry_tree.delete(*self.telemetry_tree.get_children())
-        self._show_notification("Refreshing telemetry data...", "blue")
+        self.notifications.show_info("Refreshing telemetry data...")
         
         def _background_refresh():
             try:
@@ -827,7 +823,7 @@ class SiriusTab(TabContent):
                 error_msg = f"Telemetry error: {str(e)}"
                 print(f"DEBUG: Error in background refresh: {error_msg}")
                 self.telemetry_mgr.disconnect()  # Ensure cleanup
-                self.frame.after(0, lambda: self._show_notification(error_msg, "red"))
+                self.frame.after(0, lambda: self.notifications.show_error(error_msg))
             finally:
                 self.frame.after(0, lambda: self.telemetry_refresh_btn.config(text="Refresh", state="normal"))
 
@@ -862,13 +858,13 @@ class SiriusTab(TabContent):
         
         # Restore button state
         self.telemetry_refresh_btn.config(text="Refresh", state="normal")
-        self._show_notification("Telemetry data updated", "green")
+        self.notifications.show_success("Telemetry data updated")
 
     def save_selected_telemetry(self):
         """Save selected telemetry files with descriptive filename"""
         selected = self.telemetry_tree.selection()
         if not selected:
-            self._show_notification("No telemetry files selected", "red")
+            self.notifications.show_error("No telemetry files selected")
             return
         
         try:
@@ -887,7 +883,7 @@ class SiriusTab(TabContent):
                     break
                 
             if not matching_data:
-                self._show_notification("Could not find matching telemetry data", "red")
+                self.notifications.show_error("Could not find matching telemetry data")
                 return
             
             # Build filename components
@@ -909,12 +905,12 @@ class SiriusTab(TabContent):
             )
             
             if success:
-                self._show_notification(f"Telemetry saved as {os.path.basename(filepath)}", "green")
+                self.notifications.show_success(f"Telemetry saved as {os.path.basename(filepath)}")
             else:
-                self._show_notification("Failed to save telemetry file", "red")
+                self.notifications.show_error("Failed to save telemetry file")
                 
         except Exception as e:
-            self._show_notification(f"Save failed: {str(e)}", "red")
+            self.notifications.show_error(f"Save failed: {str(e)}")
             import traceback
             traceback.print_exc()
 
@@ -922,7 +918,7 @@ class SiriusTab(TabContent):
         """Delete multiple selected telemetry files from device after confirmation"""
         selected = self.telemetry_tree.selection()
         if not selected:
-            self._show_notification("No telemetry files selected", "red")
+            self.notifications.show_error("No telemetry files selected")
             return
         
         # Confirm deletion with user
@@ -950,12 +946,12 @@ class SiriusTab(TabContent):
             if deleted_count > 0:
                 self.load_telemetry()  # Single refresh after all deletions
                 msg = f"Deleted {deleted_count}/{len(selected)} files successfully"
-                self._show_notification(msg, "green")
+                self.notifications.show_success(msg)
             else:
-                self._show_notification("No files were deleted", "red")
+                self.notifications.show_error("No files were deleted")
             
         except Exception as e:
-            self._show_notification(f"Delete failed: {str(e)}", "red")
+            self.notifications.show_error(f"Delete failed: {str(e)}")
 
     def view_telemetry_details(self):
         """Show JSON details of selected telemetry"""
@@ -979,7 +975,7 @@ class SiriusTab(TabContent):
                     break
                 
             if not matching_data:
-                self._show_notification("Could not find matching telemetry data", "red")
+                self.notifications.show_error("Could not find matching telemetry data")
                 return
             
             # Create JSON viewer window
@@ -999,7 +995,7 @@ class SiriusTab(TabContent):
             scroll_x.grid(row=1, column=0, sticky="ew")
             
         except Exception as e:
-            self._show_notification(f"Details error: {str(e)}", "red")
+            self.notifications.show_error(f"Details error: {str(e)}")
             # Add debug print to help troubleshoot
             print(f"DEBUG: Error viewing telemetry details: {str(e)}")
             import traceback
@@ -1025,7 +1021,7 @@ class SiriusTab(TabContent):
             data = self.app.sirius_fetcher.fetch_data([endpoint])[endpoint]
             self._show_xml_viewer(endpoint, data)
         except Exception as e:
-            self._show_notification(f"Failed to fetch {endpoint}: {str(e)}", "red")
+            self.notifications.show_error(f"Failed to fetch {endpoint}: {str(e)}")
 
     def _show_xml_viewer(self, endpoint: str, xml_data: str):
         """Create a window to display XML data with syntax highlighting"""
