@@ -55,8 +55,7 @@ class App(tk.Tk):
         # Pass config_manager to CaptureManager
         self.capture_manager = CaptureManager(current_directory=self._directory, config_manager=self.config_manager)
 
-        # initialize tools
-        self.create_toolbar()
+        # Initialize print helper (used by Tools tab)
         self.print = Print(self._ip_address)
 
         self.keybinding_manager = KeybindingManager(self, self.capture_manager)
@@ -196,16 +195,9 @@ class App(tk.Tk):
     def create_configuration_input(self) -> None:
         print("> [App.create_configuration_input] Creating configuration input fields")
         
-        # Create single modern configuration card
+        # Create single modern configuration card (no header/title for compactness)
         config_card, config_content = ModernComponents.create_card(self)
-        config_card.pack(fill="x", padx=ModernStyle.SPACING['lg'], pady=(ModernStyle.SPACING['md'], ModernStyle.SPACING['sm']))
-        
-        # Card header with printer icon
-        header_frame = ModernComponents.create_card_header(
-            config_content, 
-            "Configuration", 
-            icon_callback=ModernComponents.draw_printer_icon
-        )
+        config_card.pack(fill="x", padx=ModernStyle.SPACING['lg'], pady=(ModernStyle.SPACING['sm'], ModernStyle.SPACING['sm']))
         
         # Main form container
         form_frame = tk.Frame(config_content, bg=ModernStyle.COLORS['bg_card'])
@@ -425,7 +417,31 @@ class App(tk.Tk):
         self.add_tab("Dune", DuneTab)
         self.add_tab("Sirius", SiriusTab)
         self.add_tab("Trillium", TrilliumTab)
+        # Insert Tools tab before Settings
+        self.add_tools_tab()
         self.add_tab("Settings", SettingsTab)
+
+    def add_tools_tab(self) -> None:
+        """Create a dedicated Tools tab and move toolbar actions here."""
+        tools_frame = ttk.Frame(self.tab_control)
+        self.tab_control.add(tools_frame, text="Tools")
+
+        # Create a card inside the Tools tab
+        tools_card, tools_content = ModernComponents.create_card(tools_frame)
+        tools_card.pack(fill="x", padx=ModernStyle.SPACING['lg'], pady=ModernStyle.SPACING['sm'])
+
+        header_frame = ModernComponents.create_card_header(
+            tools_content,
+            "Tools",
+            icon_callback=ModernComponents.draw_activity_icon
+        )
+
+        # Add the existing tool controls into this header
+        self.create_snip_tool(header_frame)
+        self.create_print_dropdown(header_frame)
+
+        # Keep a reference for consistency with other tabs (cleanup loop is safe)
+        self.tabs["Tools"] = tools_frame
 
     def add_tab(self, tab_name: str, tab_class: type) -> None:
         print(f"> [App.add_tab] Adding tab: {tab_name}")

@@ -14,6 +14,8 @@ from ..components.notification_manager import NotificationManager
 from ..components.step_manager import StepManager
 from src.core.async_manager import AsyncManager
 from src.core.file_manager import FileManager
+from ..layouts.modern_layout_manager import ModernLayoutManager
+from ..styles import ModernStyle
 
 
 class TabContent(ABC):
@@ -42,9 +44,10 @@ class TabContent(ABC):
         
         Returns:
             tuple: (
-                dict of quadrant definitions {name: {"title": str}},
+                dict of quadrant definitions {name: {"title": str, "use_modern": bool}},
                 dict of column weights (or None for default),
-                dict of row weights (or None for default)
+                dict of row weights (or None for default),
+                bool use_modern_layout (optional, defaults to False)
             )
             
         Example:
@@ -56,10 +59,11 @@ class TabContent(ABC):
                     "bottom_right": {"title": "Bottom Right Section"}
                 },
                 {0: 1, 1: 2},  # column weights
-                {0: 1, 1: 1}   # row weights
+                {0: 1, 1: 1},  # row weights
+                True           # use modern layout
             )
         """
-        # Default layout: equal 2x2 grid without labels
+        # Default layout: equal 2x2 grid without labels, traditional styling
         return (
             {
                 "top_left": {"title": ""},
@@ -68,34 +72,71 @@ class TabContent(ABC):
                 "bottom_right": {"title": ""}
             },
             None,  # Use default column weights
-            None   # Use default row weights
+            None,  # Use default row weights
+            False  # Use traditional layout by default
         )
 
     def _create_base_layout(self) -> None:
         """Creates common layout structure for all tabs"""
         
-        # Unpack layout configuration
-        quadrant_configs, column_weights, row_weights = self.layout_config
+        # Unpack layout configuration (handle multiple formats)
+        layout_tuple = self.layout_config
+        if len(layout_tuple) == 5:
+            quadrant_configs, column_weights, row_weights, use_modern, skip_connection_controls = layout_tuple
+        elif len(layout_tuple) == 4:
+            quadrant_configs, column_weights, row_weights, use_modern = layout_tuple
+            skip_connection_controls = False
+        else:
+            # Backward compatibility: assume traditional layout
+            quadrant_configs, column_weights, row_weights = layout_tuple
+            use_modern = False
+            skip_connection_controls = False
         
         # Main container frame - pack to fill entire tab
         self.main_frame = ttk.Frame(self.frame)
         self.main_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # Connection frame at the top as a fixed height area
-        self.connection_frame = ttk.Frame(self.main_frame)
-        self.connection_frame.pack(fill="x", padx=5, pady=5)
+        # Create connection controls only if not skipped by subclass
+        if not skip_connection_controls:
+            # Connection frame at the top - modern or traditional based on config
+            if use_modern:
+                # Create modern connection frame
+                connection_card, self.connection_frame = ModernLayoutManager.create_modern_connection_frame(self.main_frame)
+                connection_card.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['sm'])
+            else:
+                # Traditional connection frame
+                self.connection_frame = ttk.Frame(self.main_frame)
+                self.connection_frame.pack(fill="x", padx=5, pady=5)
+            
+            # Initialize step manager and create controls
+            app = getattr(self, 'app', None)
+            tab_name = self.__class__.__name__.lower().replace('tab', '')
+            self.step_manager = StepManager(self.connection_frame, app, tab_name)
+            self.step_manager.create_controls()
+            
+            # Apply modern styling to step controls if using modern layout
+            if use_modern:
+                ModernLayoutManager.style_step_controls(self.step_manager.step_control_frame)
+            
+            self._create_udw_command_controls()
+            
+            # Apply modern styling to UDW controls if using modern layout
+            if use_modern:
+                ModernLayoutManager.style_udw_controls(self.udw_frame)
+        else:
+            # Create minimal connection frame for subclass to use
+            self.connection_frame = ttk.Frame(self.main_frame)
+            # Don't pack it - let subclass handle layout
+            # But still initialize StepManager so tabs can rely on it
+            app = getattr(self, 'app', None)
+            tab_name = self.__class__.__name__.lower().replace('tab', '')
+            self.step_manager = StepManager(self.connection_frame, app, tab_name)
         
-        # Initialize step manager and create controls
-        app = getattr(self, 'app', None)
-        tab_name = self.__class__.__name__.lower().replace('tab', '')
-        self.step_manager = StepManager(self.connection_frame, app, tab_name)
-        self.step_manager.create_controls()
-        
-        self._create_udw_command_controls()
-        
-        # Separator line under connection frame
-        self.separator = ttk.Separator(self.main_frame, orient='horizontal')
-        self.separator.pack(fill="x", pady=5)
+        # Separator line under connection frame (only for traditional layout)
+        # Skip when subclass handles its own connection UI
+        if not use_modern and not skip_connection_controls:
+            self.separator = ttk.Separator(self.main_frame, orient='horizontal')
+            self.separator.pack(fill="x", pady=5)
 
         # Create notification manager for this tab
         self.notifications = NotificationManager(self.main_frame)
@@ -160,28 +201,18 @@ class TabContent(ABC):
                 continue
                 
             pos = all_positions[name]
-            title = config.get("title", "")
             
-            # Create frame with or without label based on title
-            if title:
-                frame = ttk.LabelFrame(self.content_frame, text=title)
+            # Choose layout style based on configuration
+            if use_modern:
+                # Use modern card-based layout
+                frame = ModernLayoutManager.create_modern_quadrant(
+                    self.content_frame, name, config, pos
+                )
             else:
-                frame = ttk.Frame(self.content_frame, borderwidth=1, relief="solid")
-            
-            # Place in grid with proper expansion
-            frame.grid(
-                row=pos["row"], 
-                column=pos["column"],
-                rowspan=pos["rowspan"],
-                columnspan=pos["columnspan"],
-                sticky="nsew",
-                padx=5, 
-                pady=5
-            )
-            
-            # Configure internal weights
-            frame.columnconfigure(0, weight=1)
-            frame.rowconfigure(0, weight=1)
+                # Use traditional layout (existing behavior)
+                frame = ModernLayoutManager.create_traditional_quadrant(
+                    self.content_frame, name, config, pos
+                )
             
             self.quadrants[name] = frame
         
@@ -212,6 +243,64 @@ class TabContent(ABC):
     def create_widgets(self) -> None:
         """Implement in subclasses to add tab-specific widgets"""
         pass
+    
+    def modernize_connection_controls(self, button_style_map: Dict[str, str] = None) -> None:
+        """
+        Helper method for tabs to modernize their connection controls.
+        Call this after creating connection controls if using modern layout.
+        
+        Args:
+            button_style_map: Optional mapping of button text to style
+        """
+        # Check if we're using modern layout
+        layout_tuple = self.layout_config
+        use_modern = len(layout_tuple) == 4 and layout_tuple[3]
+        
+        if use_modern:
+            ModernLayoutManager.style_connection_buttons(self.connection_frame, self, button_style_map)
+    
+    def modernize_quadrant_buttons(self, button_style_map: Dict[str, str] = None) -> None:
+        """
+        Helper method for tabs to modernize buttons within their quadrants.
+        Call this after creating all widgets if using modern layout.
+        
+        Args:
+            button_style_map: Optional mapping of button text to style
+        """
+        # Check if we're using modern layout
+        layout_tuple = self.layout_config
+        use_modern = len(layout_tuple) == 4 and layout_tuple[3]
+        
+        if use_modern:
+            # Style buttons in each quadrant
+            for quadrant_name, quadrant_frame in self.quadrants.items():
+                ModernLayoutManager.style_connection_buttons(quadrant_frame, self, button_style_map)
+    
+    def update_modern_button_safe(self, button_attr: str, text: str = None, state: str = None, style: str = None) -> None:
+        """
+        Safely update a modern button, falling back to regular config if not modern.
+        
+        Args:
+            button_attr: Button attribute name (e.g., 'connect_button')
+            text: New button text
+            state: New button state ('normal', 'disabled')
+            style: New button style ('primary', 'success', etc.)
+        """
+        if hasattr(self, button_attr):
+            button = getattr(self, button_attr)
+            
+            # Try modern button update first
+            if hasattr(button, '_style_config'):
+                ModernLayoutManager.update_modern_button(button, text, state, style)
+            else:
+                # Fall back to regular button config
+                try:
+                    if text is not None:
+                        button.config(text=text)
+                    if state is not None:
+                        button.config(state=state)
+                except:
+                    pass  # Button might be destroyed or invalid
 
     def create_alerts_widget(self, parent_frame, fetch_command, allow_acknowledge=True):
         """

@@ -1,9 +1,9 @@
 from .base import TabContent
-from src.printers.universal.vncapp import VNCConnection
-from src.ui.styles import ModernStyle, ModernComponents
+from vncapp import VNCConnection
 from tkinter import simpledialog, ttk, Toplevel, Checkbutton, IntVar, Button, Canvas, RIGHT, Text, filedialog
 import threading
 import socket
+import queue
 from PIL import Image, ImageTk
 import io
 import requests
@@ -45,11 +45,16 @@ class DuneTab(TabContent):
         self.cdm_options = self.app.dune_fetcher.get_endpoints()
         self.cdm_vars = {option: IntVar() for option in self.cdm_options}
         
-        # Rotation setting for UI view (right-click on View UI)
-        self.rotation_var = tk.IntVar(value=0)
-        self.rotation_menu = None
-        
+        # Initialize step_var before parent class
+        self.step_var = tk.StringVar(value=str(self.app.config_manager.get("dune_step_number", 1)))
+        self.step_var.trace_add("write", self._save_step_to_config)
+        self.current_step = 1
+
         super().__init__(parent)
+        
+        self.task_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self.worker_thread.start()
 
         # Register callbacks for IP address and directory changes
         self.app.register_ip_callback(self.on_ip_change)
@@ -62,297 +67,152 @@ class DuneTab(TabContent):
 
     def get_layout_config(self) -> tuple:
         """
-        Use traditional layout but disable base connection controls - we'll create modern UI directly in create_widgets
+        Define the layout for Dune tab with:
+        - UI in upper left
+        - Alerts in upper right
+        - CDM in lower left
+        - Telemetry in lower right
         """
         return (
             {
-                "top_left": {"title": ""},
-                "top_right": {"title": ""},
-                "bottom_left": {"title": ""},
-                "bottom_right": {"title": ""}
-            },
+                "top_left": {"title": "UI"},
+                "top_right": {"title": "Alerts"},
+                "bottom_left": {"title": "CDM"},
+                "bottom_right": {"title": "Telemetry"}
+            },  # quadrants with titles
             {0: 2, 1: 1},  # column weights - ratio 2:1 (left takes 2/3, right takes 1/3)
-            {0: 2, 1: 1},  # row weights - ratio 2:1 (top takes 2/3, bottom takes 1/3)
-            False,         # Don't use modern layout from base class
-            True           # Skip base class connection controls (5th parameter)
+            {0: 2, 1: 1}   # row weights - ratio 2:1 (top takes 2/3, bottom takes 1/3)
         )
 
     def create_widgets(self) -> None:
-        """Creates the widgets for the Dune tab with modern styling."""
+        """Creates the widgets for the Dune tab."""
         print("\n=== Creating DuneTab widgets ===")
         
-        # Replace the basic layout with modern cards
-        self.create_modern_layout()
+        # Connection buttons
+        self.create_connection_controls()
         
-        # Create all widgets with modern styling
-        self.create_modern_connection_controls()
-        self.create_modern_ui_widgets()
-        self.create_modern_alerts_widgets()
-        self.create_modern_cdm_widgets()
-        self.create_modern_telemetry_widgets()
+        # Create UI widgets (top left)
+        self.create_ui_widgets()
+        
+        # Create alerts widgets (top right)
+        self.create_rest_client_widgets()
+        
+        # Create CDM widgets (bottom left)
+        self.create_cdm_widgets()
+        
+        # Create telemetry widgets (bottom right)
+        self.create_telemetry_widgets()
 
-    def create_modern_layout(self):
-        """Replace the traditional quadrants with modern cards"""
-        # Hide base-generated frames that create extra lines at the top
-        try:
-            # Hide quadrants if any were created by the base
-            for quad_name, quad_frame in getattr(self, 'quadrants', {}).items():
-                try:
-                    quad_frame.pack_forget()
-                except Exception:
-                    pass
-            # Hide the entire base content frame (removes stray top lines)
-            if hasattr(self, 'content_frame') and self.content_frame.winfo_ismapped():
-                self.content_frame.pack_forget()
-            # Hide any base separator created defensively
-            if hasattr(self, 'separator') and self.separator.winfo_ismapped():
-                self.separator.pack_forget()
-            # Additionally, hide any stray separators directly under this tab frame
-            for child in self.frame.winfo_children():
-                try:
-                    if getattr(child, 'winfo_class', lambda: '')().lower().endswith('separator'):
-                        child.pack_forget()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    def create_connection_controls(self):
+        """Creates the connection control buttons."""
+        # Main connect button
+        self.connect_button = ttk.Button(self.connection_frame, text=CONNECT, 
+                                        command=self.toggle_printer_connection)
+        self.connect_button.pack(side="left", pady=5, padx=10)
         
-        # Create modern connection card
-        self.connection_card, self.connection_content = ModernComponents.create_card(self.main_frame)
-        self.connection_card.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['sm'])
-        
-        # Add connection header
-        conn_header = ModernComponents.create_card_header(
-            self.connection_content, "Connection & Controls", 
-            icon_callback=ModernComponents.draw_settings_icon
-        )
-        
-        # Main content area with 2x2 grid of modern cards
-        self.cards_frame = tk.Frame(self.main_frame, bg=ModernStyle.COLORS['bg_light'])
-        self.cards_frame.pack(fill="both", expand=True, padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['sm'])
-        
-        # Configure grid weights (favor UI quadrant)
-        # Make top row taller and left column wider so the UI quadrant is larger without scaling the image
-        self.cards_frame.columnconfigure(0, weight=3)  # UI column
-        self.cards_frame.columnconfigure(1, weight=1)  # Alerts column
-        self.cards_frame.rowconfigure(0, weight=3)     # UI/Alerts row
-        self.cards_frame.rowconfigure(1, weight=1)     # CDM/Telemetry row
-        
-        # Create four modern cards
-        self.ui_card, self.ui_content = ModernComponents.create_card(self.cards_frame)
-        self.ui_card.grid(row=0, column=0, sticky="nsew", padx=ModernStyle.SPACING['xs'], pady=ModernStyle.SPACING['xs'])
-        try:
-            # Hint a minimum size so the UI quadrant opens larger
-            self.cards_frame.grid_rowconfigure(0, minsize=400)
-            self.cards_frame.grid_columnconfigure(0, minsize=400)
-        except Exception:
-            pass
-        self.ui_header = ModernComponents.create_card_header(self.ui_content, "UI", icon_callback=ModernComponents.draw_activity_icon)
-        
-        self.alerts_card, self.alerts_content = ModernComponents.create_card(self.cards_frame)
-        self.alerts_card.grid(row=0, column=1, sticky="nsew", padx=ModernStyle.SPACING['xs'], pady=ModernStyle.SPACING['xs'])
-        self.alerts_header = ModernComponents.create_card_header(self.alerts_content, "Alerts")
-        
-        self.cdm_card, self.cdm_content = ModernComponents.create_card(self.cards_frame)
-        self.cdm_card.grid(row=1, column=0, sticky="nsew", padx=ModernStyle.SPACING['xs'], pady=ModernStyle.SPACING['xs'])
-        self.cdm_header = ModernComponents.create_card_header(self.cdm_content, "CDM", icon_callback=ModernComponents.draw_settings_icon)
-        
-        self.telemetry_card, self.telemetry_content = ModernComponents.create_card(self.cards_frame)
-        self.telemetry_card.grid(row=1, column=1, sticky="nsew", padx=ModernStyle.SPACING['xs'], pady=ModernStyle.SPACING['xs'])
-        self.telemetry_header = ModernComponents.create_card_header(self.telemetry_content, "Telemetry")
-
-    def create_modern_connection_controls(self):
-        """Creates modern connection control buttons with improved step design."""
-        
-        # Main controls row
-        main_controls = tk.Frame(self.connection_content, bg=ModernStyle.COLORS['bg_card'])
-        main_controls.pack(fill="x", pady=ModernStyle.SPACING['sm'])
-        
-        # Left side: Connect button
-        left_controls = tk.Frame(main_controls, bg=ModernStyle.COLORS['bg_card'])
-        left_controls.pack(side="left", fill="x", expand=True)
-        
-        self.connect_button = ModernComponents.create_modern_button(
-            left_controls, CONNECT, 'success', self.toggle_printer_connection
-        )
-        self.connect_button.pack(side="left", padx=(0, ModernStyle.SPACING['lg']))
-        
-        # EWS Snips dropdown (restored)
-        self.ews_menu_button = ttk.Menubutton(
-            left_controls,
+        # Create EWS menu dropdown
+        ews_menu_button = ttk.Menubutton(
+            self.connection_frame,
             text="EWS Snips",
             style='TButton'
         )
-        ews_menu = tk.Menu(self.ews_menu_button, tearoff=0)
-        ews_menu.add_command(label="Home Page", command=lambda: self.start_snip("EWS Home Page"))
-        ews_menu.add_separator()
-        ews_menu.add_command(label="Supplies Page Cyan", command=lambda: self.start_snip("EWS Supplies Page Cyan"))
-        ews_menu.add_command(label="Supplies Page Magenta", command=lambda: self.start_snip("EWS Supplies Page Magenta"))
-        ews_menu.add_command(label="Supplies Page Yellow", command=lambda: self.start_snip("EWS Supplies Page Yellow"))
-        ews_menu.add_command(label="Supplies Page Black", command=lambda: self.start_snip("EWS Supplies Page Black"))
-        ews_menu.add_command(label="Supplies Page Color", command=lambda: self.start_snip("EWS Supplies Page Color"))
-        ews_menu.add_separator()
-        ews_menu.add_command(label="Previous Cartridge Information", command=lambda: self.start_snip("EWS Previous Cartridge Information"))
-        ews_menu.add_command(label="Printer Region Reset", command=lambda: self.start_snip("EWS Printer Region Reset"))
-        self.ews_menu_button["menu"] = ews_menu
-        self.ews_menu_button.pack(side="left", padx=(0, ModernStyle.SPACING['md']))
-        self.ews_menu_button.config(state="disabled")
+        ews_menu = tk.Menu(ews_menu_button, tearoff=0)
         
-        # Commands dropdown (restored)
-        self.commands_menu_button = ttk.Menubutton(
-            left_controls,
+        # Add snip options - restoring all original options
+        ews_menu.add_command(label="Home Page", 
+                           command=lambda: self.start_snip("EWS Home Page"))
+        
+        # color-specific supplies pages
+        ews_menu.add_separator()
+        ews_menu.add_command(label="Supplies Page Cyan", 
+                           command=lambda: self.start_snip("EWS Supplies Page Cyan"))
+        ews_menu.add_command(label="Supplies Page Magenta", 
+                           command=lambda: self.start_snip("EWS Supplies Page Magenta"))
+        ews_menu.add_command(label="Supplies Page Yellow", 
+                           command=lambda: self.start_snip("EWS Supplies Page Yellow"))
+        ews_menu.add_command(label="Supplies Page Black", 
+                           command=lambda: self.start_snip("EWS Supplies Page Black"))
+        ews_menu.add_command(label="Supplies Page Color", 
+                           command=lambda: self.start_snip("EWS Supplies Page Color"))
+        ews_menu.add_separator()
+        ews_menu.add_command(label="Previous Cartridge Information", 
+                           command=lambda: self.start_snip("EWS Previous Cartridge Information"))
+        ews_menu.add_command(label="Printer Region Reset", 
+                           command=lambda: self.start_snip("EWS Printer Region Reset"))
+        
+        ews_menu_button["menu"] = ews_menu
+        ews_menu_button.pack(side="left", pady=5, padx=10)
+
+        # Add SSH dropdown menu button next to step controls
+        self.ssh_menu_button = ttk.Menubutton(
+            self.connection_frame,
             text="Commands",
-            style='TButton'
+            style='TButton',
+            state="disabled"
         )
-        ssh_menu = tk.Menu(self.commands_menu_button, tearoff=0)
+        ssh_menu = tk.Menu(self.ssh_menu_button, tearoff=0)
+
+        # Add common SSH commands
         ssh_commands = [
             ("AUTH", '/core/bin/runUw mainApp "OAuth2Standard PUB_testEnableTokenAuth false"'),
             ("Clear Telemetry", '/core/bin/runUw mainApp "EventingAdapter PUB_deleteAllEvents"'),
-            ("Print 10-Tap", "curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data '{\"reportId\":\"diagnosticsReport\",\"state\":\"processing\"}'"),
-            ("Print PSR", "curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data '{\"reportId\":\"printerStatusReport\",\"state\":\"processing\"}'")
+            ("Print 10-Tap", 'curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data \'{"reportId":"diagnosticsReport","state":"processing"}\''),
+            ("Print PSR", 'curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data \'{"reportId":"printerStatusReport","state":"processing"}\'')
         ]
+
         for label, cmd in ssh_commands:
-            # Schedule the blocking command on the executor via a small coroutine
-            async def _run_cmd(command: str):
-                await self.async_manager.run_in_executor(self._execute_ssh_command, command)
-            ssh_menu.add_command(label=label, command=lambda c=cmd: self.async_manager.run_async(_run_cmd(c)))
-        self.commands_menu_button["menu"] = ssh_menu
-        self.commands_menu_button.pack(side="left", padx=(0, ModernStyle.SPACING['md']))
-        self.commands_menu_button.config(state="disabled")
-        
-        # Center: Modern Step Controls
-        self._create_modern_step_controls(left_controls)
-        
-        # Right side: UDW controls
-        right_controls = tk.Frame(main_controls, bg=ModernStyle.COLORS['bg_card'])
-        right_controls.pack(side="right")
-        
-        self._create_modern_udw_controls(right_controls)
-        
-    def _create_modern_step_controls(self, parent):
-        """Creates a modern, user-friendly step control interface."""
-        step_container = tk.Frame(parent, bg=ModernStyle.COLORS['gray_200'], relief="solid", bd=1)
-        step_container.pack(side="left", padx=ModernStyle.SPACING['md'])
-        
-        # Step header
-        step_header = tk.Frame(step_container, bg=ModernStyle.COLORS['gray_200'])
-        step_header.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=(ModernStyle.SPACING['xs'], 0))
-        
-        step_label = tk.Label(step_header, text="Step", font=ModernStyle.FONTS['bold'],
-                             bg=ModernStyle.COLORS['gray_200'], fg=ModernStyle.COLORS['text_primary'])
-        step_label.pack(side="left")
-        
-        # Step controls
-        step_controls = tk.Frame(step_container, bg=ModernStyle.COLORS['gray_200'])
-        step_controls.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['xs'])
-        
-        # Modern step entry with better styling
-        self.step_entry = tk.Entry(step_controls, textvariable=self.step_manager.step_var,
-                                  font=ModernStyle.FONTS['large'], width=6, justify="center",
-                                  relief="flat", bd=2, highlightthickness=2,
-                                  highlightcolor=ModernStyle.COLORS['primary'],
-                                  bg="white", fg=ModernStyle.COLORS['text_primary'])
-        self.step_entry.pack(side="left", padx=(0, ModernStyle.SPACING['xs']))
-        
-        # Modern step buttons with icons
-        self.step_down_button = ModernComponents.create_modern_button(
-            step_controls, "◀", 'secondary', lambda: self.step_manager.update_step_number(-1), width=3
-        )
-        self.step_down_button.pack(side="left", padx=(0, ModernStyle.SPACING['xs']))
-        
-        self.step_up_button = ModernComponents.create_modern_button(
-            step_controls, "▶", 'secondary', lambda: self.step_manager.update_step_number(1), width=3
-        )
-        self.step_up_button.pack(side="left")
-        
-    def _create_modern_udw_controls(self, parent):
-        """Creates modern UDW command controls."""
-        udw_container = tk.Frame(parent, bg=ModernStyle.COLORS['gray_200'], relief="solid", bd=1)
-        udw_container.pack(side="right")
-        
-        # UDW header
-        udw_header = tk.Frame(udw_container, bg=ModernStyle.COLORS['gray_200'])
-        udw_header.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=(ModernStyle.SPACING['xs'], 0))
-        
-        udw_label = tk.Label(udw_header, text="UDW Commands", font=ModernStyle.FONTS['bold'],
-                            bg=ModernStyle.COLORS['gray_200'], fg=ModernStyle.COLORS['text_primary'])
-        udw_label.pack()
-        
-        # UDW controls
-        udw_controls = tk.Frame(udw_container, bg=ModernStyle.COLORS['gray_200'])
-        udw_controls.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['xs'])
-        
-        # Modern entry field
-        self.udw_cmd_entry = tk.Entry(udw_controls, width=30, font=ModernStyle.FONTS['default'],
-                                     relief="flat", bd=2, highlightthickness=2,
-                                     highlightcolor=ModernStyle.COLORS['primary'],
-                                     bg="white", fg=ModernStyle.COLORS['text_primary'])
-        self.udw_cmd_entry.pack(side="left", padx=(0, ModernStyle.SPACING['xs']))
-        self.udw_cmd_entry.bind('<Return>', self.handle_udw_enter_pressed)
-        self.udw_cmd_entry.bind('<Up>', self.handle_up_arrow_pressed)
-        self.udw_cmd_entry.bind('<Down>', self.handle_down_arrow_pressed)
-        
-        # Send button
-        self.send_udw_button = ModernComponents.create_modern_button(
-            udw_controls, "Send", 'info', lambda: self.handle_udw_enter_pressed(None), width=8
-        )
-        self.send_udw_button.pack(side="left")
+            ssh_menu.add_command(
+                label=label,
+                command=lambda c=cmd: self.queue_task(self._execute_ssh_command, c)
+            )
 
-    def update_step_number(self, delta):
-        """Proxy for StepManager.update_step_number"""
-        if hasattr(self, 'step_manager') and self.step_manager:
-            self.step_manager.update_step_number(delta)
+        self.ssh_menu_button["menu"] = ssh_menu
+        self.ssh_menu_button.pack(side="left", pady=5, padx=10)
 
-    def get_current_step(self):
-        """Proxy for StepManager.get_current_step"""
-        if hasattr(self, 'step_manager') and self.step_manager:
-            return self.step_manager.get_current_step()
-        return 1
-
-    def create_modern_ui_widgets(self):
-        """Creates modern UI section widgets."""
-        # Create button frame inside UI card
-        self.ui_button_frame = tk.Frame(self.ui_content, bg=ModernStyle.COLORS['bg_card'])
-        self.ui_button_frame.pack(side="top", pady=ModernStyle.SPACING['sm'], padx=ModernStyle.SPACING['sm'], anchor="w", fill="x")
-        # Use grid to make buttons equal width and fit available space
-        try:
-            self.ui_button_frame.grid_columnconfigure(0, weight=1, uniform="ui_buttons")
-            self.ui_button_frame.grid_columnconfigure(1, weight=1, uniform="ui_buttons")
-            self.ui_button_frame.grid_columnconfigure(2, weight=1, uniform="ui_buttons")
-        except Exception:
-            pass
+    def create_ui_widgets(self):
+        """Creates the UI section widgets."""
+        # Access the UI frame from quadrants
+        ui_frame = self.quadrants["top_left"]
         
-        # Add View UI button
-        self.continuous_ui_button = ModernComponents.create_modern_button(
-            self.ui_button_frame, CONNECT_UI, 'primary', self.toggle_view_ui
-        )
-        self.continuous_ui_button.grid(row=0, column=0, sticky="ew", padx=(0, ModernStyle.SPACING['sm']))
-        ModernComponents.update_button_state(self.continuous_ui_button, 'disabled')
+        # Create button frame inside UI frame
+        self.ui_button_frame = ttk.Frame(ui_frame)
+        self.ui_button_frame.pack(side="top", pady=(5,0), padx=5, anchor="w")
         
-        # Add right-click rotation menu for View UI
+        # Add View UI button to UI frame
+        self.continuous_ui_button = ttk.Button(self.ui_button_frame, text=CONNECT_UI, 
+                                             command=self.toggle_view_ui, state="disabled")
+        self.continuous_ui_button.pack(side="left", pady=0, padx=5)
+        
+        # Add right-click menu for rotation settings
         self.rotation_menu = tk.Menu(self.ui_button_frame, tearoff=0)
+        
+        # Initialize rotation setting variable
+        self.rotation_var = tk.IntVar(value=0)  # Default to 0 (no rotation)
+        
+        # Add rotation options
         self.rotation_menu.add_radiobutton(label="No Rotation (0°)", variable=self.rotation_var, value=0)
         self.rotation_menu.add_radiobutton(label="Rotate 90°", variable=self.rotation_var, value=90)
         self.rotation_menu.add_radiobutton(label="Rotate 180°", variable=self.rotation_var, value=180)
         self.rotation_menu.add_radiobutton(label="Rotate 270°", variable=self.rotation_var, value=270)
+        
+        # Bind right-click to View UI button
         self.continuous_ui_button.bind("<Button-3>", self.show_rotation_menu)
         
-        # Add individual UI capture button
-        self.capture_ui_button = ModernComponents.create_modern_button(
-            self.ui_button_frame, "Capture UI", 'info', lambda: self.queue_save_fpui_image()
-        )
-        self.capture_ui_button.grid(row=0, column=1, sticky="ew", padx=(0, ModernStyle.SPACING['sm']))
-        ModernComponents.update_button_state(self.capture_ui_button, 'disabled')
+        # Add Capture UI button to UI frame
+        self.capture_ui_button = ttk.Button(self.ui_button_frame, text="Capture UI", 
+                                           command=self.queue_save_fpui_image, state="disabled")
+        self.capture_ui_button.pack(side="left", pady=0, padx=5)
         
-        # Add ECL Menu Button (use same modern button as others for consistent size/height)
-        # Start with secondary (grey) when disconnected; switch to warning (accent) on connect
-        self.ecl_button_style = 'secondary'
-        self.ecl_menu_button = ModernComponents.create_modern_button(
-            self.ui_button_frame, "Capture ECL", self.ecl_button_style, self._open_ecl_menu
+        # Add ECL capture dropdown menu button
+        self.ecl_menu_button = ttk.Menubutton(
+            self.ui_button_frame,
+            text="Capture ECL",
+            style='TButton',
+            state="disabled"
         )
-        ecl_menu = tk.Menu(self.frame, tearoff=0)
+        ecl_menu = tk.Menu(self.ecl_menu_button, tearoff=0)
         
-        # Add ECL menu items (restored to original from old dune tab)
+        # Add main ECL entry
         ecl_menu.add_command(
             label="Estimated Cartridge Level", 
             command=lambda: self.queue_save_fpui_image("UI Estimated Cartridge Level", auto_save=True)
@@ -368,85 +228,62 @@ class DuneTab(TabContent):
                 command=lambda f=filename: self.queue_save_fpui_image(f, auto_save=True)
             )
         
-        # Store menu and wire button to open it
-        self.ecl_menu = ecl_menu
-        self.ecl_menu_button.grid(row=0, column=2, sticky="ew")
-        ModernComponents.update_button_state(self.ecl_menu_button, 'disabled')
-        
-        # Note: SSH Tools button removed (was not part of original UI)
-        
-        # Create image display area with scrollable canvas
-        self.image_container = tk.Frame(self.ui_content, bg=ModernStyle.COLORS['bg_card'])
-        self.image_container.pack(fill="both", expand=True, padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['sm'])
-        # Make UI quadrant prefer more height by configuring row weights on parent
-        try:
-            # Cards frame uses grid with row 0 (UI/Alerts) and row 1 (CDM/Telemetry)
-            # Increase weight of row 0 so UI/Alerts area gets more vertical space
-            parent_grid = self.cards_frame
-            parent_grid.rowconfigure(0, weight=3)
-            parent_grid.rowconfigure(1, weight=2)
-        except Exception:
-            pass
+        self.ecl_menu_button["menu"] = ecl_menu
+        self.ecl_menu_button.pack(side="left", pady=0, padx=5)
 
-        # Scrollable image area
-        self.image_canvas = Canvas(self.image_container, bg="white")
+        # Create a scrollable frame for the image (since it might be larger than the window)
+        self.image_canvas = tk.Canvas(ui_frame, bg='gray')
+        self.image_scrollbar_v = ttk.Scrollbar(ui_frame, orient="vertical", command=self.image_canvas.yview)
+        self.image_scrollbar_h = ttk.Scrollbar(ui_frame, orient="horizontal", command=self.image_canvas.xview)
+        self.image_canvas.configure(yscrollcommand=self.image_scrollbar_v.set, xscrollcommand=self.image_scrollbar_h.set)
         
-        # Scrollbars for image area
-        self.h_scrollbar = ttk.Scrollbar(self.image_container, orient=tk.HORIZONTAL, command=self.image_canvas.xview)
-        self.v_scrollbar = ttk.Scrollbar(self.image_container, orient=tk.VERTICAL, command=self.image_canvas.yview)
-        
-        # Configure scrollbars
-        self.image_canvas.configure(xscrollcommand=self.h_scrollbar.set, yscrollcommand=self.v_scrollbar.set)
-        
-        # Layout scrollbars and canvas
-        self.image_canvas.grid(row=0, column=0, sticky="nsew")
-        self.h_scrollbar.grid(row=1, column=0, sticky="ew")
-        self.v_scrollbar.grid(row=0, column=1, sticky="ns")
-        
-        # Configure grid weights for proper expansion
-        self.image_container.grid_rowconfigure(0, weight=1)
-        self.image_container.grid_columnconfigure(0, weight=1)
-
-        # Create image label inside canvas
+        # Create the image label inside the canvas
         self.image_label = ttk.Label(self.image_canvas)
-        self.image_window = self.image_canvas.create_window(0, 0, anchor="nw", window=self.image_label)
-
-        # Bind canvas events for UI interaction (will be set up when image is loaded)
-        # Note: Event binding will be handled by _bind_click_events() method
+        self.image_canvas.create_window(0, 0, anchor="nw", window=self.image_label)
+        
+        # Pack scrollbars and canvas
+        self.image_scrollbar_v.pack(side="right", fill="y")
+        self.image_scrollbar_h.pack(side="bottom", fill="x")
+        self.image_canvas.pack(side="left", fill="both", expand=True)
         
         # Initialize scaling info for coordinate transformation
         self._image_scale_info = None
 
-    def create_modern_cdm_widgets(self):
-        """Creates modern CDM widgets."""
+    def create_rest_client_widgets(self):
+        """Creates the REST client interface with a Treeview table"""
+        # Use the base class method to create standardized alerts widget
+        self.fetch_alerts_button, self.alerts_tree, self.alert_items = self.create_alerts_widget(
+            self.quadrants["top_right"],
+            self.fetch_alerts,
+            allow_acknowledge=True
+        )
+
+    def create_cdm_widgets(self):
+        """Creates the CDM widgets."""
+        # Access the CDM frame from quadrants
+        cdm_frame = self.quadrants["bottom_left"]
+        
         # Create a frame for the CDM buttons
-        self.cdm_buttons_frame = tk.Frame(self.cdm_content, bg=ModernStyle.COLORS['bg_card'])
-        self.cdm_buttons_frame.pack(pady=ModernStyle.SPACING['sm'], padx=ModernStyle.SPACING['sm'], anchor="w")
+        self.cdm_buttons_frame = ttk.Frame(cdm_frame)
+        self.cdm_buttons_frame.pack(pady=5, padx=5, anchor="w")
 
         # Add Save CDM button
-        self.fetch_json_button = ModernComponents.create_modern_button(
-            self.cdm_buttons_frame, "Save CDM", 'primary', lambda: self.capture_cdm()
-        )
-        self.fetch_json_button.pack(side="left", padx=(0, ModernStyle.SPACING['sm']))
-        ModernComponents.update_button_state(self.fetch_json_button, 'disabled')
+        self.fetch_json_button = ttk.Button(self.cdm_buttons_frame, text="Save CDM", 
+                                          command=self.capture_cdm, state="disabled")
+        self.fetch_json_button.pack(side="left", padx=(0, 5))
 
         # Add Clear button (initially hidden)
-        self.clear_cdm_button = ModernComponents.create_modern_button(
-            self.cdm_buttons_frame, "Clear", 'secondary', self.clear_cdm_checkboxes
-        )
+        self.clear_cdm_button = ttk.Button(self.cdm_buttons_frame, text="Clear", 
+                                          command=self.clear_cdm_checkboxes)
 
-        # Create scrollable frame for checkboxes
-        checkbox_container = tk.Frame(self.cdm_content, bg=ModernStyle.COLORS['bg_card'])
-        checkbox_container.pack(fill="both", expand=True, padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['xs'])
-
-        # Create canvas for scrollable checkboxes
-        self.cdm_canvas = Canvas(checkbox_container, bg=ModernStyle.COLORS['bg_card'])
-        self.cdm_scrollbar = ttk.Scrollbar(checkbox_container, orient="vertical", 
+        # Create a canvas for scrollable checkboxes
+        self.cdm_canvas = Canvas(cdm_frame)
+        self.cdm_scrollbar = ttk.Scrollbar(cdm_frame, orient="vertical", 
                                           command=self.cdm_canvas.yview)
-        self.cdm_checkbox_frame = tk.Frame(self.cdm_canvas, bg=ModernStyle.COLORS['bg_card'])
+        self.cdm_checkbox_frame = ttk.Frame(self.cdm_canvas)
 
         # Configure scrolling
-        self.cdm_canvas.configure(yscrollcommand=self.cdm_scrollbar.set, highlightthickness=0)
+        self.cdm_canvas.configure(yscrollcommand=self.cdm_scrollbar.set)
         self.cdm_checkbox_frame.bind(
             "<Configure>",
             lambda e: self.cdm_canvas.configure(scrollregion=self.cdm_canvas.bbox("all"))
@@ -459,99 +296,38 @@ class DuneTab(TabContent):
         self.cdm_scrollbar.pack(side="right", fill="y")
         self.cdm_canvas.pack(side="left", fill="both", expand=True)
 
-        # Add CDM checkboxes with modern styling
+        # Add checkbox trace for each CDM option
+        for option, var in self.cdm_vars.items():
+            var.trace_add('write', self.update_clear_button_visibility)
+
+        # Add CDM checkboxes with right-click support
         for option in self.cdm_options:
-            var = self.cdm_vars[option]
-            # Add trace to all variables for button visibility
-            var.trace_add("write", self.update_clear_button_visibility)
+            container_frame = ttk.Frame(self.cdm_checkbox_frame)
+            container_frame.pack(anchor="w", fill="x", padx=5, pady=2)
             
-            checkbox = Checkbutton(self.cdm_checkbox_frame, text=option, variable=var,
-                                 bg=ModernStyle.COLORS['bg_card'], fg=ModernStyle.COLORS['text_primary'],
-                                 selectcolor=ModernStyle.COLORS['bg_card'], activebackground=ModernStyle.COLORS['bg_card'])
-            checkbox.pack(anchor="w", padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['xs'])
+            cb = ttk.Checkbutton(container_frame, text=option, 
+                               variable=self.cdm_vars[option])
+            cb.pack(side="left", anchor="w")
             
-            # Bind right-click context menu to each checkbox
-            checkbox.bind("<Button-3>", lambda event, ep=option: self.show_cdm_context_menu(event, ep))
+            # Add right-click binding to both frame and checkbox
+            for widget in [container_frame, cb]:
+                widget.bind("<Button-3>", 
+                          lambda e, opt=option: self.show_cdm_context_menu(e, opt))
 
-
-    # Old create_ui_widgets removed - using create_modern_ui_widgets instead
-
-    def create_modern_alerts_widgets(self):
-        """Creates modern alerts interface with Treeview table"""
-        # Create fetch alerts button
-        self.fetch_alerts_button = ModernComponents.create_modern_button(
-            self.alerts_content, "Fetch Alerts", 'primary', self.fetch_alerts
-        )
-        self.fetch_alerts_button.pack(pady=ModernStyle.SPACING['xs'], padx=ModernStyle.SPACING['sm'], anchor="w")
-        ModernComponents.update_button_state(self.fetch_alerts_button, 'disabled')
-
-        # Create Treeview for alerts
-        self.alerts_tree = ttk.Treeview(self.alerts_content, 
-                                      columns=('category', 'stringId', 'severity', 'priority'),
-                                      show='headings', height=8)
-        
-        # Configure columns
-        self.alerts_tree.heading('category', text='Category')
-        self.alerts_tree.column('category', width=120)
-        
-        self.alerts_tree.heading('stringId', text='String ID')
-        self.alerts_tree.column('stringId', width=80, anchor='center')
-
-        self.alerts_tree.heading('severity', text='Severity')
-        self.alerts_tree.column('severity', width=80, anchor='center')
-
-        self.alerts_tree.heading('priority', text='Priority')
-        self.alerts_tree.column('priority', width=80, anchor='center')
-
-        # Add scrollbar
-        alerts_scrollbar = ttk.Scrollbar(self.alerts_content, orient='vertical', command=self.alerts_tree.yview)
-        self.alerts_tree.configure(yscrollcommand=alerts_scrollbar.set)
-        
-        # Pack treeview and scrollbar
-        self.alerts_tree.pack(side='left', fill='both', expand=True, padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['xs'])
-        alerts_scrollbar.pack(side='right', fill='y')
-        
-        # Initialize alert items dictionary
-        self.alert_items = {}
-        
-        self.alerts_tree.bind("<Button-3>", lambda e: self.show_alert_context_menu(e, self.alerts_tree, tk.Menu(self.frame, tearoff=0), self.alert_items, allow_acknowledge=True))
-
-    def create_modern_telemetry_widgets(self):
-        """Creates telemetry section widgets using base class implementation (same as old dune tab)"""
-        # Use the base class method to create standardized telemetry widget with full functionality
+    def create_telemetry_widgets(self):
+        """Creates telemetry section widgets using base class implementation"""
+        # Use the base class method to create standardized telemetry widget
         self.telemetry_update_button, self.telemetry_tree, self.telemetry_items = self.create_telemetry_widget(
-            self.telemetry_content,
+            self.quadrants["bottom_right"],
             self.fetch_telemetry
         )
-    
-    def _update_button_direct(self, button_name: str, text: str = None, state: str = None, style: str = None):
-        """
-        Direct button update method - simpler replacement for the complex system.
-        
-        Args:
-            button_name: Button attribute name (e.g., 'connect_button')
-            text: New button text
-            state: New button state ('normal', 'disabled')
-            style: Button style (ignored - kept for compatibility)
-        """
-        if hasattr(self, button_name):
-            button = getattr(self, button_name)
-            
-            # Update text if provided
-            if text is not None:
-                button.config(text=text)
-            
-            # Update state if provided
-            if state is not None:
-                ModernComponents.update_button_state(button, state)
 
     def fetch_alerts(self):
         """Initiates asynchronous fetch of alerts."""
-        ModernComponents.update_button_state(self.fetch_alerts_button, 'disabled')
-        self.fetch_alerts_button.config(text="Fetching...")
-        self.async_manager.run_async(self._fetch_alerts_async())
+        self.fetch_alerts_button.config(state="disabled", text="Fetching...")
+        self.queue_task(self._fetch_alerts_async)
 
-    async def _fetch_alerts_async(self):
+    def _fetch_alerts_async(self):
         """Asynchronous operation to fetch and display alerts."""
         print(f">     [Dune] Fetch Alerts button pressed")
         try:
@@ -560,24 +336,24 @@ class DuneTab(TabContent):
             self.root.after(0, lambda: self.alerts_tree.delete(*self.alerts_tree.get_children()))
             self.root.after(0, lambda: self.alert_items.clear())
 
-            # Use the DuneFetcher to get alerts (run in executor to avoid blocking)
-            alerts_data = await self.async_manager.run_in_executor(self.app.dune_fetcher.fetch_alerts)
+            # Use the DuneFetcher to get alerts
+            alerts_data = self.app.dune_fetcher.fetch_alerts()
             
             if not alerts_data:
-                self.root.after(0, lambda: self.notifications.show_info("No alerts found"))
+                self.root.after(0, lambda: self._show_notification("No alerts found", "blue"))
                 return
             
             # Display alerts using the base class method
             self.root.after(0, lambda: self.populate_alerts_tree(self.alerts_tree, self.alert_items, alerts_data))
-            self.root.after(0, lambda: self.notifications.show_success("Alerts fetched successfully"))
+            self.root.after(0, lambda: self._show_notification("Alerts fetched successfully", "green"))
             
         except Exception as error:
             error_msg = str(error)
-            self.root.after(0, lambda: self.notifications.show_error(
-                f"Failed to fetch alerts: {error_msg}"))
+            self.root.after(0, lambda: self._show_notification(
+                f"Failed to fetch alerts: {error_msg}", "red"))
         finally:
-            self.root.after(0, lambda: self._update_button_direct(
-                'fetch_alerts_button', text="Fetch Alerts", state="normal"))
+            self.root.after(0, lambda: self.fetch_alerts_button.config(
+                state="normal", text="Fetch Alerts"))
 
     def _get_telemetry_data(self):
         """Implementation of abstract method from parent class - fetches telemetry data"""
@@ -591,92 +367,97 @@ class DuneTab(TabContent):
             success, message = self.app.dune_fetcher.acknowledge_alert(alert_id)
             
             if success:
-                self.notifications.show_success(message)
+                self._show_notification(message, "green")
                 # Refresh alerts after acknowledgment
                 self.frame.after(1000, self.fetch_alerts)
                 return True
             else:
-                self.notifications.show_error(message)
+                self._show_notification(message, "red")
                 return False
                 
         except Exception as e:
-            self.notifications.show_error(f"Error acknowledging alert: {str(e)}")
+            self._show_notification(f"Error acknowledging alert: {str(e)}", "red")
             return False
 
     def fetch_telemetry(self):
         """Initiates asynchronous fetch of telemetry data."""
         print(f">     [Dune] Fetch Telemetry button pressed")
-        self.telemetry_update_button.config(state="disabled", text="Fetching...")  # Standard ttk.Button from base class
-        self.async_manager.run_async(self._fetch_telemetry_async())
+        self.telemetry_update_button.config(state="disabled", text="Fetching...")
+        self.queue_task(self._fetch_telemetry_async)
 
-    async def _fetch_telemetry_async(self):
+    def _fetch_telemetry_async(self):
         """Background operation to fetch and display telemetry"""
         try:
-            # Fetch telemetry data using executor to avoid blocking
-            events = await self.async_manager.run_in_executor(self._get_telemetry_data)
+            # Fetch telemetry data directly (already in background thread)
+            events = self._get_telemetry_data()
             
             if not events:
                 self.root.after(0, lambda: self.telemetry_tree.delete(*self.telemetry_tree.get_children()))
-                self.root.after(0, lambda: self.notifications.show_info("No telemetry data found"))
+                self.root.after(0, lambda: self._show_notification("No telemetry data found", "blue"))
             else:
                 # Display telemetry in the main thread with is_dune_format=True
                 self.root.after(0, lambda: self.populate_telemetry_tree(
                     self.telemetry_tree, self.telemetry_items, events, is_dune_format=True))
-                self.root.after(0, lambda: self.notifications.show_success(
-                    f"Successfully fetched {len(events)} telemetry events"))
+                self.root.after(0, lambda: self._show_notification(
+                    f"Successfully fetched {len(events)} telemetry events", "green"))
         except Exception as e:
             error_msg = str(e)  # Capture error message outside lambda
-            self.root.after(0, lambda: self.notifications.show_error(
-                f"Failed to fetch telemetry: {error_msg}"))
+            self.root.after(0, lambda: self._show_notification(
+                f"Failed to fetch telemetry: {error_msg}", "red"))
         finally:
             self.root.after(0, lambda: self.telemetry_update_button.config(
-                text="Update Telemetry", state="normal"))  # Standard ttk.Button from base class
+                state="normal", text="Update Telemetry"))
 
+    def _worker(self):
+        while True:
+            task, args = self.task_queue.get()
+            if task is None:
+                break  # Exit the loop if we receive a sentinel value
+            try:
+                task(*args)
+            except Exception as e:
+                print(f"Error in worker thread: {e}")
+            finally:
+                self.task_queue.task_done()
+
+    def queue_task(self, task, *args):
+        self.task_queue.put((task, args))
 
     def toggle_printer_connection(self):
         print(f">     [Dune] Connection button pressed. Current state: {'Connected' if self.is_connected else 'Disconnected'}")
         if not self.is_connected:
-            self.async_manager.run_async(self._connect_to_printer_async())
+            self.queue_task(self._connect_to_printer)
         else:
-            self.async_manager.run_async(self._disconnect_from_printer_async())
+            self.queue_task(self._disconnect_from_printer)
 
-    async def _connect_to_printer_async(self):
+    def _connect_to_printer(self):
         ip = self.ip
-        self.root.after(0, lambda: [
-            ModernComponents.update_button_state(self.connect_button, 'disabled'),
-            self.connect_button.config(text=CONNECTING)
-        ])
+        self.root.after(0, lambda: self.connect_button.config(state="disabled", text=CONNECTING))
         
         try:
             self.sock = socket.create_connection((ip, 80), timeout=2)
             self.is_connected = True
             self.root.after(0, lambda: [
-                ModernComponents.update_button_state(self.connect_button, 'normal'),
-                self.connect_button.config(text=DISCONNECT),
-                ModernComponents.update_button_state(self.capture_ui_button, 'normal'),
-                ModernComponents.update_button_state(self.continuous_ui_button, 'normal'),
-                ModernComponents.update_button_state(self.fetch_json_button, 'normal'),
-                ModernComponents.update_button_state(self.fetch_alerts_button, 'normal'),
-                self.telemetry_update_button.config(state="normal"),  # Standard ttk.Button from base class
-                # Colorize ECL button when connected
-                self._set_ecl_button_style('warning') if hasattr(self, 'ecl_menu_button') else None,
-                self.ews_menu_button.config(state="normal") if hasattr(self, 'ews_menu_button') else None,
-                self.commands_menu_button.config(state="normal") if hasattr(self, 'commands_menu_button') else None
+                self.connect_button.config(state="normal", text=DISCONNECT),
+                self.capture_ui_button.config(state="normal"),
+                self.continuous_ui_button.config(state="normal"),
+                self.fetch_json_button.config(state="normal"),
+                self.fetch_alerts_button.config(state="normal"),
+                self.telemetry_update_button.config(state="normal"),  # Enable update button
+                self.ecl_menu_button.config(state="normal"),  # Enable ECL menu button
+                self.ssh_menu_button.config(state="normal")  # Enable SSH menu button
             ])
-            self.root.after(0, lambda: self.notifications.show_success("Connected to printer"))
+            self.root.after(0, lambda: self._show_notification("Connected to printer", "green"))
         except Exception as e:
             error_message = str(e)
-            self.root.after(0, lambda: self._update_button_direct('connect_button', text=CONNECT, state="normal", style="success"))
+            self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
             self.is_connected = False
             self.sock = None
             print(f"Connection to printer failed: {error_message}")
-            self.root.after(0, lambda: self.notifications.show_error(f"Failed to connect to printer: {error_message}"))
+            self.root.after(0, lambda: self._show_notification(f"Failed to connect to printer: {error_message}", "red"))
 
-    async def _disconnect_from_printer_async(self):
-        self.root.after(0, lambda: [
-            ModernComponents.update_button_state(self.connect_button, 'disabled'),
-            self.connect_button.config(text=DISCONNECTING)
-        ])
+    def _disconnect_from_printer(self):
+        self.root.after(0, lambda: self.connect_button.config(state="disabled", text=DISCONNECTING))
         
         try:
             # Disconnect VNC following PrinterUIApp pattern
@@ -698,15 +479,14 @@ class DuneTab(TabContent):
 
             # Update UI elements
             self.root.after(0, lambda: [
-                self._update_button_direct('connect_button', text=CONNECT, state="normal", style="success"),
-                self._update_button_direct('capture_ui_button', state="disabled"),
-                self._update_button_direct('continuous_ui_button', state="disabled"),
-                self._update_button_direct('fetch_json_button', state="disabled"),
-                self._update_button_direct('fetch_alerts_button', state="disabled"),
-                self.telemetry_update_button.config(state="disabled"),  # Standard ttk.Button from base class
-                (self._set_ecl_button_style('secondary') or ModernComponents.update_button_state(self.ecl_menu_button, 'disabled')) if hasattr(self, 'ecl_menu_button') else None,
-                self.ews_menu_button.config(state="disabled") if hasattr(self, 'ews_menu_button') else None,
-                self.commands_menu_button.config(state="disabled") if hasattr(self, 'commands_menu_button') else None
+                self.connect_button.config(state="normal", text=CONNECT),
+                self.capture_ui_button.config(state="disabled"),
+                self.continuous_ui_button.config(state="disabled"),
+                self.fetch_json_button.config(state="disabled"),
+                self.fetch_alerts_button.config(state="disabled"),
+                self.telemetry_update_button.config(state="disabled"),
+                self.ecl_menu_button.config(state="disabled"),
+                self.ssh_menu_button.config(state="disabled")
             ])
 
             # Clear UI image
@@ -717,7 +497,7 @@ class DuneTab(TabContent):
             self.stop_view_ui()
 
             # Show success notification
-            self.root.after(0, lambda: self.notifications.show_success("Disconnected from printer"))
+            self.root.after(0, lambda: self._show_notification("Disconnected from printer", "green"))
 
             # Clear telemetry window if it exists
             if self.telemetry_window is not None and hasattr(self.telemetry_window, 'file_listbox'):
@@ -726,14 +506,14 @@ class DuneTab(TabContent):
         except Exception as e:
             print(f"An error occurred while disconnecting: {e}")
             # Show error notification
-            self.root.after(0, lambda: self.notifications.show_error(f"Disconnection error: {str(e)}"))
+            self.root.after(0, lambda: self._show_notification(f"Disconnection error: {str(e)}", "red"))
             # Ensure connection state is reset even on error
             self.is_connected = False
             self.is_viewing_ui = False
             self.sock = None
         finally:
             # Always ensure button is re-enabled and shows correct state
-            self.root.after(0, lambda: self._update_button_direct('connect_button', text=CONNECT, state="normal", style="success"))
+            self.root.after(0, lambda: self.connect_button.config(state="normal", text=CONNECT))
 
         # Clean up telemetry window
         if self.telemetry_window and self.telemetry_window.winfo_exists():
@@ -747,7 +527,7 @@ class DuneTab(TabContent):
         
         if not selected_endpoints:
             print(">     [Dune] No endpoints selected. Save CDM action aborted.")
-            self.notifications.show_error("No endpoints selected. Please select at least one.")
+            self._show_notification("No endpoints selected. Please select at least one.", "red")
             return
 
         print(f">     [Dune] Selected endpoints: {selected_endpoints}")
@@ -756,18 +536,17 @@ class DuneTab(TabContent):
         step_prefix = self.get_step_prefix()
         
         print(f">     [Dune] Starting CDM capture with prefix: {step_prefix}")
-        self._update_button_direct('fetch_json_button', state="disabled")
-        self.notifications.show_info("Capturing CDM...")
+        self.fetch_json_button.config(state="disabled")
+        self._show_notification("Capturing CDM...", "blue")
         
         # Queue the CDM save task
-        self.async_manager.run_async(self._save_cdm_async(selected_endpoints))
+        self.queue_task(self._save_cdm_async, selected_endpoints)
 
-    async def _save_cdm_async(self, selected_endpoints):
+    def _save_cdm_async(self, selected_endpoints):
         """Asynchronous function to save CDM data"""
         try:
-            # Fetch data from endpoints using executor
-            data = await self.async_manager.run_in_executor(
-                self.app.dune_fetcher.fetch_data, selected_endpoints)
+            # Fetch data from endpoints
+            data = self.app.dune_fetcher.fetch_data(selected_endpoints)
             
             # Save the data using the base class save methods
             save_results = []
@@ -775,11 +554,11 @@ class DuneTab(TabContent):
                 # Skip error responses
                 if content.startswith("Error:"):
                     if "401" in content or "Unauthorized" in content:
-                        self.root.after(0, lambda: self.notifications.show_error(
-                            "Error: Authentication required - Send Auth command"))
+                        self.root.after(0, lambda: self._show_notification(
+                            "Error: Authentication required - Send Auth command", "red"))
                     else:
-                        self.root.after(0, lambda: self.notifications.show_error(
-                            f"Error fetching {endpoint}: {content}"))
+                        self.root.after(0, lambda: self._show_notification(
+                            f"Error fetching {endpoint}: {content}", "red"))
                     save_results.append((False, endpoint, None))
                     continue
                     
@@ -792,7 +571,7 @@ class DuneTab(TabContent):
                     
                 # Save with CDM prefix
                 filename = f"CDM {endpoint_name}"
-                success, filepath = self.file_manager.save_json_data(content, filename)
+                success, filepath = self.save_json_data(content, filename)
                 save_results.append((success, endpoint, filepath))
             
             # Notify about results
@@ -800,45 +579,22 @@ class DuneTab(TabContent):
             success_count = sum(1 for res in save_results if res[0])
             
             if success_count == 0:
-                self.root.after(0, lambda: self.notifications.show_error(
-                    "Failed to save any CDM data"))
+                self.root.after(0, lambda: self._show_notification(
+                    "Failed to save any CDM data", "red"))
             elif success_count < total:
-                self.root.after(0, lambda: self.notifications.show_warning(
-                    f"Partially saved CDM data ({success_count}/{total} files)"))
+                self.root.after(0, lambda: self._show_notification(
+                    f"Partially saved CDM data ({success_count}/{total} files)", "yellow"))
             else:
-                self.root.after(0, lambda: self.notifications.show_success(
-                    "CDM data saved successfully"))
+                self.root.after(0, lambda: self._show_notification(
+                    "CDM data saved successfully", "green"))
             
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda: self.notifications.show_error(
-                f"Error in CDM capture: {error_msg}"))
+            self.root.after(0, lambda: self._show_notification(
+                f"Error in CDM capture: {error_msg}", "red"))
         finally:
-            self.root.after(0, lambda: self._update_button_direct('fetch_json_button', state="normal"))
+            self.root.after(0, lambda: self.fetch_json_button.config(state="normal"))
 
-    def _open_ecl_menu(self):
-        """Open the ECL dropdown menu anchored to the ECL button."""
-        try:
-            x = self.ecl_menu_button.winfo_rootx()
-            y = self.ecl_menu_button.winfo_rooty() + self.ecl_menu_button.winfo_height()
-            self.ecl_menu.tk_popup(x, y)
-        finally:
-            self.ecl_menu.grab_release()
-
-    def _set_ecl_button_style(self, style: str):
-        """Update ECL button style (e.g., 'secondary' or 'warning') to reflect connection state."""
-        if hasattr(self, 'ecl_menu_button') and hasattr(self.ecl_menu_button, '_style_config'):
-            # Swap the style config by recreating style reference
-            try:
-                # Update stored style and recolor the button to match enabled state
-                self.ecl_button_style = style
-                cfg = ModernStyle.BUTTON_STYLES.get(style, ModernStyle.BUTTON_STYLES['secondary'])
-                # Mirror update_button_state('normal') but with new style colors
-                self.ecl_menu_button._style_config = cfg
-                ModernComponents.update_button_state(self.ecl_menu_button, 'normal')
-            except Exception:
-                pass
-        
     def queue_save_fpui_image(self, base_name="UI", auto_save=False):
         """
         Queue a task to save FPUI image with optional auto-save functionality.
@@ -849,30 +605,30 @@ class DuneTab(TabContent):
         print(f">     [Dune] Capture UI button pressed")
         if auto_save:
             # For auto-save, generate filename and save directly
-            self.async_manager.run_async(self._auto_save_fpui_image_async(base_name))
+            self.queue_task(self._auto_save_fpui_image, base_name)
         else:
             # For manual save, ask for filename
-            self.async_manager.run_async(self._ask_for_filename_async(base_name))
+            self.queue_task(self._ask_for_filename, base_name)
             
-    async def _auto_save_fpui_image_async(self, base_name):
+    def _auto_save_fpui_image(self, base_name):
         """Automatically generate a filename and save the UI image without prompting"""
         try:
             # Generate safe filepath with step prefix
-            filepath, filename = self.file_manager.get_safe_filepath(
+            filepath, filename = self.get_safe_filepath(
                 self.directory,
                 base_name,
                 ".png",
-                step_number=self.get_current_step()
+                step_number=self.step_var.get()
             )
             
             # Use the existing _continue_save_fpui_image method 
             # which already handles the connection and saving
-            self.async_manager.run_async(self._continue_save_fpui_image_async(filepath))
+            self._continue_save_fpui_image(filepath)
             
         except Exception as e:
-            self.notifications.show_error(f"Failed to auto-save UI: {str(e)}")
+            self._show_notification(f"Failed to auto-save UI: {str(e)}", "red")
 
-    async def _ask_for_filename_async(self, base_name):
+    def _ask_for_filename(self, base_name):
         """Handles file saving with a proper save dialog."""
         # Modified base name
         base_name = self.get_step_prefix() + base_name
@@ -885,13 +641,13 @@ class DuneTab(TabContent):
             filetypes=[("PNG files", "*.png")]
         )
         if not full_path:
-            self.notifications.show_info("Screenshot capture cancelled")
+            self._show_notification("Screenshot capture cancelled", "blue")
             return
         
         # Continue with the screenshot capture in the background thread
-        self.async_manager.run_async(self._continue_save_fpui_image_async(full_path))
+        self.queue_task(self._continue_save_fpui_image, full_path)
 
-    async def _continue_save_fpui_image_async(self, full_path):
+    def _continue_save_fpui_image(self, full_path):
         """Save UI screenshot to file"""
         directory = os.path.dirname(full_path)
         filename = os.path.basename(full_path)
@@ -899,21 +655,28 @@ class DuneTab(TabContent):
         # Follow PrinterUIApp connection pattern
         if not self.vnc_connection.connected:
             if not self.vnc_connection.connect(self.ip, rotation=self.rotation_var.get()):
-                self.notifications.show_error("Failed to connect to VNC")
+                self._show_notification("Failed to connect to VNC", "red", duration=10000)
                 return
             
         captured = self.vnc_connection.save_ui(directory, filename)
         if not captured:
-            self.notifications.show_error("Failed to capture UI")
+            self._show_notification("Failed to capture UI", "red", duration=10000)
             return
             
-        self.notifications.show_success("Screenshot Captured")
+        self._show_notification("Screenshot Captured", "green", duration=10000)
 
-    def _on_ip_change_hook(self, new_ip):
-        """DuneTab-specific IP change behavior."""
+    def on_ip_change(self, new_ip):
+        self.ip = new_ip
+        print(f">     [Dune] IP address changed to: {self.ip}")
         if self.is_connected:
             # Disconnect from the current printer
             self._disconnect_from_printer()
+
+    def on_directory_change(self, new_directory):
+        """Update the stored directory when it changes"""
+        self.directory = new_directory
+        print(f">     [Dune] Directory changed to: {self.directory}")
+        # Add any additional actions you want to perform when the directory changes
 
     def toggle_view_ui(self):
         print(f">     [Dune] View UI button pressed. Current state: {'Viewing' if self.is_viewing_ui else 'Not viewing'}")
@@ -928,7 +691,7 @@ class DuneTab(TabContent):
         print(f">     [Dune] Starting UI view")
         self.is_viewing_ui = True
         
-        self._update_button_direct('continuous_ui_button', text=DISCONNECT_UI, style="secondary")
+        self.continuous_ui_button.config(text=DISCONNECT_UI)
         self.update_ui()
 
     def update_ui(self, callback=None):
@@ -939,17 +702,17 @@ class DuneTab(TabContent):
             self.vnc_connection.ip = self.ip
             self.vnc_connection.rotation = self.rotation_var.get()
             if not self.vnc_connection.connect(self.ip, self.rotation_var.get()):
-                self.notifications.show_error("Failed to connect to VNC")
+                self._show_notification("Failed to connect to VNC", "red")
                 self.stop_view_ui()
                 return
             else:
-                self.notifications.show_success(f"Connected to VNC with rotation {self.rotation_var.get()}°")
+                self._show_notification(f"Connected to VNC with rotation {self.rotation_var.get()}°", "green")
                 self._bind_click_events()
 
         # Follow PrinterUIApp viewing pattern
         if self.is_viewing_ui and not self.vnc_connection.viewing:
             if not self.vnc_connection.start_viewing():
-                self.notifications.show_error("Failed to start viewing")
+                self._show_notification("Failed to start viewing", "red")
                 self.stop_view_ui()
                 return
 
@@ -971,27 +734,12 @@ class DuneTab(TabContent):
         image = self.vnc_connection.get_current_frame()
         if image:
             try:
-                # Resize image to fit the available container size (dynamic, larger than previous fixed 700x500)
+                # Resize image to fit display like PrinterUIApp
                 original_width, original_height = image.size
-                try:
-                    container_w = self.image_container.winfo_width()
-                    container_h = self.image_container.winfo_height()
-                except Exception:
-                    container_w, container_h = 0, 0
-                
-                # Fallbacks before first layout pass
-                if not container_w or container_w < 100:
-                    container_w = 1000
-                if not container_h or container_h < 100:
-                    container_h = 650
-                
-                padding_w = 2 * ModernStyle.SPACING['lg'] if hasattr(ModernStyle, 'SPACING') else 20
-                padding_h = 2 * ModernStyle.SPACING['lg'] if hasattr(ModernStyle, 'SPACING') else 20
-                max_width = max(300, container_w - padding_w)
-                max_height = max(250, container_h - padding_h)
-                
+                max_width, max_height = 700, 500
                 scale = min(max_width / original_width, max_height / original_height)
-                if scale < 1.0:
+                
+                if scale < 1:
                     new_width = int(original_width * scale)
                     new_height = int(original_height * scale)
                     image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
@@ -1028,7 +776,7 @@ class DuneTab(TabContent):
     def stop_view_ui(self):
         print(f">     [Dune] Stopping UI view")
         self.is_viewing_ui = False
-        self._update_button_direct('continuous_ui_button', text=CONNECT_UI, style="primary")
+        self.continuous_ui_button.config(text=CONNECT_UI)
         
         # Stop VNC viewing like PrinterUIApp
         if self.vnc_connection.viewing:
@@ -1051,7 +799,7 @@ class DuneTab(TabContent):
         if self.vnc_connection.connected:
             self.vnc_connection.disconnect()
         
-        self.notifications.show_success("Disconnected from VNC")
+        self._show_notification("Disconnected from VNC", "green")
 
     def stop_listeners(self):
         """Stop the remote control panel and clean up resources"""
@@ -1069,13 +817,18 @@ class DuneTab(TabContent):
                 print("Disconnecting VNC...")
                 self.vnc_connection.disconnect()
         
+        # Stop worker thread (existing code)
+        self.task_queue.put((None, None))
+        self.worker_thread.join(timeout=5)
+        if self.worker_thread.is_alive():
+            print("Warning: Worker thread did not stop within the timeout period")
 
     def handle_alert_action(self, alert_id, action_value, action_link):
         """Initiates asynchronous alert action."""
         print(f">     [Dune] Alert action button pressed - Alert ID: {alert_id}, Action: {action_value}")
-        self.async_manager.run_async(self._handle_alert_action_async(alert_id, action_value, action_link))
+        self.queue_task(self._handle_alert_action_async, alert_id, action_value, action_link)
 
-    async def _handle_alert_action_async(self, alert_id, action_value, action_link):
+    def _handle_alert_action_async(self, alert_id, action_value, action_link):
         """
         Handles button clicks for alert actions asynchronously.
         
@@ -1094,16 +847,16 @@ class DuneTab(TabContent):
             
             # Check if the request was successful
             if response.status_code == 200:
-                self.root.after(0, lambda: self.notifications.show_success(
-                    f"Action '{action_value}' successfully sent for alert {alert_id}"))
+                self.root.after(0, lambda: self._show_notification(
+                    f"Action '{action_value}' successfully sent for alert {alert_id}", "green"))
                 self._refresh_alerts_after_action()
             else:
-                self.root.after(0, lambda: self.notifications.show_error(
-                    f"Failed to send action: Server returned status {response.status_code}"))
+                self.root.after(0, lambda: self._show_notification(
+                    f"Failed to send action: Server returned status {response.status_code}", "red"))
             
         except Exception as e:
-            self.root.after(0, lambda: self.notifications.show_error(
-                f"Failed to send action: {str(e)}"))
+            self.root.after(0, lambda: self._show_notification(
+                f"Failed to send action: {str(e)}", "red"))
 
     def clear_cdm_checkboxes(self):
         """Clears all selected CDM endpoints."""
@@ -1126,7 +879,7 @@ class DuneTab(TabContent):
         """
         try:
             # Import here to avoid circular imports
-            from src.tools.snip_tool import CaptureManager
+            from snip_tool import CaptureManager
             
             # Create capture manager with config manager support
             capture_manager = CaptureManager(self.directory, config_manager=self.app.config_manager)
@@ -1143,20 +896,20 @@ class DuneTab(TabContent):
                 capture_manager._copy_to_clipboard(image)
                 
                 # Save using TabContent's mechanism
-                success, filepath = self.file_manager.save_image_data(image, default_filename)
+                success, filepath = self.save_image_data(image, default_filename)
                 
                 # Show result notification
                 if success:
                     filename = os.path.basename(filepath)
-                    self.notifications.show_success(f"Screenshot saved: {filename} (Region: {region_name})")
+                    self._show_notification(f"Screenshot saved: {filename} (Region: {region_name})", "green")
                 else:
-                    self.notifications.show_error("Failed to save screenshot")
+                    self._show_notification("Failed to save screenshot", "red")
                 
         except Exception as e:
             # Handle any unexpected errors
             error_msg = f"Failed to capture screenshot: {str(e)}"
             print(f"> [DuneTab.start_snip] {error_msg}")
-            self.notifications.show_error(error_msg)
+            self._show_notification(error_msg, "red")
 
     def validate_step_input(self, value):
         """Validate that the step entry only contains numbers"""
@@ -1170,18 +923,25 @@ class DuneTab(TabContent):
 
     def _handle_step_focus_out(self, event):
         """Handle empty input when focus leaves the entry"""
-        # This is now handled by StepManager
+        if self.step_var.get().strip() == "":
+            self.step_var.set("1")
 
     def update_filename_prefix(self, delta):
         """Update the current step number with bounds checking"""
-        self.update_step_number(delta)
+        try:
+            current = int(self.step_var.get())
+            new_value = max(1, current + delta)
+            self.step_var.set(str(new_value))
+        except ValueError:
+            pass
 
     def get_step_prefix(self):
-        """Returns the current step prefix if >= 1 using StepManager"""
-        if hasattr(self, 'step_manager') and self.step_manager:
-            return self.step_manager.get_step_prefix()
-        step = self.get_current_step()
-        return f"{step}. " if step >= 1 else ""
+        """Returns the current step prefix if >= 1"""
+        try:
+            current_step = int(self.step_var.get())
+            return f"{current_step}. " if current_step >= 1 else ""
+        except ValueError:
+            return ""
 
     def _handle_telemetry_update(self):
         """Ensure telemetry window exists before updating"""
@@ -1197,9 +957,8 @@ class DuneTab(TabContent):
             if not self.vnc_connection.connected:
                 # Set IP before connecting
                 self.vnc_connection.ip = self.ip
-                # SSH does not depend on UI rotation; default to 0 if rotation is not configured
-                if not self.vnc_connection.connect(self.ip, rotation=0):
-                    self.notifications.show_error("SSH connection failed")
+                if not self.vnc_connection.connect(self.ip, self.rotation_var.get()):
+                    self._show_notification("SSH connection failed", "red")
                     return
 
             # Access SSH client from VNC connection like PrinterUIApp
@@ -1208,18 +967,22 @@ class DuneTab(TabContent):
             
             if exit_status == 0:
                 output = stdout.read().decode()
-                self.notifications.show_success(f"Command executed successfully")
+                self._show_notification(f"Command executed successfully", "green")
                 print(f"SSH Command Output:\n{output}")
             else:
                 error = stderr.read().decode()
-                self.notifications.show_error(f"Command failed: {error}")
+                self._show_notification(f"Command failed: {error}", "red")
             
         except Exception as e:
-            self.notifications.show_error(f"SSH Error: {str(e)}")
+            self._show_notification(f"SSH Error: {str(e)}", "red")
 
     def _save_step_to_config(self, *args):
         """Save current Dune step number to configuration"""
-        # This is now handled by StepManager
+        try:
+            step_num = int(self.step_var.get())
+            self.app.config_manager.set("dune_step_number", step_num)
+        except ValueError:
+            pass
 
     def _refresh_alerts_after_action(self):
         """Implementation of abstract method from base class"""
@@ -1276,7 +1039,7 @@ class DuneTab(TabContent):
         """Handles UI capture for selected alert with formatted filename"""
         selected = tree.selection()
         if not selected:
-            self.notifications.show_error("No alert selected")
+            self._show_notification("No alert selected", "red")
             return
             
         try:
@@ -1287,16 +1050,16 @@ class DuneTab(TabContent):
             
             # Format: step_num. UI string_id category
             base_name = f"UI_{string_id}_{category}"
-            self.async_manager.run_async(self._save_ui_for_alert_async(base_name))
-            self.notifications.show_info("Starting UI capture...")
+            self.queue_task(self._save_ui_for_alert, base_name)
+            self._show_notification("Starting UI capture...", "blue")
             
         except Exception as e:
-            self.notifications.show_error(f"Capture failed: {str(e)}")
+            self._show_notification(f"Capture failed: {str(e)}", "red")
 
-    async def _save_ui_for_alert_async(self, base_name):
+    def _save_ui_for_alert(self, base_name):
         try:
-            filepath, filename = self.file_manager.get_safe_filepath(
-                self.directory, base_name, ".png", step_number=self.get_current_step()
+            filepath, filename = self.get_safe_filepath(
+                self.directory, base_name, ".png", step_number=self.step_var.get()
             )
             
             if not self.vnc_connection.connected:
@@ -1309,11 +1072,11 @@ class DuneTab(TabContent):
             if not self.vnc_connection.save_ui(os.path.dirname(filepath), os.path.basename(filepath)):
                 raise RuntimeError("UI capture failed")
 
-            self.root.after(0, lambda: self.notifications.show_success(f"UI captured: {filename}"))
+            self.root.after(0, lambda: self._show_notification(f"UI captured: {filename}", "green", 5000))
             
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda msg=error_msg: self.notifications.show_error(f"Capture failed: {msg}"))
+            self.root.after(0, lambda msg=error_msg: self._show_notification(f"Capture failed: {msg}", "red", 5000))
 
     def show_cdm_context_menu(self, event, endpoint: str):
         """Show context menu for CDM items"""
@@ -1328,7 +1091,7 @@ class DuneTab(TabContent):
             data = self.app.dune_fetcher.fetch_data([endpoint])[endpoint]
             self._show_json_viewer(endpoint, data)
         except Exception as e:
-            self.notifications.show_error(f"Failed to fetch {endpoint}: {str(e)}")
+            self._show_notification(f"Failed to fetch {endpoint}: {str(e)}", "red")
 
     def _show_json_viewer(self, endpoint: str, json_data: str):
         """Create a window to display JSON data with formatting"""
@@ -1391,7 +1154,7 @@ class DuneTab(TabContent):
             
         except Exception as e:
             print(f"Error in _show_json_viewer: {str(e)}")
-            self.notifications.show_error(f"Error displaying JSON: {str(e)}")
+            self._show_notification(f"Error displaying JSON: {str(e)}", "red")
 
     def _refresh_cdm_data(self, endpoint: str, text_widget: Text):
         """Refresh CDM data in the viewer window"""
@@ -1416,10 +1179,10 @@ class DuneTab(TabContent):
             
             # Add status message
             print(f"DEBUG: Refreshed CDM data for {endpoint}")
-            self.notifications.show_success(f"Refreshed CDM data for {os.path.basename(endpoint)}")
+            self._show_notification(f"Refreshed CDM data for {os.path.basename(endpoint)}", "green")
         except Exception as e:
             print(f"DEBUG: Error refreshing CDM data: {str(e)}")
-            self.notifications.show_error(f"Error refreshing data: {str(e)}")
+            self._show_notification(f"Error refreshing data: {str(e)}", "red")
 
     def save_viewed_cdm(self, endpoint: str, json_data: str):
         """Save currently viewed CDM data to a file"""
@@ -1433,15 +1196,15 @@ class DuneTab(TabContent):
             # Save with CDM prefix
             filename = f"CDM {endpoint_name}"
             
-            success, filepath = self.file_manager.save_json_data(json_data, filename)
+            success, filepath = self.save_json_data(json_data, filename)
             
             if success:
-                self.notifications.show_success(f"Saved CDM data to {os.path.basename(filepath)}")
+                self._show_notification(f"Saved CDM data to {os.path.basename(filepath)}", "green")
             else:
-                self.notifications.show_error("Failed to save CDM data")
+                self._show_notification("Failed to save CDM data", "red")
             
         except Exception as e:
-            self.notifications.show_error(f"Error saving CDM data: {str(e)}")
+            self._show_notification(f"Error saving CDM data: {str(e)}", "red")
 
     def show_rotation_menu(self, event):
         """Display rotation menu on right-click of the View UI button."""
@@ -1451,7 +1214,7 @@ class DuneTab(TabContent):
     def _on_mouse_down(self, event):
         """Handle mouse button press"""
         if not self.vnc_connection.connected or not self.vnc_connection.viewing:
-            self.notifications.show_error("Not connected to VNC - cannot send click")
+            self._show_notification("Not connected to VNC - cannot send click", "red")
             return
             
         self.drag_start_x = event.x
@@ -1480,7 +1243,7 @@ class DuneTab(TabContent):
             
             self.vnc_connection.mouse_down(vnc_x, vnc_y)
         except Exception as e:
-            self.notifications.show_error(f"Mouse down error: {str(e)}")
+            self._show_notification(f"Mouse down error: {str(e)}", "red")
             
     def _on_mouse_drag(self, event):
         """Handle mouse drag"""
@@ -1518,7 +1281,7 @@ class DuneTab(TabContent):
             
             self.vnc_connection.mouse_move(vnc_x, vnc_y)
         except Exception as e:
-            self.notifications.show_error(f"Mouse drag error: {str(e)}")
+            self._show_notification(f"Mouse drag error: {str(e)}", "red")
             
     def _on_mouse_up(self, event):
         """Handle mouse button release"""
@@ -1557,7 +1320,7 @@ class DuneTab(TabContent):
             self.is_dragging = False
             
         except Exception as e:
-            self.notifications.show_error(f"Mouse up error: {str(e)}")
+            self._show_notification(f"Mouse up error: {str(e)}", "red")
             
     def _on_mouse_wheel(self, event):
         """Handle mouse wheel scrolling"""
@@ -1614,12 +1377,12 @@ class DuneTab(TabContent):
             self.vnc_connection.mouse_up(vnc_x, new_y)
                     
         except Exception as e:
-            self.notifications.show_error(f"Mouse wheel error: {str(e)}")
+            self._show_notification(f"Mouse wheel error: {str(e)}", "red")
             
     def _on_image_click(self, event):
         """Handle right clicks following PrinterUIApp mouse pattern"""
         if not self.vnc_connection.connected or not self.vnc_connection.viewing:
-            self.notifications.show_error("Not connected to VNC - cannot send click")
+            self._show_notification("Not connected to VNC - cannot send click", "red")
             return
         
         if not hasattr(self, '_image_scale_info') or self._image_scale_info is None:
@@ -1632,7 +1395,7 @@ class DuneTab(TabContent):
             screen_resolution = self.vnc_connection.screen_resolution
             
             if not screen_resolution:
-                self.notifications.show_error("Screen resolution not available")
+                self._show_notification("Screen resolution not available", "red")
                 return
                 
             screen_width, screen_height = screen_resolution
@@ -1668,12 +1431,12 @@ class DuneTab(TabContent):
                 
                 if success:
                     click_type = "Left" if button == 1 else "Right" if button == 3 else "Middle"
-                    self.notifications.show_success(f"{click_type} click sent to ({vnc_x}, {vnc_y})")
+                    self._show_notification(f"{click_type} click sent to ({vnc_x}, {vnc_y})", "green", 2000)
                 else:
-                    self.notifications.show_error("Failed to send click")
+                    self._show_notification("Failed to send click", "red")
             
         except Exception as e:
-            self.notifications.show_error(f"Click error: {str(e)}")
+            self._show_notification(f"Click error: {str(e)}", "red")
 
     def _bind_click_events(self):
         """Bind click and drag events to the image label"""
