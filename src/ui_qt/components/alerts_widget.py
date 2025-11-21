@@ -31,6 +31,7 @@ class AlertsWidget(QWidget):
         # --- Alerts Table (TreeWidget) ---
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Category", "String ID", "Severity", "Priority"])
+        self.tree.header().setVisible(True) # Ensure header is visible
         
         # Column sizing
         header = self.tree.header()
@@ -75,9 +76,9 @@ class AlertsWidget(QWidget):
 
         for alert in sorted_alerts:
             # Extract display values
-            category = alert.get('category', 'N/A')
-            string_id = alert.get('stringId', 'N/A')
-            severity = alert.get('severity', 'N/A')
+            category = str(alert.get('category', 'N/A'))
+            string_id = str(alert.get('stringId', 'N/A'))
+            severity = str(alert.get('severity', 'N/A'))
             priority = str(alert.get('priority', 'N/A'))
             
             # Create Tree Item

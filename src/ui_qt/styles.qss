@@ -47,9 +47,6 @@ QPushButton#PrimaryButton:hover {
 }
 
 /* Navigation Tab Buttons */
-/* Base style is handled by QPushButton above */
-
-/* Active Tab Style using the custom property */
 QPushButton[active="true"] {
     background-color: #007ACC; /* Highlight Blue */
     font-weight: bold;
@@ -71,4 +68,62 @@ QLineEdit {
 
 QLineEdit:focus {
     border: 1px solid #007ACC;
+}
+
+/* --- Tree Widget (Tables) --- */
+QTreeWidget {
+    background-color: #252526;
+    border: 1px solid #333333;
+    border-radius: 5px;
+    color: #CCCCCC;
+    alternate-background-color: #2D2D2D;
+}
+
+/* Header Styling */
+QHeaderView::section {
+    background-color: #333333;
+    color: #FFFFFF;
+    padding: 5px;
+    border: none;
+    border-right: 1px solid #444444;
+    border-bottom: 1px solid #444444;
+    font-weight: bold;
+}
+
+/* Item Styling */
+QTreeWidget::item {
+    padding: 5px;
+    border-bottom: 1px solid #2D2D2D;
+}
+
+QTreeWidget::item:hover {
+    background-color: #3C3C3C;
+}
+
+QTreeWidget::item:selected {
+    background-color: #007ACC;
+    color: #FFFFFF;
+}
+
+/* Scrollbars */
+QScrollBar:vertical {
+    border: none;
+    background: #1E1E1E;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #444444;
+    min-height: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
 }
