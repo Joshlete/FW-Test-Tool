@@ -24,7 +24,7 @@ class NavBar(QWidget):
         self.button_group.idClicked.connect(self._on_button_clicked)
         
         # Define the tabs we want
-        self.tabs = ["Dune", "Sirius", "Trillium", "Tools", "Settings"]
+        self.tabs = ["Dune", "Sirius", "Ares", "Tools", "Settings"]
         
         # Create a button for each tab
         for i, name in enumerate(self.tabs):
@@ -55,4 +55,3 @@ class NavBar(QWidget):
         
         # Tell the world (MainWindow) that the tab changed
         self.tab_changed.emit(button_id)
-
