@@ -1,0 +1,74 @@
+/* styles.qss */
+
+/* Main Window Background */
+QMainWindow {
+    background-color: #1E1E1E;
+}
+
+/* Default Widget Styling */
+QWidget {
+    color: #FFFFFF;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 14px;
+    background-color: #1E1E1E;
+}
+
+/* Card-like Container */
+.QFrame#Card {
+    background-color: #252526;
+    border-radius: 10px;
+    border: 1px solid #333333;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #3C3C3C;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 16px;
+}
+
+QPushButton:hover {
+    background-color: #4C4C4C;
+}
+
+QPushButton:pressed {
+    background-color: #2C2C2C;
+}
+
+/* Primary Button (Blue) */
+QPushButton#PrimaryButton {
+    background-color: #007ACC;
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: #1E90FF;
+}
+
+/* Navigation Tab Buttons */
+/* Base style is handled by QPushButton above */
+
+/* Active Tab Style using the custom property */
+QPushButton[active="true"] {
+    background-color: #007ACC; /* Highlight Blue */
+    font-weight: bold;
+}
+
+/* Labels */
+QLabel {
+    color: #CCCCCC;
+}
+
+/* Line Edit (Input Fields) */
+QLineEdit {
+    background-color: #3C3C3C;
+    color: #FFFFFF;
+    border: 1px solid #555555;
+    border-radius: 5px;
+    padding: 5px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #007ACC;
+}
