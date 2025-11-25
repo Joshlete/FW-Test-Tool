@@ -11,14 +11,12 @@ class ConfigManager:
         # Get the directory where main.py/main_qt.py is located
         base_dir = os.getcwd() 
         self.filepath = os.path.join(base_dir, filename)
-        print(f"Config file path: {self.filepath}")
         self._config = {}
         self.load()
 
     def load(self):
         """Load configuration from JSON file."""
         if os.path.exists(self.filepath):
-            print(f"Loading config from {self.filepath}")
             try:
                 with open(self.filepath, 'r') as f:
                     self._config = json.load(f)

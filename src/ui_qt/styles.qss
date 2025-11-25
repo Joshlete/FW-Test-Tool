@@ -194,6 +194,134 @@ QTreeWidget::item:selected {
     color: #FFFFFF;
 }
 
+/* --- CDM Controls Styling --- */
+
+/* Section Headers */
+QLabel#SectionHeader {
+    color: #666;
+    font-weight: bold;
+    font-size: 11px;
+    text-transform: uppercase;
+    padding-top: 6px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #333;
+}
+
+/* Checkbox Tiles */
+QCheckBox#TileCheckbox {
+    spacing: 8px;
+    color: #DDD;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background-color: transparent; /* Remove bg from checkbox itself */
+    border: none;
+}
+
+/* Container Row (The clickable area) */
+/* We need to target the row_widget, but it doesn't have an ID or class yet.
+   We'll add one in the python code. */
+QWidget#CDMRow {
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid transparent;
+}
+
+QWidget#CDMRow:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid #555;
+}
+
+QWidget#CDMRow[checked="true"] {
+    background-color: #2D3845;
+    border: 1px solid #007ACC;
+}
+
+QWidget#CDMRow[checked="true"] QCheckBox#TileCheckbox {
+    color: #FFF;
+}
+
+/* Arrow Button (Slide Out) */
+QPushButton#ArrowButton {
+    background: transparent;
+    color: #888;
+    border: none;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    margin-left: 4px;
+    margin-right: 4px;
+    padding: 2px 8px;
+}
+
+QPushButton#ArrowButton:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #FFFFFF;
+}
+
+/* Checkbox Indicator (Custom) */
+QCheckBox#TileCheckbox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid #666;
+    background: transparent;
+}
+
+QCheckBox#TileCheckbox::indicator:unchecked:hover {
+    border: 1px solid #AAA;
+}
+
+QCheckBox#TileCheckbox::indicator:checked {
+    background-color: #007ACC;
+    border: 1px solid #007ACC;
+    image: url(:/icons/check.png); /* Fallback to just color if icon missing */
+}
+
+/* Floating Action Button (Save) */
+QPushButton#FAB {
+    background-color: #007ACC;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    border-radius: 20px; /* Pill shape */
+    border: none;
+    padding: 0 20px;
+}
+
+QPushButton#FAB:hover {
+    background-color: #1E90FF;
+    margin-top: -1px; /* Slight lift effect */
+}
+
+QPushButton#FAB:pressed {
+    background-color: #005A9E;
+    margin-top: 1px;
+}
+
+QPushButton#FAB:disabled {
+    background-color: #444;
+    color: #888;
+}
+
+/* Ghost Button (Clear) - Refactored to Text Link style */
+QPushButton#GhostButton {
+    background-color: transparent;
+    color: #888888;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: normal;
+    padding: 0 10px;
+    text-decoration: underline;
+}
+
+QPushButton#GhostButton:hover {
+    color: #FF6B6B; /* Red text on hover */
+    background-color: transparent;
+    border: none;
+}
+
 /* Scrollbars */
 QScrollBar:vertical {
     border: none;

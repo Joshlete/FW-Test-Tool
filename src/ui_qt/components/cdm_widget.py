@@ -1,13 +1,13 @@
 from PySide6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget, 
                                QPushButton, QScrollArea, QCheckBox, QMenu, QDialog, QTextEdit)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QAction, QCursor
 import json
 
 class CDMWidget(QWidget):
     """
     Widget for CDM Controls:
-    - Displays list of CDM endpoints with checkboxes.
+    - Displays list of CDM endpoints with checkboxes in a grouped grid.
     - Provides 'Save CDM' (with variants) and 'Clear' buttons.
     - Provides 'View Data' context menu for endpoints.
     """
@@ -37,67 +37,206 @@ class CDMWidget(QWidget):
         ]
         
         self.cdm_checkboxes = {}
+        self.cdm_rows = {}
         
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0) # Tight fit in container
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
         
-        # Header Removed (Moved to parent container)
+        # --- Header Actions ---
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Buttons Container
-        btn_container = QWidget()
-        btn_layout = QHBoxLayout(btn_container)
-        btn_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.save_cdm_btn = QPushButton("Save CDM")
+        # Main Save Button (FAB Style)
+        self.save_cdm_btn = QPushButton("Save Selected Items")
+        self.save_cdm_btn.setObjectName("FAB")
+        self.save_cdm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_cdm_btn.setFixedHeight(40)
         self.save_cdm_btn.clicked.connect(lambda: self._on_save_clicked(None))
+        
         # Context menu for Save CDM (variants)
         self.save_cdm_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.save_cdm_btn.customContextMenuRequested.connect(self._show_save_context_menu)
         
         self.clear_cdm_btn = QPushButton("Clear")
+        self.clear_cdm_btn.setObjectName("GhostButton")
+        self.clear_cdm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clear_cdm_btn.clicked.connect(self._clear_cdm)
-        self.clear_cdm_btn.hide() # Initially hidden
+        self.clear_cdm_btn.hide()
         
-        btn_layout.addWidget(self.save_cdm_btn)
-        btn_layout.addWidget(self.clear_cdm_btn)
-        layout.addWidget(btn_container)
+        header_layout.addWidget(self.save_cdm_btn, 1)
+        header_layout.addWidget(self.clear_cdm_btn)
         
-        # Scroll Area for Checkboxes
+        layout.addWidget(header_container)
+        
+        # --- Scroll Area for Grid ---
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent;")
         
         content_widget = QWidget()
-        self.checkbox_layout = QVBoxLayout(content_widget)
-        self.checkbox_layout.setContentsMargins(0, 0, 0, 0)
-        self.checkbox_layout.setSpacing(5)
+        content_widget.setStyleSheet("background: transparent;")
+        self.grid_layout = QVBoxLayout(content_widget)
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.grid_layout.setSpacing(15)
         
-        for endpoint in self.cdm_endpoints:
-            cb = QCheckBox(endpoint)
-            cb.stateChanged.connect(self._update_clear_button_visibility)
-            # Context menu for Checkbox
-            cb.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            cb.customContextMenuRequested.connect(lambda pos, ep=endpoint: self._show_cdm_context_menu(pos, ep))
+        # Group endpoints
+        grouped_endpoints = self._group_endpoints(self.cdm_endpoints)
+        
+        for group_name, endpoints in grouped_endpoints.items():
+            # Section Header
+            header = QLabel(group_name)
+            header.setObjectName("SectionHeader")
+            self.grid_layout.addWidget(header)
             
-            self.checkbox_layout.addWidget(cb)
-            self.cdm_checkboxes[endpoint] = cb
+            # Items Container
+            group_container = QWidget()
+            group_layout = QVBoxLayout(group_container)
+            group_layout.setContentsMargins(0, 0, 0, 0)
+            group_layout.setSpacing(2)
             
-        self.checkbox_layout.addStretch()
+            for endpoint in endpoints:
+                friendly_name = self._get_friendly_name(endpoint)
+                
+                # Custom Checkbox Tile
+                cb = QCheckBox(friendly_name)
+                cb.setProperty("endpoint", endpoint) # Store raw endpoint
+                cb.setCursor(Qt.CursorShape.PointingHandCursor)
+                cb.setObjectName("TileCheckbox")
+                
+                cb.stateChanged.connect(lambda state, ep=endpoint: self._on_checkbox_state_change(ep, state))
+                
+                # Context menu
+                cb.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                cb.customContextMenuRequested.connect(lambda pos, ep=endpoint: self._show_cdm_context_menu(pos, ep))
+                
+                # Arrow Button Container (Overlay layout or HBox)
+                # Since QCheckBox doesn't support internal layout easily, we wrap it or use a sibling
+                # Let's use a HBoxLayout for the row item instead of just a Checkbox
+                
+                row_widget = QWidget()
+                row_widget.setObjectName("CDMRow") # ID for styling
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(4, 0, 4, 0) # Add padding inside the row
+                row_layout.setSpacing(0)
+                
+                row_layout.addWidget(cb, 1) # Checkbox takes mostly all space
+                
+                # Arrow Button
+                arrow_btn = QPushButton("View")
+                arrow_btn.setFixedSize(70, 28)
+                arrow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                arrow_btn.setObjectName("ArrowButton")
+                # Fix lambda: add checked=False default arg or ignore it
+                arrow_btn.clicked.connect(lambda checked=False, ep=endpoint: self.view_requested.emit(ep))
+                arrow_btn.hide() # Hide by default, show on hover
+                
+                row_layout.addWidget(arrow_btn)
+                
+                # Enable hover tracking
+                row_widget.setAttribute(Qt.WidgetAttribute.WA_Hover)
+                # Install event filter or use enterEvent to toggle arrow
+                row_widget.installEventFilter(self)
+                row_widget.arrow_btn = arrow_btn # Store reference
+                
+                group_layout.addWidget(row_widget)
+                self.cdm_checkboxes[endpoint] = cb
+                self.cdm_rows[endpoint] = row_widget
+                
+            self.grid_layout.addWidget(group_container)
+        
+        self.grid_layout.addStretch()
         scroll.setWidget(content_widget)
         layout.addWidget(scroll)
+
+    def eventFilter(self, obj, event):
+        """Handle hover events for rows to show/hide arrow."""
+        if event.type() == QEvent.Type.Enter:
+            if hasattr(obj, 'arrow_btn'):
+                obj.arrow_btn.show()
+        elif event.type() == QEvent.Type.Leave:
+            if hasattr(obj, 'arrow_btn'):
+                obj.arrow_btn.hide()
+        elif event.type() == QEvent.Type.MouseButtonPress:
+            # Allow clicking anywhere on the row to toggle the checkbox,
+            # unless clicking the arrow button (which handles its own click)
+            child = obj.childAt(event.pos())
+            if child and child.objectName() == "ArrowButton":
+                return False
+            
+            layout = obj.layout()
+            if layout:
+                cb = layout.itemAt(0).widget()
+                if isinstance(cb, QCheckBox):
+                    cb.toggle()
+                    return True
+                    
+        return super().eventFilter(obj, event)
+
+    def _group_endpoints(self, endpoints):
+        groups = {
+            "Supply Data": [],
+            "Alerts & Events": [],
+            "System Info": []
+        }
+        
+        for ep in endpoints:
+            if "cdm/supply/v1/alerts" in ep:
+                groups["Supply Data"].append(ep)
+            elif "alert" in ep or "eventing" in ep or "rtp" in ep:
+                groups["Alerts & Events"].append(ep)
+            elif "system" in ep or "platform" in ep or "identity" in ep:
+                groups["System Info"].append(ep)
+            else:
+                groups["Supply Data"].append(ep)
+                
+        return groups
+
+    def _get_friendly_name(self, endpoint):
+        if "cdm/alert/v1/alerts" in endpoint:
+            return "Alert/Alerts"
+        if "cdm/rtp/v1/alerts" in endpoint:
+            return "Rtp/Alerts"
+        if "cdm/supply/v1/alerts" in endpoint:
+            return "Alerts"
+            
+        parts = endpoint.split('/')
+        # Use last part, split CamelCase or underscores if needed
+        name = parts[-1]
+        # Simple friendly formatting
+        name = name.replace("dcr", "DCR ").replace("Snapshot", " Snapshot")
+        name = name[0].upper() + name[1:]
+        return name
 
     def set_loading(self, is_loading):
         """Disable/Enable controls during operations."""
         self.save_cdm_btn.setEnabled(not is_loading)
+        self.save_cdm_btn.setText("Saving..." if is_loading else "Save Selected Items")
         for cb in self.cdm_checkboxes.values():
             cb.setEnabled(not is_loading)
 
-    def _update_clear_button_visibility(self):
-        any_checked = any(cb.isChecked() for cb in self.cdm_checkboxes.values())
-        self.clear_cdm_btn.setVisible(any_checked)
+    def _on_checkbox_state_change(self, endpoint, state):
+        """Sync row visuals and update selection state."""
+        row = self.cdm_rows.get(endpoint)
+        if row:
+            row.setProperty("checked", state == Qt.CheckState.Checked)
+            row.style().unpolish(row)
+            row.style().polish(row)
+        self._update_selection_state()
+
+    def _update_selection_state(self):
+        count = sum(1 for cb in self.cdm_checkboxes.values() if cb.isChecked())
+        self.clear_cdm_btn.setVisible(count > 0)
+        
+        if count > 0:
+            self.save_cdm_btn.setText(f"Save {count} Selected Items")
+        else:
+            self.save_cdm_btn.setText("Save Selected Items")
 
     def _clear_cdm(self):
         for cb in self.cdm_checkboxes.values():
@@ -136,7 +275,7 @@ class CDMWidget(QWidget):
             
         # Show Dialog
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"CDM Viewer - {endpoint}")
+        dialog.setWindowTitle(f"CDM Viewer - {self._get_friendly_name(endpoint)}")
         dialog.resize(800, 600)
         layout = QVBoxLayout(dialog)
         
@@ -150,7 +289,7 @@ class CDMWidget(QWidget):
         btn_layout = QHBoxLayout()
         copy_btn = QPushButton("Copy to Clipboard")
         copy_btn.clicked.connect(text_edit.selectAll) 
-        copy_btn.clicked.connect(text_edit.copy) # Actually copy
+        copy_btn.clicked.connect(text_edit.copy) 
         
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.accept)
