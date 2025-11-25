@@ -63,6 +63,8 @@ class TelemetryWidget(QWidget):
         self._telemetry_data_map.clear()
         
         if not events_data:
+            item = QTreeWidgetItem(["No Telemetry"])
+            self.tree.addTopLevelItem(item)
             return
 
         # Order events (Newest First)

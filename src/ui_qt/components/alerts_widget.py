@@ -66,6 +66,8 @@ class AlertsWidget(QWidget):
         self._alert_data_map.clear()
         
         if not alerts_data:
+            item = QTreeWidgetItem(["No Alerts"])
+            self.tree.addTopLevelItem(item)
             return
 
         # Sort by sequence number if available (newest first)

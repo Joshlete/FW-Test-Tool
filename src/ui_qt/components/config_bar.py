@@ -1,5 +1,14 @@
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFileDialog
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QFileDialog,
+    QGraphicsDropShadowEffect,
+)
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QColor
 
 class ConfigBar(QFrame):
     """
@@ -12,41 +21,53 @@ class ConfigBar(QFrame):
 
     def __init__(self):
         super().__init__()
-        self.setObjectName("Card") # Matches the stylesheet for rounded corners/background
+        self.setObjectName("ConfigHeader")
+        self.setFixedHeight(60)
+        self.setGraphicsEffect(None)
         
-        # Layout for the bar items
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12) # Padding inside the card
-        layout.setSpacing(16) # Space between elements
-        
+        layout.setContentsMargins(20, 8, 20, 8)
+        layout.setSpacing(20)
+
         # --- IP Address Section ---
-        ip_label = QLabel("IP Address")
-        ip_label.setStyleSheet("font-weight: bold; color: #AAAAAA;")
+        ip_layout = QHBoxLayout()
+        ip_layout.setSpacing(8)
+
+        ip_label = QLabel("IP:")
+        ip_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
         
         self.ip_input = QLineEdit()
-        self.ip_input.setPlaceholderText("Enter Printer IP")
-        self.ip_input.setFixedWidth(180) # Fixed width for IP is usually sufficient
+        self.ip_input.setPlaceholderText("Enter IP")
+        self.ip_input.setFixedWidth(140)
         self.ip_input.textChanged.connect(self.ip_changed.emit)
         
-        layout.addWidget(ip_label)
-        layout.addWidget(self.ip_input)
-        
+        ip_layout.addWidget(ip_label)
+        ip_layout.addWidget(self.ip_input)
+
         # --- Output Directory Section ---
-        dir_label = QLabel("Output Directory")
-        dir_label.setStyleSheet("font-weight: bold; color: #AAAAAA;")
+        dir_layout = QHBoxLayout()
+        dir_layout.setSpacing(8)
+
+        dir_label = QLabel("Directory:")
+        dir_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
         
         self.dir_input = QLineEdit()
         self.dir_input.setPlaceholderText("No directory selected")
-        self.dir_input.setReadOnly(True) # Make read-only to force using the browse button
+        self.dir_input.setReadOnly(True)
         
-        self.browse_btn = QPushButton("📂") # Folder icon as text for simplicity
-        self.browse_btn.setFixedWidth(40)
+        self.browse_btn = QPushButton("📂")
+        self.browse_btn.setFixedWidth(32)
         self.browse_btn.setToolTip("Browse Directory")
         self.browse_btn.clicked.connect(self._browse_directory)
-        
-        layout.addWidget(dir_label)
-        layout.addWidget(self.dir_input, 1) # '1' means this widget expands to fill available space
-        layout.addWidget(self.browse_btn)
+
+        dir_layout.addWidget(dir_label)
+        dir_layout.addWidget(self.dir_input, 1)
+        dir_layout.addWidget(self.browse_btn)
+
+        # Add to main layout
+        layout.addLayout(ip_layout)
+        layout.addSpacing(20) # Separation between groups
+        layout.addLayout(dir_layout, 1)
 
     def _browse_directory(self):
         """Open a directory selection dialog."""
@@ -54,5 +75,3 @@ class ConfigBar(QFrame):
         if directory:
             self.dir_input.setText(directory)
             self.directory_changed.emit(directory)
-            # Note: In the future, we will connect this to the ConfigManager logic
-

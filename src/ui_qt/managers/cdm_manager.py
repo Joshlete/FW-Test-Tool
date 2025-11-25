@@ -2,6 +2,7 @@ import os
 import json
 from PySide6.QtCore import QObject, Signal
 from ..workers import FetchCDMWorker
+from src.logging_utils import log_error, log_info
 
 class CDMManager(QObject):
     """
@@ -21,7 +22,7 @@ class CDMManager(QObject):
         # Connect UI signals to logic
         self.widget.save_requested.connect(self.capture_cdm)
         self.widget.view_requested.connect(self.view_cdm_data)
-        self.widget.error_occurred.connect(self.error_occurred.emit)
+        self.widget.error_occurred.connect(self._on_widget_error)
 
     def update_ip(self, ip):
         self.ip = ip
@@ -36,12 +37,18 @@ class CDMManager(QObject):
 
         self.status_message.emit("Capturing CDM data...")
         self.widget.set_loading(True)
+        log_info(
+            "cdm.capture",
+            "started",
+            "Capturing CDM data",
+            {"ip": self.ip, "endpoints": selected_endpoints, "variant": variant},
+        )
         
         worker = FetchCDMWorker(self.ip, selected_endpoints)
         
         # Use partial or lambda to pass context (variant) to the callback
         worker.signals.finished.connect(lambda results: self._on_capture_complete(results, variant))
-        worker.signals.error.connect(self._on_error)
+        worker.signals.error.connect(lambda msg: self._on_error(msg, "CDM capture failed"))
         
         # Always reset loading state when done
         worker.signals.finished.connect(lambda: self.widget.set_loading(False))
@@ -86,8 +93,20 @@ class CDMManager(QObject):
         
         if saved_count > 0:
             self.status_message.emit(f"Saved {saved_count} CDM files")
+            log_info(
+                "cdm.capture",
+                "succeeded",
+                f"Saved {saved_count} CDM files",
+                {"saved": saved_count, "errors": len(errors)},
+            )
         else:
             self.error_occurred.emit("Failed to save any CDM files")
+            log_error(
+                "cdm.capture",
+                "failed",
+                "Failed to save CDM files",
+                {"errors": errors},
+            )
             
         if errors:
             print("CDM Errors:", errors)
@@ -98,18 +117,44 @@ class CDMManager(QObject):
             return
             
         self.status_message.emit(f"Fetching {endpoint}...")
+        log_info(
+            "cdm.view",
+            "started",
+            f"Fetching {endpoint}",
+            {"ip": self.ip, "endpoint": endpoint},
+        )
         
         worker = FetchCDMWorker(self.ip, [endpoint])
         worker.signals.finished.connect(lambda results: self._on_view_fetched(endpoint, results))
-        worker.signals.error.connect(self._on_error)
+        worker.signals.error.connect(lambda msg: self._on_error(msg, "CDM request failed"))
         self.thread_pool.start(worker)
 
     def _on_view_fetched(self, endpoint, results):
         content = results.get(endpoint, "No data")
         self.widget.display_data(endpoint, content)
         self.status_message.emit("Ready")
+        log_info(
+            "cdm.view",
+            "succeeded",
+            f"Fetched {endpoint}",
+            {"endpoint": endpoint},
+        )
 
-    def _on_error(self, error_msg):
+    def _on_error(self, error_msg, user_message="CDM operation failed"):
         self.widget.set_loading(False)
-        self.error_occurred.emit(error_msg)
+        log_error(
+            "cdm.operation",
+            "failed",
+            error_msg,
+            {"user_message": user_message},
+        )
+        self.error_occurred.emit(user_message)
+
+    def _on_widget_error(self, message):
+        log_error(
+            "cdm.controls",
+            "validation_failed",
+            message,
+        )
+        self.error_occurred.emit(message)
 

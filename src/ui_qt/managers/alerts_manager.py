@@ -1,5 +1,6 @@
 from PySide6.QtCore import QObject, Signal
 from ..workers import FetchAlertsWorker
+from src.logging_utils import log_error, log_info
 
 class AlertsManager(QObject):
     """
@@ -29,6 +30,7 @@ class AlertsManager(QObject):
 
         self.widget.set_loading(True)
         self.status_message.emit("Fetching alerts...")
+        log_info("alerts.fetch", "started", "Fetching alerts", {"ip": self.ip})
         
         # Create and start the worker
         worker = FetchAlertsWorker(self.ip)
@@ -41,10 +43,22 @@ class AlertsManager(QObject):
         self.widget.set_loading(False)
         self.widget.populate_alerts(data)
         self.status_message.emit(f"Fetched {len(data)} alerts")
+        log_info(
+            "alerts.fetch",
+            "succeeded",
+            f"Fetched {len(data)} alerts",
+            {"count": len(data), "ip": self.ip, "returned": data},
+        )
 
     def _on_error(self, error_msg):
         self.widget.set_loading(False)
-        self.error_occurred.emit(error_msg)
+        log_error(
+            "alerts.fetch",
+            "failed",
+            error_msg,
+            {"ip": self.ip},
+        )
+        self.error_occurred.emit("Alerts failed to update")
 
     def acknowledge_alert(self, alert_id):
         # Placeholder for future ACK logic

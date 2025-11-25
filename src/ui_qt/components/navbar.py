@@ -1,6 +1,5 @@
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QButtonGroup
-from PySide6.QtCore import Signal
-from .modern_button import ModernButton
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QButtonGroup, QPushButton
+from PySide6.QtCore import Signal, Qt
 
 class NavBar(QWidget):
     """
@@ -12,11 +11,13 @@ class NavBar(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("NavBar")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         
         # Horizontal layout for the row of buttons
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 0, 0, 0) 
+        layout.setSpacing(4) 
         
         # Logic to make buttons exclusive (like radio buttons)
         self.button_group = QButtonGroup(self)
@@ -24,12 +25,16 @@ class NavBar(QWidget):
         self.button_group.idClicked.connect(self._on_button_clicked)
         
         # Define the tabs we want
-        self.tabs = ["Dune", "Sirius", "Ares", "Tools", "Settings"]
+        self.tabs = ["Dune", "Sirius", "Ares", "Tools", "Settings", "Log"]
         
         # Create a button for each tab
         for i, name in enumerate(self.tabs):
-            btn = ModernButton(name)
-            btn.setCheckable(True) # Required for the button group to handle state
+            btn = QPushButton(name)
+            btn.setCheckable(True) 
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+            # Use a custom property 'class' for styling target since QSS classes aren't standard in Qt
+            btn.setProperty("class", "TabButton") 
             
             # Add to layout and group
             layout.addWidget(btn)
@@ -38,7 +43,7 @@ class NavBar(QWidget):
             # Select the first one by default
             if i == 0:
                 btn.setChecked(True)
-                btn.set_active(True)
+                btn.setProperty("active", True)
 
         # Add a spacer at the end so buttons align left
         layout.addStretch()
@@ -50,8 +55,10 @@ class NavBar(QWidget):
         """
         # Reset active state on all buttons (for visual styling)
         for btn in self.button_group.buttons():
-            if isinstance(btn, ModernButton):
-                btn.set_active(btn.isChecked())
+            btn.setProperty("active", btn.isChecked())
+            # Force style update
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
         
         # Tell the world (MainWindow) that the tab changed
         self.tab_changed.emit(button_id)

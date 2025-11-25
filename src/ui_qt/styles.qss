@@ -13,11 +13,72 @@ QWidget {
     background-color: #1E1E1E;
 }
 
+/* New Header Bar Style (Floating Island - macOS Style) */
+QFrame#ConfigHeader {
+    background-color: rgba(255, 255, 255, 0.05); /* Subtle translucent background */
+    border: 1px solid rgba(255, 255, 255, 0.1);   /* Soft border */
+    border-radius: 16px;
+    min-height: 44px;
+    margin-bottom: 4px;  /* Tighter spacing above tabs */
+    padding: 6px 16px;
+}
+
+QFrame#ConfigHeader QLabel {
+    background-color: transparent; /* Ensure no black box behind text */
+    color: #E0E0E0;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* Capsule Style Inputs */
+QFrame#ConfigHeader QLineEdit {
+    background-color: rgba(0, 0, 0, 0.2); /* Dark capsule background */
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 4px 10px;
+    selection-background-color: #007ACC;
+}
+
+QFrame#ConfigHeader QLineEdit::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+QFrame#ConfigHeader QLineEdit:focus {
+    border: 1px solid #007ACC; /* Blue glow on focus */
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+/* Folder Button */
+QFrame#ConfigHeader QPushButton {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #FFD700; /* Gold folder icon */
+    font-size: 16px;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+QFrame#ConfigHeader QPushButton:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
 /* Card-like Container */
 .QFrame#Card {
     background-color: #252526;
     border-radius: 10px;
     border: 1px solid #333333;
+}
+
+/* Main Content Area Border (Folder Look) */
+.QFrame#ContentArea {
+    background-color: #1E1E1E;
+    border: none;
+    border-top: 2px solid #007ACC; /* Thin accent line connecting tabs */
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    margin-top: 0px; /* Connect to tabs */
 }
 
 /* Buttons */
@@ -46,10 +107,38 @@ QPushButton#PrimaryButton:hover {
     background-color: #1E90FF;
 }
 
-/* Navigation Tab Buttons */
-QPushButton[active="true"] {
-    background-color: #007ACC; /* Highlight Blue */
+/* Navigation Bar (Connected Tabs) */
+QWidget#NavBar {
+    background-color: transparent;
+    border: none;
+    min-height: 40px;
+    max-height: 40px;
+}
+
+/* Navigation Tab Buttons (Tabs) */
+QPushButton[class="TabButton"] {
+    background-color: transparent;
+    color: #888888;
+    border: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    padding: 8px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 0px;
+}
+
+QPushButton[class="TabButton"]:hover {
+    color: #FFFFFF;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Active Tab: Seamless connection to content */
+QPushButton[class="TabButton"][active="true"] {
+    background-color: #1E1E1E; /* Match content bg */
+    color: #007ACC; /* Bright Blue text */
     font-weight: bold;
+    border-top: 2px solid #007ACC; /* Highlight Line */
 }
 
 /* Labels */

@@ -44,7 +44,11 @@ class FetchAlertsWorker(QRunnable):
                 elif 'elements' in data:
                     data = data['elements']
                 else:
-                    data = [data] # Wrap single object in list
+                    # Only treat as a single alert if it has expected fields
+                    if any(key in data for key in ['stringId', 'category', 'severity', 'id']):
+                        data = [data]
+                    else:
+                        data = []
             
             self.signals.finished.emit(data)
             
@@ -79,7 +83,10 @@ class FetchTelemetryWorker(QRunnable):
             if isinstance(data, dict) and 'events' in data:
                 data = data['events']
             elif isinstance(data, dict):
-                data = [data]
+                if any(key in data for key in ['sequenceNumber', 'eventDetail']):
+                    data = [data]
+                else:
+                    data = []
                 
             self.signals.finished.emit(data)
             
