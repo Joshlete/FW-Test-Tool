@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import (QHBoxLayout, QVBoxLayout, QLabel, QFrame, QSplitter)
+from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter)
 from PySide6.QtCore import Qt, QThreadPool
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
@@ -19,12 +19,19 @@ class AresTab(QtTabContent):
         # Thread Pool shared by all managers
         self.thread_pool = QThreadPool()
         
-        # --- Main Layout ---
-        main_h_layout = QHBoxLayout()
-        main_h_layout.setSpacing(16)
+        # --- Main Splitter (Horizontal) ---
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # --- Left Panel: CDM Controls ---
+        cdm_container = QFrame()
+        cdm_container.setObjectName("Card")
+        cdm_layout = QVBoxLayout(cdm_container)
+        cdm_label = QLabel("CDM Controls")
+        cdm_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        
         self.cdm_widget = CDMWidget()
+        cdm_layout.addWidget(cdm_label)
+        cdm_layout.addWidget(self.cdm_widget)
         
         # --- Right Panel: Alerts & Telemetry ---
         right_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -58,9 +65,12 @@ class AresTab(QtTabContent):
         right_splitter.setStretchFactor(1, 1)
         
         # Assemble Main Layout
-        main_h_layout.addWidget(self.cdm_widget, 1)
-        main_h_layout.addWidget(right_splitter, 2)
-        self.layout.addLayout(main_h_layout)
+        main_splitter.addWidget(cdm_container)
+        main_splitter.addWidget(right_splitter)
+        main_splitter.setStretchFactor(0, 1)
+        main_splitter.setStretchFactor(1, 2)
+        
+        self.layout.addWidget(main_splitter)
 
         # --- Initialize Managers (Logic) ---
         self.alerts_manager = AlertsManager(self.alerts_widget, self.thread_pool)
@@ -81,11 +91,13 @@ class AresTab(QtTabContent):
         self.update_ip("15.8.177.192")
 
     def on_show(self):
-        print("Ares Tab Shown")
-        self.status_message.emit("Ares Tab Active")
+        # print("Ares Tab Shown")
+        # self.status_message.emit("Ares Tab Active")
+        pass
 
     def on_hide(self):
-        print("Ares Tab Hidden")
+        # print("Ares Tab Hidden")
+        pass
 
     def update_ip(self, new_ip):
         """Called by MainWindow when IP changes"""

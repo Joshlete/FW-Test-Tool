@@ -4,10 +4,15 @@ from src.ui_qt.components.navbar import NavBar
 from src.ui_qt.components.config_bar import ConfigBar
 from src.ui_qt.tabs.settings import SettingsTab
 from src.ui_qt.tabs.ares import AresTab
+from src.utils.config_manager import ConfigManager
+import os
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        # Initialize Configuration Manager
+        self.config_manager = ConfigManager()
         
         self.setWindowTitle("FW Test Tool (PySide6)")
         self.resize(1280, 800)
@@ -39,6 +44,17 @@ class MainWindow(QMainWindow):
         # Connect Navigation Signals
         self.navbar.tab_changed.connect(self.content_stack.setCurrentIndex)
 
+        # Connect Config Bar Signals
+        self.config_bar.ip_changed.connect(self.ares_tab.update_ip)
+        self.config_bar.directory_changed.connect(self.ares_tab.update_directory)
+        
+        # Connect Config Bar to Config Manager (Auto-Save)
+        self.config_bar.ip_changed.connect(lambda ip: self.config_manager.set("last_ip", ip))
+        self.config_bar.directory_changed.connect(lambda d: self.config_manager.set("output_directory", d))
+        
+        # Load Saved State
+        self._load_saved_state()
+
     def _init_tabs(self):
         """Create real tabs where implemented, placeholders otherwise."""
         
@@ -64,3 +80,17 @@ class MainWindow(QMainWindow):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setStyleSheet("font-size: 24px; color: #555;")
         return label
+        
+    def _load_saved_state(self):
+        """Populate UI with values from ConfigManager."""
+        # Check both new keys and legacy keys for backward compatibility
+        last_ip = self.config_manager.get("last_ip") or self.config_manager.get("ip_address", "")
+        output_dir = self.config_manager.get("output_directory") or self.config_manager.get("directory", os.getcwd())
+        
+        if last_ip:
+            self.config_bar.ip_input.setText(last_ip)
+            self.ares_tab.update_ip(last_ip)
+            
+        if output_dir:
+            self.config_bar.dir_input.setText(output_dir)
+            self.ares_tab.update_directory(output_dir)

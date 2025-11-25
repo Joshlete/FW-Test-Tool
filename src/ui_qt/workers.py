@@ -28,7 +28,7 @@ class FetchAlertsWorker(QRunnable):
         Execute the fetch operation.
         """
         self.signals.start.emit()
-        url = f"https://{self.ip}/cdm/supply/v1/alerts"
+        url = f"https://{self.ip}/cdm/alert/v1/alerts"
         
         try:
             # Short timeout to prevent hanging indefinitely
@@ -85,3 +85,36 @@ class FetchTelemetryWorker(QRunnable):
             
         except Exception as e:
             self.signals.error.emit(f"Error fetching telemetry: {str(e)}")
+
+class FetchCDMWorker(QRunnable):
+    """
+    Worker thread to fetch CDM data from multiple endpoints.
+    """
+    def __init__(self, ip_address, endpoints):
+        super().__init__()
+        self.ip = ip_address
+        self.endpoints = endpoints
+        self.signals = WorkerSignals()
+
+    @Slot()
+    def run(self):
+        self.signals.start.emit()
+        results = {}
+        errors = []
+
+        for endpoint in self.endpoints:
+            url = f"https://{self.ip}/{endpoint}"
+            try:
+                response = requests.get(url, verify=False, timeout=10)
+                response.raise_for_status()
+                results[endpoint] = response.text
+            except Exception as e:
+                results[endpoint] = f"Error: {str(e)}"
+                errors.append(f"{endpoint}: {str(e)}")
+
+        self.signals.finished.emit(results)
+        if errors:
+            # We don't want to fail the whole batch if some fail, 
+            # but we might want to notify about errors.
+            # For now, we'll just let the finished signal carry the error strings in the results.
+            pass

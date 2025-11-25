@@ -1,11 +1,15 @@
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFileDialog
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 class ConfigBar(QFrame):
     """
     Global configuration bar containing IP Address and Output Directory inputs.
     Styled as a 'Card' to sit at the top of the window.
     """
+    
+    ip_changed = Signal(str)
+    directory_changed = Signal(str)
+
     def __init__(self):
         super().__init__()
         self.setObjectName("Card") # Matches the stylesheet for rounded corners/background
@@ -22,6 +26,7 @@ class ConfigBar(QFrame):
         self.ip_input = QLineEdit()
         self.ip_input.setPlaceholderText("Enter Printer IP")
         self.ip_input.setFixedWidth(180) # Fixed width for IP is usually sufficient
+        self.ip_input.textChanged.connect(self.ip_changed.emit)
         
         layout.addWidget(ip_label)
         layout.addWidget(self.ip_input)
@@ -48,5 +53,6 @@ class ConfigBar(QFrame):
         directory = QFileDialog.getExistingDirectory(self, "Select Output Directory")
         if directory:
             self.dir_input.setText(directory)
+            self.directory_changed.emit(directory)
             # Note: In the future, we will connect this to the ConfigManager logic
 

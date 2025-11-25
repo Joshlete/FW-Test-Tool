@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QCursor
 import json
 
-class CDMWidget(QFrame):
+class CDMWidget(QWidget):
     """
     Widget for CDM Controls:
     - Displays list of CDM endpoints with checkboxes.
@@ -19,7 +19,6 @@ class CDMWidget(QFrame):
 
     def __init__(self):
         super().__init__()
-        self.setObjectName("Card")
         
         self.cdm_endpoints = [
             "cdm/supply/v1/alerts",
@@ -43,11 +42,9 @@ class CDMWidget(QFrame):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0) # Tight fit in container
         
-        # Header
-        header = QLabel("CDM Controls")
-        header.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
-        layout.addWidget(header)
+        # Header Removed (Moved to parent container)
         
         # Buttons Container
         btn_container = QWidget()

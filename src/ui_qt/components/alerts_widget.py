@@ -30,13 +30,14 @@ class AlertsWidget(QWidget):
         
         # --- Alerts Table (TreeWidget) ---
         self.tree = QTreeWidget()
+        self.tree.setRootIsDecorated(False)  # Remove tree indentation
         self.tree.setHeaderLabels(["Category", "String ID", "Severity", "Priority"])
         self.tree.header().setVisible(True) # Ensure header is visible
         
         # Column sizing
         header = self.tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # Category
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)          # String ID (fills space)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # String ID
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # Severity
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents) # Priority
         
