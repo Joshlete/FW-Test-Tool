@@ -4,10 +4,12 @@ from src.ui_qt.components.navbar import NavBar
 from src.ui_qt.components.config_bar import ConfigBar
 from src.ui_qt.tabs.settings import SettingsTab
 from src.ui_qt.tabs.ares import AresTab
+from src.ui_qt.tabs.sirius import SiriusTab
 from src.ui_qt.tabs.log import LogTab
 from src.utils.config_manager import ConfigManager
 from src.logging_utils import configure_file_logging
 from src.ui_qt.components.toast import ToastWidget
+from src.version import VERSION
 import os
 
 class MainWindow(QMainWindow):
@@ -17,7 +19,7 @@ class MainWindow(QMainWindow):
         # Initialize Configuration Manager
         self.config_manager = ConfigManager()
         
-        self.setWindowTitle("FW Test Tool (PySide6)")
+        self.setWindowTitle(f"FW Test Tool v{VERSION}")
         self.resize(1280, 800)
         
         # Central Widget & Layout
@@ -64,7 +66,9 @@ class MainWindow(QMainWindow):
 
         # Connect Config Bar Signals
         self.config_bar.ip_changed.connect(self.ares_tab.update_ip)
+        self.config_bar.ip_changed.connect(self.sirius_tab.update_ip)
         self.config_bar.directory_changed.connect(self.ares_tab.update_directory)
+        self.config_bar.directory_changed.connect(self.sirius_tab.update_directory)
         self.config_bar.directory_changed.connect(configure_file_logging)
         
         # Connect Config Bar to Config Manager (Auto-Save)
@@ -100,8 +104,13 @@ class MainWindow(QMainWindow):
         # 1. Dune (Placeholder)
         self.content_stack.addWidget(self._create_placeholder("Dune"))
         
-        # 2. Sirius (Placeholder)
-        self.content_stack.addWidget(self._create_placeholder("Sirius"))
+        # 2. Sirius
+        self.sirius_tab = SiriusTab()
+        self.content_stack.addWidget(self.sirius_tab)
+        
+        # Connect Sirius Signals to Toast
+        self.sirius_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
+        self.sirius_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
         # 3. Ares
         self.ares_tab = AresTab()
@@ -137,10 +146,12 @@ class MainWindow(QMainWindow):
         if last_ip:
             self.config_bar.ip_input.setText(last_ip)
             self.ares_tab.update_ip(last_ip)
+            self.sirius_tab.update_ip(last_ip)
             
         if output_dir:
             self.config_bar.dir_input.setText(output_dir)
             self.ares_tab.update_directory(output_dir)
+            self.sirius_tab.update_directory(output_dir)
 
         # Load last active tab
         last_tab_name = self.config_manager.get("last_active_tab")
