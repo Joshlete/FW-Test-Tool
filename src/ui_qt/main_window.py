@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
         self._init_tabs()
         
         # Connect Navigation Signals
-        self.navbar.tab_changed.connect(self.content_stack.setCurrentIndex)
+        self.navbar.tab_changed.connect(self._on_tab_changed)
 
         # Connect Config Bar Signals
         self.config_bar.ip_changed.connect(self.ares_tab.update_ip)
@@ -73,6 +73,15 @@ class MainWindow(QMainWindow):
         
         # Load Saved State
         self._load_saved_state()
+
+    def _on_tab_changed(self, index):
+        """Handle tab change: update stack and save state."""
+        self.content_stack.setCurrentIndex(index)
+        
+        # Save tab name for persistence
+        if 0 <= index < len(self.navbar.tabs):
+            tab_name = self.navbar.tabs[index]
+            self.config_manager.set("last_active_tab", tab_name)
         
     def _init_logging(self):
         """Ensure file logging targets the current output directory."""
@@ -132,3 +141,11 @@ class MainWindow(QMainWindow):
         if output_dir:
             self.config_bar.dir_input.setText(output_dir)
             self.ares_tab.update_directory(output_dir)
+
+        # Load last active tab
+        last_tab_name = self.config_manager.get("last_active_tab")
+        if last_tab_name:
+            # Find index by name
+            if last_tab_name in self.navbar.tabs:
+                index = self.navbar.tabs.index(last_tab_name)
+                self.navbar.set_current_tab(index)

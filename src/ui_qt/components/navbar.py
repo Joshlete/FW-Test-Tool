@@ -62,3 +62,13 @@ class NavBar(QWidget):
         
         # Tell the world (MainWindow) that the tab changed
         self.tab_changed.emit(button_id)
+
+    def set_current_tab(self, index: int):
+        """
+        Programmatically set the active tab.
+        This updates the UI and emits the tab_changed signal.
+        """
+        if 0 <= index < len(self.tabs):
+            btn = self.button_group.button(index)
+            if btn:
+                btn.click()
