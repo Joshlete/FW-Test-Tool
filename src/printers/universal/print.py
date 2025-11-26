@@ -34,12 +34,33 @@ class Print:
         {
             "name": "ISO_K",
             "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\PythonScripts\\drivenFiles\\pcl3\\ISO_K.pcl"
+        },
+        {
+            "name": "25% Cyan",
+            "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL\\C_out_6x6_25_pn.pcl"
+        },
+        {
+            "name": "25% Magenta",
+            "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL\\M_out_6x6_25_pn.pcl"
+        },
+        {
+            "name": "25% Yellow",
+            "path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL\\Y_out_6x6_25_pn.pcl"
         }
     ]
 
     def __init__(self, ip_address):
         self.ip = ip_address
         self.print = DunePrintJob(self.ip, 9100)
+
+    def update_ip(self, ip_address):
+        """
+        Update the target IP address and rebuild the underlying DunePrintJob.
+        This ensures subsequent print jobs use the latest IP configured in the UI.
+        """
+        if ip_address and ip_address != self.ip:
+            self.ip = ip_address
+            self.print = DunePrintJob(self.ip, 9100)
 
     def send_job(self, filepath):
         print(f"> [Print.send_job] Sending print job. File: {filepath}")

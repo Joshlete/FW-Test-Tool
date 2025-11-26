@@ -9,13 +9,32 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import os
 from src.printers.dune.fpui import DEBUG
-from src.printers.universal.udw import UDW
 from ..components.notification_manager import NotificationManager
 from ..components.step_manager import StepManager
+from ..components.step_guide_parser import StepGuideParser
 from src.core.async_manager import AsyncManager
 from src.core.file_manager import FileManager
 from ..layouts.modern_layout_manager import ModernLayoutManager
 from ..styles import ModernStyle
+
+# Global highlighting configuration - easily extendable
+HIGHLIGHT_CONFIG = {
+    'red': {
+        'words': ['insert', 'verify', 'acknowledge', 'clear'],
+        'color': '#FF6B6B',  # Red color
+        'bg_color': '#FFE8E8'  # Light red background
+    },
+    'blue': {
+        'words': ['UI', 'FPUI', 'EWS', 'CDM', 'Telemetry', 'alerts', 'suppliesPublic', 'suppliesPrivate', 'report', 'reports', 'supplyAssessment', 'RTP', 'DeviceStatus', '43 tap'],
+        'color': '#4DABF7',  # Blue color
+        'bg_color': '#E7F5FF'  # Light blue background
+    },
+    'green': {
+        'words': ['used', 'trade', 'pen', 'pens', 'counterfeit', 'genuine'],
+        'color': '#51CF66',
+        'bg_color': '#EBFBEE'
+    }
+}
 
 
 class TabContent(ABC):
@@ -34,9 +53,6 @@ class TabContent(ABC):
         self._create_base_layout()
         self.create_widgets()
 
-        # init UDW tool
-        self.udw = UDW()
-        self.udw_history_index = -1
 
     def get_layout_config(self) -> tuple:
         """
@@ -92,9 +108,16 @@ class TabContent(ABC):
             use_modern = False
             skip_connection_controls = False
         
-        # Main container frame - pack to fill entire tab
-        self.main_frame = ttk.Frame(self.frame)
-        self.main_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # Create layout container that holds both step guide panel and main content
+        self.layout_container = ttk.Frame(self.frame)
+        self.layout_container.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # Initialize step guide system
+        self._create_step_guide_panel()
+        
+        # Main container frame - pack to fill remaining space
+        self.main_frame = ttk.Frame(self.layout_container)
+        self.main_frame.pack(side="right", fill="both", expand=True)
 
         # Create connection controls only if not skipped by subclass
         if not skip_connection_controls:
@@ -114,15 +137,12 @@ class TabContent(ABC):
             self.step_manager = StepManager(self.connection_frame, app, tab_name)
             self.step_manager.create_controls()
             
+            # Connect step manager to step guide updates
+            self._connect_step_manager_to_guide()
+            
             # Apply modern styling to step controls if using modern layout
             if use_modern:
                 ModernLayoutManager.style_step_controls(self.step_manager.step_control_frame)
-            
-            self._create_udw_command_controls()
-            
-            # Apply modern styling to UDW controls if using modern layout
-            if use_modern:
-                ModernLayoutManager.style_udw_controls(self.udw_frame)
         else:
             # Create minimal connection frame for subclass to use
             self.connection_frame = ttk.Frame(self.main_frame)
@@ -131,6 +151,9 @@ class TabContent(ABC):
             app = getattr(self, 'app', None)
             tab_name = self.__class__.__name__.lower().replace('tab', '')
             self.step_manager = StepManager(self.connection_frame, app, tab_name)
+            
+            # Connect step manager to step guide updates
+            self._connect_step_manager_to_guide()
         
         # Separator line under connection frame (only for traditional layout)
         # Skip when subclass handles its own connection UI
@@ -218,6 +241,559 @@ class TabContent(ABC):
         
         # Force update
         self.frame.update_idletasks()
+    
+    def _create_step_guide_panel(self):
+        """Create the collapsible step guide panel on the left side."""
+        
+        # Initialize step guide components
+        self.step_guide_parser = StepGuideParser()
+        self.step_guide_visible = False
+        self.loaded_steps = []
+        self.current_htm_file = None
+        
+        # Create the collapsible panel container
+        self.step_guide_container = ttk.Frame(self.layout_container)
+        # Don't pack it initially - it will be shown when toggled
+        
+        # Create toggle arrow button (initially shows ◄ to indicate expansion)
+        self.toggle_arrow = tk.Button(
+            self.layout_container,
+            text="◄",
+            font=("Arial", 12, "bold"),
+            bg=ModernStyle.COLORS['primary'],
+            fg=ModernStyle.COLORS['white'],
+            relief="flat",
+            width=2,
+            height=1,
+            command=self._toggle_step_guide
+        )
+        self.toggle_arrow.pack(side="left", fill="y")
+        
+        # Create step guide content (but don't pack it yet)
+        self._create_step_guide_content()
+    
+    def _create_step_guide_content(self):
+        """Create the content of the step guide panel."""
+        
+        # Main step guide frame
+        self.step_guide_frame = ttk.Frame(self.step_guide_container, width=300)
+        self.step_guide_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        self.step_guide_frame.pack_propagate(False)  # Maintain fixed width
+        
+        # Header
+        header_frame = ttk.Frame(self.step_guide_frame)
+        header_frame.pack(fill="x", pady=(0, 10))
+        
+        ttk.Label(
+            header_frame, 
+            text="Step Guide", 
+            font=("Arial", 12, "bold")
+        ).pack(side="left")
+        
+        
+        # Status area (label + optional reload button)
+        status_frame = ttk.Frame(self.step_guide_frame)
+        status_frame.pack(fill="x", pady=(0, 5))
+        
+        self.step_guide_status = ttk.Label(
+            status_frame, 
+            text="Scanning for .htm files...",
+            font=("Arial", 9)
+        )
+        self.step_guide_status.pack(side="left", fill="x", expand=True)
+        
+        # Reload button (initially hidden)
+        self.reload_button = tk.Button(
+            status_frame,
+            text="↻",
+            font=("Arial", 8),
+            bg=ModernStyle.COLORS['bg_input'],
+            fg=ModernStyle.COLORS['text_secondary'], 
+            activebackground=ModernStyle.COLORS['gray_300'],
+            activeforeground=ModernStyle.COLORS['text_primary'],
+            relief="solid",
+            bd=1,
+            width=2,
+            height=1,
+            command=self.refresh_step_guide
+        )
+        # Don't pack initially - will be shown when needed
+        
+        # Separator
+        ttk.Separator(self.step_guide_frame, orient='horizontal').pack(fill="x", pady=5)
+        
+        # Step content
+        content_frame = ttk.Frame(self.step_guide_frame)
+        content_frame.pack(fill="both", expand=True)
+        
+        # Step navigation controls
+        step_nav_frame = ttk.Frame(content_frame)
+        step_nav_frame.pack(fill="x", pady=(0, 10))
+        
+        # Step counter label
+        self.step_counter_label = ttk.Label(
+            step_nav_frame, 
+            text="Step 1 of 1", 
+            font=("Arial", 11, "bold")
+        )
+        self.step_counter_label.pack(side="left")
+        
+        # Navigation buttons
+        nav_buttons_frame = ttk.Frame(step_nav_frame)
+        nav_buttons_frame.pack(side="right")
+        
+        # Previous step button
+        self.prev_step_btn = tk.Button(
+            nav_buttons_frame,
+            text="◀",
+            font=("Arial", 10, "bold"),
+            bg=ModernStyle.COLORS['secondary'],
+            fg=ModernStyle.COLORS['white'],
+            relief="flat",
+            width=2,
+            command=self._previous_step
+        )
+        self.prev_step_btn.pack(side="left", padx=(0, 2))
+        
+        # Next step button
+        self.next_step_btn = tk.Button(
+            nav_buttons_frame,
+            text="▶",
+            font=("Arial", 10, "bold"),
+            bg=ModernStyle.COLORS['secondary'],
+            fg=ModernStyle.COLORS['white'],
+            relief="flat",
+            width=2,
+            command=self._next_step
+        )
+        self.next_step_btn.pack(side="left")
+        
+        # Step description
+        ttk.Label(content_frame, text="Description:", font=("Arial", 12, "bold")).pack(anchor="w")
+        self.step_description = tk.Text(
+            content_frame,
+            height=8,
+            wrap=tk.WORD,
+            bg=ModernStyle.COLORS['bg_input'],
+            fg=ModernStyle.COLORS['text_primary'],
+            font=("Arial", 12)
+        )
+        self.step_description.pack(fill="x", pady=(2, 10))
+        
+        # Expected result
+        ttk.Label(content_frame, text="Expected Result:", font=("Arial", 12, "bold")).pack(anchor="w")
+        self.step_expected = tk.Text(
+            content_frame,
+            height=16,  # Doubled from 8 to 16
+            wrap=tk.WORD,
+            bg=ModernStyle.COLORS['bg_input'],
+            fg=ModernStyle.COLORS['text_primary'],
+            font=("Arial", 12)
+        )
+        self.step_expected.pack(fill="x", pady=(2, 0))
+        
+        # Initialize with N/A content
+        self._update_step_guide_display()
+        
+        # Auto-scan for htm files when panel is created
+        self._scan_for_htm_files()
+        
+        # Configure highlighting tags for both text widgets
+        self._configure_highlighting_tags()
+    
+    def _configure_highlighting_tags(self):
+        """Configure text tags for highlighting in step guide text widgets."""
+        if not hasattr(self, 'step_description') or not hasattr(self, 'step_expected'):
+            return
+            
+        # Configure tags for both text widgets
+        for text_widget in [self.step_description, self.step_expected]:
+            for color_name, config in HIGHLIGHT_CONFIG.items():
+                tag_name = f"highlight_{color_name}"
+                text_widget.tag_configure(
+                    tag_name,
+                    foreground=config['color'],
+                    background=config['bg_color'],
+                    font=("Arial", 12, "bold")
+                )
+    
+    def _format_text_content(self, text_content):
+        """
+        Format text content for better readability.
+        
+        Args:
+            text_content: The raw text content
+            
+        Returns:
+            str: Formatted text with line breaks
+        """
+        if not text_content or text_content.strip() == "N/A":
+            return text_content
+        
+        import re
+        
+        # First, add line breaks before numbered steps (1., 2., etc.)
+        # Look for patterns like "1.", "2.", "10.", etc. that are not already at start of line
+        step_pattern = r'(?<!\n)(\d+\.)'
+        formatted_text = re.sub(step_pattern, r'\n\1', text_content)
+        
+        # Split into lines to process each line separately
+        lines = formatted_text.split('\n')
+        formatted_lines = []
+        
+        for line in lines:
+            if not line.strip():
+                formatted_lines.append(line)
+                continue
+            
+            # Check if this line starts with a numbered step (like "1. something")
+            step_match = re.match(r'^(\d+\.\s*)', line)
+            if step_match:
+                # This is a numbered step - don't split by periods within it
+                formatted_lines.append(line)
+            else:
+                # This is a regular line - split by periods and add line breaks
+                sentences = line.split('. ')
+                if len(sentences) > 1:
+                    # Add line break after each sentence except the last one
+                    formatted_sentences = []
+                    for i, sentence in enumerate(sentences):
+                        if i < len(sentences) - 1:
+                            # Add period back and line break
+                            formatted_sentences.append(sentence + '.')
+                        else:
+                            # Last sentence - add period only if it doesn't already end with one
+                            if not sentence.endswith('.'):
+                                formatted_sentences.append(sentence + '.')
+                            else:
+                                formatted_sentences.append(sentence)
+                    
+                    line = '\n'.join(formatted_sentences)
+                
+                formatted_lines.append(line)
+        
+        # Join all lines and clean up multiple consecutive newlines
+        formatted_text = '\n'.join(formatted_lines)
+        # Replace multiple consecutive newlines with single newline
+        formatted_text = re.sub(r'\n\s*\n+', '\n\n', formatted_text)
+        
+        return formatted_text.strip()
+
+    def _apply_text_highlighting(self, text_widget, text_content):
+        """
+        Apply highlighting to text content in a Text widget.
+        
+        Args:
+            text_widget: The tkinter Text widget
+            text_content: The text content to highlight
+        """
+        # Format the text content first
+        formatted_content = self._format_text_content(text_content)
+        
+        # Clear existing content and tags
+        text_widget.delete(1.0, tk.END)
+        text_widget.insert(1.0, formatted_content)
+        
+        # Apply highlighting for each color group
+        for color_name, config in HIGHLIGHT_CONFIG.items():
+            tag_name = f"highlight_{color_name}"
+            words = config['words']
+            
+            # Search for each word in the text (case-insensitive)
+            for word in words:
+                # Use a simple search approach
+                start_index = "1.0"
+                while True:
+                    # Search for the word (case-insensitive)
+                    pos = text_widget.search(word, start_index, stopindex=tk.END, nocase=True)
+                    if not pos:
+                        break
+                    
+                    # Calculate end position
+                    end_pos = f"{pos}+{len(word)}c"
+                    
+                    # Check if this is a whole word (not part of another word)
+                    # Get character before and after the match
+                    try:
+                        char_before = text_widget.get(f"{pos}-1c", pos) if pos != "1.0" else " "
+                        char_after = text_widget.get(end_pos, f"{end_pos}+1c")
+                        
+                        # Check if it's a word boundary (alphanumeric character check)
+                        if (not char_before.isalnum() and char_before != "_") and \
+                           (not char_after.isalnum() and char_after != "_"):
+                            # Apply the highlight tag
+                            text_widget.tag_add(tag_name, pos, end_pos)
+                    except tk.TclError:
+                        # Handle edge cases at text boundaries
+                        text_widget.tag_add(tag_name, pos, end_pos)
+                    
+                    # Move to next character to continue search
+                    start_index = f"{pos}+1c"
+    
+    @staticmethod
+    def add_highlight_color(color_name, words, color, bg_color=None):
+        """
+        Add a new color group to the highlighting configuration.
+        
+        Args:
+            color_name (str): Name of the color group (e.g., 'green', 'yellow')
+            words (list): List of words to highlight with this color
+            color (str): Foreground color (hex format, e.g., '#51CF66')
+            bg_color (str, optional): Background color (hex format). If None, will use light version of color.
+        
+        Example:
+            TabContent.add_highlight_color('green', ['success', 'complete', 'pass'], '#51CF66', '#EBFBEE')
+        """
+        if bg_color is None:
+            # Generate a light background color if not provided
+            bg_color = color + '33'  # Add transparency for a light effect
+        
+        HIGHLIGHT_CONFIG[color_name] = {
+            'words': words,
+            'color': color,
+            'bg_color': bg_color
+        }
+        print(f"Added highlight color '{color_name}' with {len(words)} words")
+    
+    @staticmethod
+    def add_words_to_color(color_name, new_words):
+        """
+        Add words to an existing color group.
+        
+        Args:
+            color_name (str): Name of the existing color group
+            new_words (list): List of new words to add to this color group
+        
+        Example:
+            TabContent.add_words_to_color('red', ['remove', 'delete'])
+        """
+        if color_name in HIGHLIGHT_CONFIG:
+            HIGHLIGHT_CONFIG[color_name]['words'].extend(new_words)
+            print(f"Added {len(new_words)} words to '{color_name}' highlight group")
+        else:
+            print(f"Color group '{color_name}' not found. Available groups: {list(HIGHLIGHT_CONFIG.keys())}")
+    
+    @staticmethod
+    def remove_words_from_color(color_name, words_to_remove):
+        """
+        Remove words from an existing color group.
+        
+        Args:
+            color_name (str): Name of the existing color group
+            words_to_remove (list): List of words to remove from this color group
+        
+        Example:
+            TabContent.remove_words_from_color('blue', ['Telemetry'])
+        """
+        if color_name in HIGHLIGHT_CONFIG:
+            for word in words_to_remove:
+                if word in HIGHLIGHT_CONFIG[color_name]['words']:
+                    HIGHLIGHT_CONFIG[color_name]['words'].remove(word)
+            print(f"Removed {len(words_to_remove)} words from '{color_name}' highlight group")
+        else:
+            print(f"Color group '{color_name}' not found. Available groups: {list(HIGHLIGHT_CONFIG.keys())}")
+    
+    @staticmethod
+    def get_highlight_config():
+        """
+        Get the current highlighting configuration.
+        
+        Returns:
+            dict: Current highlighting configuration
+        """
+        return HIGHLIGHT_CONFIG.copy()
+    
+    def refresh_highlighting(self):
+        """
+        Refresh highlighting in the step guide display without reloading content.
+        Useful after modifying the highlight configuration.
+        """
+        if hasattr(self, 'step_description') and hasattr(self, 'step_expected'):
+            # Reconfigure tags with new configuration
+            self._configure_highlighting_tags()
+            
+            # Reapply highlighting to current content
+            description_content = self.step_description.get(1.0, tk.END).rstrip('\n')
+            expected_content = self.step_expected.get(1.0, tk.END).rstrip('\n')
+            
+            if description_content:
+                self._apply_text_highlighting(self.step_description, description_content)
+            if expected_content:
+                self._apply_text_highlighting(self.step_expected, expected_content)
+    
+    def _toggle_step_guide(self):
+        """Toggle the visibility of the step guide panel."""
+        
+        if self.step_guide_visible:
+            # Hide panel
+            self.step_guide_container.pack_forget()
+            self.toggle_arrow.config(text="◄")  # Show ◄ to indicate expansion
+            self.step_guide_visible = False
+        else:
+            # Show panel
+            self.step_guide_container.pack(side="left", fill="y", before=self.toggle_arrow)
+            self.toggle_arrow.config(text="►")  # Show ► to indicate collapse
+            self.step_guide_visible = True
+            
+            # Refresh content when shown
+            self._scan_for_htm_files()
+            self._update_step_guide_display()
+    
+    
+    def _scan_for_htm_files(self):
+        """Scan the current directory for .htm files and load steps."""
+        
+        try:
+            # Get directory from app if available
+            directory = "."
+            if hasattr(self, 'app') and hasattr(self.app, 'get_directory'):
+                directory = self.app.get_directory()
+            
+            # Look for .htm and .html files
+            from pathlib import Path
+            htm_files = list(Path(directory).glob("*.htm")) + list(Path(directory).glob("*.html"))
+            
+            if not htm_files:
+                self.step_guide_status.config(text="No .htm/.html files found")
+                self.reload_button.pack(side="right", padx=(5, 0))  # Show reload button
+                self.loaded_steps = []
+                self.current_htm_file = None
+                return
+            
+            # Use the first .htm/.html file found
+            htm_file = htm_files[0]
+            self.current_htm_file = htm_file
+            
+            # Hide reload button when file is found
+            self.reload_button.pack_forget()
+            
+            # Load steps from file
+            with open(htm_file, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            self.loaded_steps = self.step_guide_parser.parseStepsFromHtml(html_content)
+            
+            if self.loaded_steps:
+                total_steps = len(self.loaded_steps)
+                self.step_guide_status.config(text=f"Loaded {total_steps} steps from {htm_file.name}")
+            else:
+                self.step_guide_status.config(text=f"No steps found in {htm_file.name}")
+                self.reload_button.pack(side="right", padx=(5, 0))  # Show reload button
+                
+        except Exception as e:
+            self.step_guide_status.config(text=f"Error loading HTML file: {str(e)}")
+            self.reload_button.pack(side="right", padx=(5, 0))  # Show reload button on error
+            self.loaded_steps = []
+            self.current_htm_file = None
+    
+    def _update_step_guide_display(self):
+        """Update the step guide display based on current step."""
+        
+        if not hasattr(self, 'step_description') or not hasattr(self, 'step_expected'):
+            return
+        
+        # Get current step from step manager
+        current_step = 1
+        if self.step_manager:
+            current_step = self.step_manager.get_current_step()
+        
+        # Update navigation button states
+        self._update_nav_button_states(current_step)
+        
+        if not self.loaded_steps:
+            # No steps loaded - show instructions
+            instructions = """No HTML files found. To load step guides:
+
+1. Right-click on the test page in your browser
+2. Select "Save page as..."
+3. Choose "Web Page, HTML only (*.htm;*.html)" from the file type dropdown
+4. Save the file in this directory
+5. Click the refresh button (↻) to reload
+
+The step guide will automatically parse and display the test steps with highlighted keywords."""
+            
+            self._apply_text_highlighting(self.step_description, instructions)
+            self._apply_text_highlighting(self.step_expected, "N/A")
+            # Update step counter
+            if hasattr(self, 'step_counter_label'):
+                self.step_counter_label.config(text="No steps loaded")
+            return
+        
+        # Check if step exists (1-based indexing)
+        step_index = current_step - 1
+        
+        if 0 <= step_index < len(self.loaded_steps):
+            step_data = self.loaded_steps[step_index]
+            
+            # Show step content with highlighting
+            description = step_data.get('description', 'N/A')
+            expected = step_data.get('expected_result', 'N/A')
+            
+            self._apply_text_highlighting(self.step_description, description)
+            self._apply_text_highlighting(self.step_expected, expected)
+            
+            # Update status and step counter
+            total_steps = len(self.loaded_steps)
+            if hasattr(self, 'step_counter_label'):
+                self.step_counter_label.config(text=f"Step {current_step} of {total_steps}")
+            if self.current_htm_file:
+                self.step_guide_status.config(text=f"{self.current_htm_file.name}")
+        else:
+            # Step doesn't exist
+            self._apply_text_highlighting(self.step_description, "N/A")
+            self._apply_text_highlighting(self.step_expected, "N/A")
+            
+            total_steps = len(self.loaded_steps)
+            if hasattr(self, 'step_counter_label'):
+                self.step_counter_label.config(text=f"Step {current_step} of {total_steps} (Not Found)")
+            if self.current_htm_file:
+                self.step_guide_status.config(text=f"Step {current_step} not found (max: {total_steps}) - {self.current_htm_file.name}")
+    
+    def _on_step_change(self):
+        """Called when step changes - update guide display."""
+        if self.step_guide_visible:
+            self._update_step_guide_display()
+    
+    def _connect_step_manager_to_guide(self):
+        """Connect step manager changes to step guide display updates."""
+        if self.step_manager and hasattr(self.step_manager, 'step_var'):
+            # Add a trace to the step variable to update guide when step changes
+            self.step_manager.step_var.trace_add("write", lambda *args: self._on_step_change())
+    
+    def _previous_step(self):
+        """Navigate to previous step from step guide."""
+        if self.step_manager:
+            self.step_manager.update_step_number(-1)
+    
+    def _next_step(self):
+        """Navigate to next step from step guide."""
+        if self.step_manager:
+            self.step_manager.update_step_number(1)
+    
+    def _update_nav_button_states(self, current_step):
+        """Update navigation button states based on current step."""
+        if not hasattr(self, 'prev_step_btn') or not hasattr(self, 'next_step_btn'):
+            return
+        
+        total_steps = len(self.loaded_steps) if self.loaded_steps else 0
+        
+        # Disable previous button if at first step
+        if current_step <= 1:
+            self.prev_step_btn.config(state="disabled")
+        else:
+            self.prev_step_btn.config(state="normal")
+        
+        # Disable next button if at last step or no steps
+        if current_step >= total_steps or total_steps == 0:
+            self.next_step_btn.config(state="disabled")
+        else:
+            self.next_step_btn.config(state="normal")
+    
+    def refresh_step_guide(self):
+        """Public method to refresh step guide - useful when directory changes."""
+        if hasattr(self, 'step_guide_parser'):
+            self._scan_for_htm_files()
+            self._update_step_guide_display()
 
     def create_labeled_frame(self, quadrant: str, title: str) -> ttk.LabelFrame:
         """
@@ -462,6 +1038,16 @@ class TabContent(ABC):
 
     def populate_alerts_tree(self, tree, alert_items, alerts_data):
         """Populates treeview with alerts data"""
+        # Configure highlight tag for newly seen alerts
+        try:
+            tree.tag_configure('new_item', background='#FFF3BF')  # light yellow
+        except Exception:
+            pass
+
+        # Track seen alert IDs across refreshes
+        previous_seen: set = getattr(self, '_seen_alert_ids', set())
+        current_seen: set = set()
+
         # Clear existing items
         tree.delete(*tree.get_children())
         alert_items.clear()
@@ -482,10 +1068,19 @@ class TabContent(ABC):
                 alert.get('priority', 'N/A')
             )
             
-            item_id = tree.insert('', 'end', values=values)
+            # Determine unique id for alert (prefer 'id', fallback to sequenceNum)
+            unique_id = alert.get('id') or alert.get('sequenceNum')
+            is_new = unique_id not in previous_seen
+            current_seen.add(unique_id)
+
+            tags = ('new_item',) if is_new else ()
+            item_id = tree.insert('', 'end', values=values, tags=tags)
             alert_items[item_id] = alert  # Store reference to the alert
         
         print(f"Populated {len(sorted_alerts)} alerts")
+
+        # Save the current set for next refresh
+        self._seen_alert_ids = current_seen
 
     def acknowledge_selected_alert(self, tree, alert_items):
         """
@@ -784,6 +1379,7 @@ class TabContent(ABC):
                              .get('supplyColorCode', ''))
                 
                 state_reasons = (event.get('eventDetail', {})
+                               .get('eventDetailConsumable', {})
                                .get('stateInfo', {})
                                .get('stateReasons', []))
                 
@@ -802,7 +1398,13 @@ class TabContent(ABC):
             base_filename = f"Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
             
             # Use the automatic JSON saving method
-            success, filepath = self.file_manager.save_json_data(event, base_filename)
+            try:
+                parsed = json.loads(event) if isinstance(event, str) else event
+                formatted = json.dumps(parsed, indent=4)
+            except Exception:
+                # Fallback: keep original content if parsing fails
+                formatted = event if isinstance(event, str) else json.dumps(event, indent=4)
+            success, filepath = self.file_manager.save_text_data(formatted, base_filename, extension=".json")
             
             if success:
                 self.notifications.show_success(f"Telemetry saved as {os.path.basename(filepath)}")
@@ -823,14 +1425,31 @@ class TabContent(ABC):
             events_data: List of telemetry events
             is_dune_format: Boolean indicating if data is in Dune format (no eventDetailConsumable level)
         """
+        # Configure highlight tag for newly seen telemetry events
+        try:
+            tree.tag_configure('new_item', background='#FFF3BF')  # light yellow
+        except Exception:
+            pass
+
+        # Track seen sequence numbers across refreshes
+        previous_seen: set = getattr(self, '_seen_telemetry_seq', set())
+        current_seen: set = set()
+
         # Clear existing items
         tree.delete(*tree.get_children())
         telemetry_items.clear()
         
-        # Sort events by sequence number if available
-        sorted_events = sorted(events_data, 
-                              key=lambda x: x.get('sequenceNumber', 0),
-                              reverse=True)
+        # Order events newest-first for display
+        # - Dune format: higher sequenceNumber is newer → sort desc
+        # - Trillium format: API provides oldest→newest → reverse the list
+        if is_dune_format:
+            sorted_events = sorted(
+                events_data,
+                key=lambda x: x.get('sequenceNumber', 0),
+                reverse=True,
+            )
+        else:
+            sorted_events = list(reversed(events_data))
         
         # Color mapping
         color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black', 'CMY': 'Tri-Color'}
@@ -873,10 +1492,19 @@ class TabContent(ABC):
             
             values = (seq_num, color, state_reasons_str, trigger)
             
-            item_id = tree.insert('', 'end', values=values)
+            # Determine if this is a newly seen event by sequence number
+            is_new = seq_num not in previous_seen
+            if seq_num is not None:
+                current_seen.add(seq_num)
+
+            tags = ('new_item',) if is_new else ()
+            item_id = tree.insert('', 'end', values=values, tags=tags)
             telemetry_items[item_id] = event  # Store reference to the event
         
         print(f"Populated {len(sorted_events)} telemetry events")
+
+        # Save the current set for next refresh
+        self._seen_telemetry_seq = current_seen
 
     def fetch_telemetry(self):
         """Standard implementation for fetching telemetry asynchronously"""
@@ -917,65 +1545,6 @@ class TabContent(ABC):
             list: List of telemetry event dictionaries
         """
         raise NotImplementedError("Subclasses must implement _get_telemetry_data")
-
-
-
-    def _create_udw_command_controls(self):
-        """Create the controls to handle udw interactions with the printer"""
-        # Create step control frame
-        self.udw_frame = ttk.Frame(self.connection_frame)
-        self.udw_frame.pack(side="left", pady=5, padx=10)
-
-        self.send_udw_button = ttk.Button(
-            self.udw_frame,
-            text="Send udws:",
-            width=11,
-            command=lambda: self.handle_udw_enter_pressed(None)
-        )
-        self.send_udw_button.pack(side="left")
-
-        # Add step entry
-        self.udw_cmd_entry = ttk.Entry(
-            self.udw_frame,
-            width=35
-        )
-        self.udw_cmd_entry.pack(side="left", padx=2)
-        self.udw_cmd_entry.bind('<Return>', self.handle_udw_enter_pressed)
-        self.udw_cmd_entry.bind('<Up>', self.handle_up_arrow_pressed)
-        self.udw_cmd_entry.bind('<Down>', self.handle_down_arrow_pressed)
-
-    def handle_udw_enter_pressed(self, event):
-        """Handle pressing enter while in focus of entering UDW cmd"""
-        cmd = self.udw_cmd_entry.get()
-        self.udw.send_udw_command_to_printer(self.ip, cmd)
-        self.udw.commands_sent.append(cmd)
-        self.udw_history_index = -1
-
-    def handle_up_arrow_pressed(self, event):
-        """
-        Handle pressing up while in focus of entering UDW cmd
-
-        Effect: Increment the history index and fetch the previous command sent in that index.
-        """
-        if self.udw_history_index < len(self.udw.commands_sent)-1:
-            self.udw_history_index += 1
-            self.udw_cmd_entry.delete(0, 9999)
-            self.udw_cmd_entry.insert(0,
-                                      self.udw.commands_sent[len(self.udw.commands_sent) - 1 - self.udw_history_index])
-
-    def handle_down_arrow_pressed(self, event):
-        """
-        Handle pressing down while in focus of entering UDW cmd
-
-        Effect: Decrement the history index and fetch the previous command sent in that index.
-        """
-        if self.udw_history_index >= 0:
-            self.udw_history_index -= 1
-            self.udw_cmd_entry.delete(0, 9999)
-            if self.udw_history_index > -1:
-                self.udw_cmd_entry.insert(0,
-                                          self.udw.commands_sent[len(self.udw.commands_sent) - 1 - self.udw_history_index])
-
     
     def update_file_manager_directory(self, new_directory: str) -> None:
         """Update the FileManager's default directory when tab directory changes."""
@@ -987,6 +1556,9 @@ class TabContent(ABC):
         print(f"> [{self.__class__.__name__}] Directory changed to: {new_directory}")
         self.directory = new_directory
         # FileManager is auto-synced via app callbacks, no manual update needed
+        
+        # Refresh step guide to scan for .htm files in new directory
+        self.refresh_step_guide()
         
         # Hook for tab-specific directory change behavior
         self._on_directory_change_hook(new_directory)

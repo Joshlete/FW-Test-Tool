@@ -352,7 +352,15 @@ class TrilliumTab(TabContent):
                 else:
                     filename = f"CDM {endpoint_name}"
                 
-                success, filepath = self.file_manager.save_json_data(content, filename, step_number=step_number)
+                # Save JSON with 4-space indentation (no leading tab)
+                try:
+                    parsed_json = json.loads(content) if isinstance(content, str) else content
+                    formatted_json = json.dumps(parsed_json, indent=4)
+                except Exception:
+                    formatted_json = content if isinstance(content, str) else json.dumps(content, indent=4)
+                success, filepath = self.file_manager.save_text_data(
+                    formatted_json, filename, step_number=step_number, extension=".json"
+                )
                 save_results.append((success, endpoint, filepath))
             
             # Notify about results
@@ -424,12 +432,10 @@ class TrilliumTab(TabContent):
             self.root.after(0, lambda: self.fetch_alerts_button.config(
                 state="normal", text="Fetch Alerts"))
 
-    async def _get_telemetry_data(self):
+    def _get_telemetry_data(self):
         """Implementation of abstract method from parent class - fetches telemetry data"""
-        # Use the DuneFetcher instance to get telemetry data with refresh=True
-        return await self.async_manager.run_in_executor(
-            lambda: self.app.dune_fetcher.get_telemetry_data(refresh=True)
-        )
+        # Base class will run this in a thread via run_in_executor
+        return self.app.dune_fetcher.get_telemetry_data(refresh=True)
 
     def clear_cdm_checkboxes(self):
         """Clears all selected CDM endpoints."""
@@ -727,8 +733,9 @@ class TrilliumTab(TabContent):
                     else:
                         filename = f"CDM_{base_filename}"
                     
-                    # Save the JSON data
-                    success, filepath = self.file_manager.save_json_data(json_data, filename)
+                    # Save the JSON data with 4-space indentation (no leading tab)
+                    formatted = json.dumps(json_data, indent=4)
+                    success, filepath = self.file_manager.save_text_data(formatted, filename, extension=".json")
                     
                     if success:
                         success_count += 1
@@ -842,8 +849,11 @@ class TrilliumTab(TabContent):
                 # Create base filename exactly as in telemetry table
                 base_filename = f"Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
                 
-                # Save the JSON data using the base class method (same as telemetry table)
-                success, filepath = self.file_manager.save_json_data(json_data, base_filename, step_number=current_step)
+                # Save the JSON data with 4-space indentation (no leading tab)
+                formatted = json.dumps(json_data, indent=4)
+                success, filepath = self.file_manager.save_text_data(
+                    formatted, base_filename, step_number=current_step, extension=".json"
+                )
                 
                 if success:
                     status_label.config(text=f"Telemetry saved to: {os.path.basename(filepath)}")
@@ -912,8 +922,15 @@ class TrilliumTab(TabContent):
                 # Create base filename with OpenSearch prefix
                 base_filename = f"OpenSearch_Telemetry_{color}_{state_reasons_str}_{notification_trigger}"
                 
-                # Save the JSON data using the base class method
-                success, filepath = self.file_manager.save_json_data(json_data, base_filename, step_number=current_step)
+                # Save the JSON data with 4-space indentation
+                formatted_json = json.dumps(json_data, indent=4)
+                
+                # Add an additional tab to each line as requested
+                formatted = '\n'.join(['\t' + line for line in formatted_json.split('\n')])
+                
+                success, filepath = self.file_manager.save_text_data(
+                    formatted, base_filename, step_number=current_step, extension=".json"
+                )
                 
                 if success:
                     status_label.config(text=f"OpenSearch telemetry saved to: {os.path.basename(filepath)}")
@@ -942,7 +959,7 @@ class TrilliumTab(TabContent):
             current_step = str(self.step_manager.get_current_step())
             
             # Save the raw text
-            success, filepath = self.save_text_data(text, f"Script Output")
+            success, filepath = self.file_manager.save_text_data(text, "Script Output")
             
             if success:
                 status_label.config(text=f"Script output saved to: {os.path.basename(filepath)}")

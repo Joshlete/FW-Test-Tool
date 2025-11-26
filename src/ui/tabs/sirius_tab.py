@@ -473,7 +473,12 @@ class SiriusTab(TabContent):
                         # Use current step number from step_manager
                         step_num = self.step_manager.get_current_step()
                         
-                        success, filepath = self.save_text_data(content, filename, extension=".xml", step_number=step_num)
+                        success, filepath = self.file_manager.save_text_data(
+                            content,
+                            filename,
+                            extension=".xml",
+                            step_number=step_num
+                        )
                         save_results.append((success, endpoint, filepath))
                     
                     # Notify about results

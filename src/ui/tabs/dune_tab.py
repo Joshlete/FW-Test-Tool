@@ -46,7 +46,9 @@ class DuneTab(TabContent):
         self.cdm_vars = {option: IntVar() for option in self.cdm_options}
         
         # Rotation setting for UI view (right-click on View UI)
-        self.rotation_var = tk.IntVar(value=0)
+        # Load rotation from config, default to 0 if not set
+        saved_rotation = self.app.config_manager.get("dune_rotation", 0)
+        self.rotation_var = tk.IntVar(value=saved_rotation)
         self.rotation_menu = None
         
         super().__init__(parent)
@@ -223,11 +225,6 @@ class DuneTab(TabContent):
         # Center: Modern Step Controls
         self._create_modern_step_controls(left_controls)
         
-        # Right side: UDW controls
-        right_controls = tk.Frame(main_controls, bg=ModernStyle.COLORS['bg_card'])
-        right_controls.pack(side="right")
-        
-        self._create_modern_udw_controls(right_controls)
         
     def _create_modern_step_controls(self, parent):
         """Creates a modern, user-friendly step control interface."""
@@ -265,38 +262,6 @@ class DuneTab(TabContent):
         )
         self.step_up_button.pack(side="left")
         
-    def _create_modern_udw_controls(self, parent):
-        """Creates modern UDW command controls."""
-        udw_container = tk.Frame(parent, bg=ModernStyle.COLORS['gray_200'], relief="solid", bd=1)
-        udw_container.pack(side="right")
-        
-        # UDW header
-        udw_header = tk.Frame(udw_container, bg=ModernStyle.COLORS['gray_200'])
-        udw_header.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=(ModernStyle.SPACING['xs'], 0))
-        
-        udw_label = tk.Label(udw_header, text="UDW Commands", font=ModernStyle.FONTS['bold'],
-                            bg=ModernStyle.COLORS['gray_200'], fg=ModernStyle.COLORS['text_primary'])
-        udw_label.pack()
-        
-        # UDW controls
-        udw_controls = tk.Frame(udw_container, bg=ModernStyle.COLORS['gray_200'])
-        udw_controls.pack(fill="x", padx=ModernStyle.SPACING['sm'], pady=ModernStyle.SPACING['xs'])
-        
-        # Modern entry field
-        self.udw_cmd_entry = tk.Entry(udw_controls, width=30, font=ModernStyle.FONTS['default'],
-                                     relief="flat", bd=2, highlightthickness=2,
-                                     highlightcolor=ModernStyle.COLORS['primary'],
-                                     bg="white", fg=ModernStyle.COLORS['text_primary'])
-        self.udw_cmd_entry.pack(side="left", padx=(0, ModernStyle.SPACING['xs']))
-        self.udw_cmd_entry.bind('<Return>', self.handle_udw_enter_pressed)
-        self.udw_cmd_entry.bind('<Up>', self.handle_up_arrow_pressed)
-        self.udw_cmd_entry.bind('<Down>', self.handle_down_arrow_pressed)
-        
-        # Send button
-        self.send_udw_button = ModernComponents.create_modern_button(
-            udw_controls, "Send", 'info', lambda: self.handle_udw_enter_pressed(None), width=8
-        )
-        self.send_udw_button.pack(side="left")
 
     def update_step_number(self, delta):
         """Proxy for StepManager.update_step_number"""
@@ -336,6 +301,9 @@ class DuneTab(TabContent):
         self.rotation_menu.add_radiobutton(label="Rotate 180°", variable=self.rotation_var, value=180)
         self.rotation_menu.add_radiobutton(label="Rotate 270°", variable=self.rotation_var, value=270)
         self.continuous_ui_button.bind("<Button-3>", self.show_rotation_menu)
+        
+        # Add callback to save rotation setting when changed
+        self.rotation_var.trace_add("write", self._on_rotation_changed)
         
         # Add individual UI capture button
         self.capture_ui_button = ModernComponents.create_modern_button(
@@ -458,6 +426,13 @@ class DuneTab(TabContent):
         # Pack scrollbar and canvas
         self.cdm_scrollbar.pack(side="right", fill="y")
         self.cdm_canvas.pack(side="left", fill="both", expand=True)
+        
+        # Bind mouse wheel events for scrolling
+        self.cdm_canvas.bind("<MouseWheel>", self._on_cdm_mousewheel)
+        self.cdm_checkbox_frame.bind("<MouseWheel>", self._on_cdm_mousewheel)
+        
+        # Also bind to the canvas when mouse enters
+        self.cdm_canvas.bind("<Enter>", lambda e: self.cdm_canvas.focus_set())
 
         # Add CDM checkboxes with modern styling
         for option in self.cdm_options:
@@ -790,9 +765,14 @@ class DuneTab(TabContent):
                 if "cdm/alert" in endpoint:
                     endpoint_name = "alert_alerts"
                     
-                # Save with CDM prefix
+                # Save with CDM prefix using 4-space indentation (no leading tab)
                 filename = f"CDM {endpoint_name}"
-                success, filepath = self.file_manager.save_json_data(content, filename)
+                try:
+                    parsed_json = json.loads(content) if isinstance(content, str) else content
+                    formatted_json = json.dumps(parsed_json, indent=4)
+                except Exception:
+                    formatted_json = content if isinstance(content, str) else json.dumps(content, indent=4)
+                success, filepath = self.file_manager.save_text_data(formatted_json, filename, extension=".json")
                 save_results.append((success, endpoint, filepath))
             
             # Notify about results
@@ -1038,6 +1018,14 @@ class DuneTab(TabContent):
         try:
             self.image_label.unbind("<Button-1>")
             self.image_label.unbind("<Button-3>")
+            self.image_label.unbind("<B1-Motion>")
+            self.image_label.unbind("<ButtonRelease-1>")
+            self.image_label.unbind("<MouseWheel>")
+            self.image_label.unbind("<Shift-MouseWheel>")
+            self.image_label.unbind("<Button-4>")
+            self.image_label.unbind("<Button-5>")
+            self.image_label.unbind("<Button-6>")
+            self.image_label.unbind("<Button-7>")
         except:
             pass
         
@@ -1109,6 +1097,11 @@ class DuneTab(TabContent):
         """Clears all selected CDM endpoints."""
         for var in self.cdm_vars.values():
             var.set(0)
+    
+    def _on_cdm_mousewheel(self, event):
+        """Handle mouse wheel scrolling for CDM canvas."""
+        # Scroll the canvas
+        self.cdm_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def update_clear_button_visibility(self, *args):
         """Updates the visibility of the Clear button based on checkbox selections."""
@@ -1430,10 +1423,14 @@ class DuneTab(TabContent):
             if "cdm/alert" in endpoint:
                 endpoint_name = "alert_alerts"
             
-            # Save with CDM prefix
+            # Save with CDM prefix using 4-space indentation (no leading tab)
             filename = f"CDM {endpoint_name}"
-            
-            success, filepath = self.file_manager.save_json_data(json_data, filename)
+            try:
+                parsed = json.loads(json_data) if isinstance(json_data, str) else json_data
+                formatted = json.dumps(parsed, indent=4)
+            except Exception:
+                formatted = json_data if isinstance(json_data, str) else json.dumps(json_data, indent=4)
+            success, filepath = self.file_manager.save_text_data(formatted, filename, extension=".json")
             
             if success:
                 self.notifications.show_success(f"Saved CDM data to {os.path.basename(filepath)}")
@@ -1447,6 +1444,92 @@ class DuneTab(TabContent):
         """Display rotation menu on right-click of the View UI button."""
         if self.rotation_menu:
             self.rotation_menu.tk_popup(event.x_root, event.y_root)
+    
+    def _on_rotation_changed(self, *args):
+        """Save rotation setting when it changes."""
+        rotation_value = self.rotation_var.get()
+        self.app.config_manager.set("dune_rotation", rotation_value)
+        print(f"> [Dune] Rotation setting saved: {rotation_value}°")
+
+    def _calculate_vnc_coordinates(self, display_x, display_y):
+        """Convert display coordinates into VNC coordinates for interaction."""
+        if not hasattr(self, '_image_scale_info') or self._image_scale_info is None:
+            return None
+        
+        screen_resolution = self.vnc_connection.screen_resolution
+        if not screen_resolution:
+            return None
+        
+        display_width, display_height = self._image_scale_info['display_size']
+        if display_width <= 0 or display_height <= 0:
+            return None
+        
+        if display_x < 0 or display_y < 0 or display_x >= display_width or display_y >= display_height:
+            return None
+        
+        screen_width, screen_height = screen_resolution
+        scale_x = screen_width / display_width
+        scale_y = screen_height / display_height
+        
+        if screen_width < SMALL_SCREEN_WIDTH_THRESHOLD:
+            scale_x = scale_x * COORDINATE_SCALE_FACTOR
+        
+        vnc_x = int(display_x * scale_x)
+        vnc_y = int(display_y * scale_y)
+        
+        vnc_x = max(0, min(vnc_x, screen_width - 1))
+        vnc_y = max(0, min(vnc_y, screen_height - 1))
+        return vnc_x, vnc_y
+
+    def _handle_wheel_event(self, event, axis="vertical", delta_override=None):
+        """Send scroll events to the VNC connection."""
+        if not self.vnc_connection.connected or not self.vnc_connection.viewing:
+            return None
+        
+        coords = self._calculate_vnc_coordinates(event.x, event.y)
+        if coords is None:
+            return None
+        
+        vnc_x, vnc_y = coords
+        delta = delta_override if delta_override is not None else getattr(event, "delta", 0)
+        if delta == 0:
+            return "break"
+        
+        if axis == "horizontal":
+            success = self.vnc_connection.scroll_horizontal(delta, x=vnc_x, y=vnc_y)
+            direction_label = "horizontal"
+        else:
+            success = self.vnc_connection.scroll_vertical(delta, x=vnc_x, y=vnc_y)
+            direction_label = "vertical"
+        
+        if success:
+            if DEBUG:
+                print(f">     [Dune] Sent {direction_label} scroll delta={delta} to ({vnc_x}, {vnc_y})")
+            return "break"
+        
+        self.notifications.show_error("Failed to send scroll event")
+        return "break"
+
+    def _on_mousewheel(self, event):
+        """Handle standard mouse wheel events (vertical by default, horizontal with Shift)."""
+        axis = "horizontal" if (getattr(event, "state", 0) & 0x0001) else "vertical"
+        return self._handle_wheel_event(event, axis=axis)
+
+    def _on_linux_scroll_up(self, event):
+        """Handle Linux/X11 button-based scroll up events."""
+        return self._handle_wheel_event(event, axis="vertical", delta_override=1)
+
+    def _on_linux_scroll_down(self, event):
+        """Handle Linux/X11 button-based scroll down events."""
+        return self._handle_wheel_event(event, axis="vertical", delta_override=-1)
+
+    def _on_linux_scroll_left(self, event):
+        """Handle Linux/X11 button-based scroll left events."""
+        return self._handle_wheel_event(event, axis="horizontal", delta_override=1)
+
+    def _on_linux_scroll_right(self, event):
+        """Handle Linux/X11 button-based scroll right events."""
+        return self._handle_wheel_event(event, axis="horizontal", delta_override=-1)
 
     def _on_mouse_down(self, event):
         """Handle mouse button press"""
@@ -1559,63 +1642,6 @@ class DuneTab(TabContent):
         except Exception as e:
             self.notifications.show_error(f"Mouse up error: {str(e)}")
             
-    def _on_mouse_wheel(self, event):
-        """Handle mouse wheel scrolling"""
-        if not self.vnc_connection.connected or not self.vnc_connection.viewing:
-            return
-            
-        try:
-            # Get display coordinates
-            display_width, display_height = self._image_scale_info['display_size']
-            screen_resolution = self.vnc_connection.screen_resolution
-            
-            if not screen_resolution:
-                return
-                
-            screen_width, screen_height = screen_resolution
-            scale_x = screen_width / display_width
-            scale_y = screen_height / display_height
-            
-            if screen_width < SMALL_SCREEN_WIDTH_THRESHOLD:
-                scale_x = scale_x * COORDINATE_SCALE_FACTOR
-            
-            # Transform coordinates
-            vnc_x = int(event.x * scale_x)
-            vnc_y = int(event.y * scale_y)
-            
-            # Ensure coordinates are within bounds
-            vnc_x = max(0, min(vnc_x, screen_width - 1))
-            vnc_y = max(0, min(vnc_y, screen_height - 1))
-            
-            # Determine scroll direction
-            scroll_up = False
-            if hasattr(event, 'delta') and event.delta != 0:
-                scroll_up = event.delta > 0
-            elif hasattr(event, 'num') and event.num in (4, 5):
-                scroll_up = event.num == 4
-            else:
-                return
-                
-            # Calculate drag distance based on direction
-            drag_distance = 20  # pixels to drag
-            if not scroll_up:
-                drag_distance = -drag_distance
-                
-            # Simulate drag
-            self.vnc_connection.mouse_down(vnc_x, vnc_y)
-            time.sleep(0.05)  # Small delay
-            
-            # Move to new position
-            new_y = max(0, min(vnc_y + drag_distance, screen_height - 1))
-            self.vnc_connection.mouse_move(vnc_x, new_y)
-            time.sleep(0.05)  # Small delay
-            
-            # Release
-            self.vnc_connection.mouse_up(vnc_x, new_y)
-                    
-        except Exception as e:
-            self.notifications.show_error(f"Mouse wheel error: {str(e)}")
-            
     def _on_image_click(self, event):
         """Handle right clicks following PrinterUIApp mouse pattern"""
         if not self.vnc_connection.connected or not self.vnc_connection.viewing:
@@ -1683,6 +1709,12 @@ class DuneTab(TabContent):
             self.image_label.unbind("<Button-3>")
             self.image_label.unbind("<B1-Motion>")
             self.image_label.unbind("<ButtonRelease-1>")
+            self.image_label.unbind("<MouseWheel>")
+            self.image_label.unbind("<Shift-MouseWheel>")
+            self.image_label.unbind("<Button-4>")
+            self.image_label.unbind("<Button-5>")
+            self.image_label.unbind("<Button-6>")
+            self.image_label.unbind("<Button-7>")
             
             # Initialize drag state
             self.drag_start_x = None
@@ -1694,11 +1726,12 @@ class DuneTab(TabContent):
             self.image_label.bind("<B1-Motion>", self._on_mouse_drag)  # Drag
             self.image_label.bind("<ButtonRelease-1>", self._on_mouse_up)  # Release
             self.image_label.bind("<Button-3>", self._on_image_click)  # Right click
-            
-            # Bind mouse wheel events
-            self.image_label.bind("<MouseWheel>", self._on_mouse_wheel)  # Windows
-            self.image_label.bind("<Button-4>", self._on_mouse_wheel)  # Linux scroll up
-            self.image_label.bind("<Button-5>", self._on_mouse_wheel)  # Linux scroll down
+            self.image_label.bind("<MouseWheel>", self._on_mousewheel)
+            self.image_label.bind("<Shift-MouseWheel>", self._on_mousewheel)
+            self.image_label.bind("<Button-4>", self._on_linux_scroll_up)
+            self.image_label.bind("<Button-5>", self._on_linux_scroll_down)
+            self.image_label.bind("<Button-6>", self._on_linux_scroll_left)
+            self.image_label.bind("<Button-7>", self._on_linux_scroll_right)
             
             if DEBUG:
                 print(f">     [Dune] Click events bound to UI image")

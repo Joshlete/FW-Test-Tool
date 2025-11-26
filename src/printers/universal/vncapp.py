@@ -46,6 +46,11 @@ VNC_PORT = 5900
 REMOTE_CONTROL_PATH = "/core/bin/remoteControlPanel"
 INPUT_DEVICE = "/dev/input/event0"
 
+SCROLL_BUTTONS = {
+    "vertical": {"up": 8, "down": 16},
+    "horizontal": {"left": 32, "right": 64},
+}
+
 class VNCConnection:
     """Handles SSH, VNC connections, and screen capture with full interaction support"""
     
@@ -351,6 +356,93 @@ class VNCConnection:
             except Exception as e:
                 logger.error("Mouse up failed: %s", e)
         return False
+    
+    def scroll_vertical(self, delta, x=None, y=None):
+        """
+        Scroll vertically using the mouse wheel mapping.
+        
+        :param delta: Positive values scroll up, negative scroll down. Accepts raw Tk delta or step count.
+        :param x: Optional X coordinate to reposition the cursor before scrolling.
+        :param y: Optional Y coordinate to reposition the cursor before scrolling.
+        """
+        return self._scroll_wheel(delta, x=x, y=y, axis="vertical")
+    
+    def scroll_horizontal(self, delta, x=None, y=None):
+        """
+        Scroll horizontally using the mouse wheel mapping.
+        
+        :param delta: Positive values scroll left, negative scroll right.
+        :param x: Optional X coordinate to reposition the cursor before scrolling.
+        :param y: Optional Y coordinate to reposition the cursor before scrolling.
+        """
+        return self._scroll_wheel(delta, x=x, y=y, axis="horizontal")
+    
+    def _scroll_wheel(self, delta, x=None, y=None, axis="vertical"):
+        """Internal helper to translate wheel deltas into VNC button events."""
+        if not self.connected:
+            return False
+        
+        if delta is None:
+            return True
+        
+        steps = self._normalize_scroll_steps(delta)
+        if steps == 0:
+            return True
+        
+        direction_key = "up" if delta > 0 else "down"
+        if axis == "horizontal":
+            direction_key = "left" if delta > 0 else "right"
+        
+        button_map = SCROLL_BUTTONS.get(axis)
+        if not button_map:
+            logger.error("Unknown scroll axis: %s", axis)
+            return False
+        
+        button = button_map.get(direction_key)
+        if not button:
+            logger.error("No button mapping for %s scroll direction '%s'", axis, direction_key)
+            return False
+        
+        try:
+            if x is not None and y is not None:
+                self.vnc_client.mouseMove(x, y)
+            
+            for _ in range(steps):
+                self.vnc_client.mouseDown(button)
+                self.vnc_client.mouseUp(button)
+            
+            logger.info(
+                "Scrolled %s (%s) with delta=%s (steps=%s) at (%s, %s)",
+                axis,
+                direction_key,
+                delta,
+                steps,
+                x if x is not None else "current",
+                y if y is not None else "current",
+            )
+            return True
+        except Exception as e:
+            logger.error("Scroll failed: %s", e)
+            return False
+    
+    @staticmethod
+    def _normalize_scroll_steps(delta):
+        """Normalize platform-specific wheel delta into discrete scroll steps."""
+        try:
+            delta_value = float(delta)
+        except (TypeError, ValueError):
+            return 0
+        
+        magnitude = abs(delta_value)
+        if magnitude == 0:
+            return 0
+        
+        if magnitude >= 120:
+            steps = int(round(magnitude / 120))
+        else:
+            steps = int(round(magnitude))
+        
+        return max(1, steps)
 
     def _get_screen_resolution(self):
         """Get VNC screen resolution using proper resource management"""

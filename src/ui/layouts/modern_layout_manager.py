@@ -232,66 +232,6 @@ class ModernLayoutManager:
                 continue
     
     @staticmethod
-    def style_udw_controls(udw_frame) -> None:
-        """
-        Apply modern styling to UDW controls.
-        
-        Args:
-            udw_frame: The UDW frame to modernize
-        """
-        # Try to update frame background (only works for tk.Frame, not ttk.Frame)
-        try:
-            if hasattr(udw_frame, 'config'):
-                udw_frame.config(bg=ModernStyle.COLORS['bg_card'])
-        except tk.TclError:
-            pass  # TTK frames don't support bg option
-        
-        # Style all child widgets
-        for child in udw_frame.winfo_children():
-            try:
-                # Handle ttk.Button
-                if child.winfo_class() == 'TButton':
-                    text = child.cget('text')
-                    command = child.cget('command')
-                    width = child.cget('width')
-                    
-                    modern_button = ModernComponents.create_modern_button(
-                        udw_frame, text, 'info', command, width=width
-                    )
-                    
-                    pack_info = child.pack_info()
-                    child.destroy()
-                    modern_button.pack(**pack_info)
-                
-                # Handle regular tk.Button
-                elif isinstance(child, tk.Button):
-                    text = child.cget('text')
-                    command = child.cget('command')
-                    width = child.cget('width')
-                    
-                    modern_button = ModernComponents.create_modern_button(
-                        udw_frame, text, 'info', command, width=width
-                    )
-                    
-                    pack_info = child.pack_info()
-                    child.destroy()
-                    modern_button.pack(**pack_info)
-                
-                # Handle Entry widgets (ttk.Entry or tk.Entry)
-                elif child.winfo_class() in ['TEntry', 'Entry']:
-                    child.config(
-                        font=ModernStyle.FONTS['default'],
-                        relief="flat",
-                        bd=1,
-                        highlightthickness=1,
-                        highlightcolor=ModernStyle.COLORS['primary']
-                    )
-                
-            except tk.TclError as e:
-                print(f"Error styling UDW widget {child}: {e}")
-                continue
-    
-    @staticmethod
     def style_connection_buttons(connection_frame: tk.Frame, tab_instance=None, button_style_map: Dict[str, str] = None) -> None:
         """
         Apply modern styling to tab-specific connection buttons.

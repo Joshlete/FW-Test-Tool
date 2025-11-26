@@ -128,9 +128,14 @@ class FileManager:
             # Get safe filepath
             filepath, filename = self.get_safe_filepath(directory, base_filename, ".json", step_number)
             
-            # Write with pretty formatting
+            # Write with pretty formatting, prefixing each line with a single tab
+            pretty_json = json.dumps(data_dict, indent=4, ensure_ascii=False)
+            # Ensure consistent trailing newline handling before prefixing
+            if not pretty_json.endswith('\n'):
+                pretty_json = pretty_json + '\n'
+            tab_prefixed_json = '\t' + pretty_json.replace('\n', '\n\t')
             with open(filepath, 'w', encoding='utf-8') as file:
-                json.dump(data_dict, file, indent=2, ensure_ascii=False)
+                file.write(tab_prefixed_json)
             
             if self.debug:
                 print(f"JSON saved to: {filepath}")

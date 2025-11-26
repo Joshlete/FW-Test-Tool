@@ -1,8 +1,8 @@
 # Standard Libraries
 import subprocess
 import sys
-import tkinter as tk
-from tkinter import ttk, messagebox
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 import threading
 import time
 import socket
@@ -15,22 +15,120 @@ from LIB_UDW import UDW_DUNE, UDW_ARES
 from LIB_Print import PRINT
 
 # ============================================================================
-# GLOBAL CONFIGURATION VARIABLES - Adjust these as needed
+# APPLICATION CONFIGURATION
 # ============================================================================
 
-# Print job timing settings
-PRINT_JOB_WAIT_TIME = 10  # seconds to wait between print jobs during drain
-INK_LEVEL_CHECK_INTERVAL = 1.0  # seconds between ink level checks
-CONNECTION_TIMEOUT = 5  # seconds for printer connection timeout
+class AppConfig:
+    """Centralized application configuration"""
+    
+    # Window Settings
+    WINDOW_TITLE = "Soaker Helper"
+    WINDOW_SIZE = "900x760"
+    
+    # Timing Settings
+    PRINT_JOB_WAIT_TIME = 5  # seconds to wait between print jobs during drain
+    INK_LEVEL_CHECK_INTERVAL = 3.0  # seconds between ink level checks
+    CONNECTION_TIMEOUT = 5  # seconds for printer connection timeout
+    ERROR_RECOVERY_DELAY = 2  # seconds to wait before retrying after error
+    
+    # Drain Settings
+    DRAIN_INCREMENT = 10  # percentage points to drain at each step
+    MIN_DRAIN_LEVEL = 0  # minimum level to drain to (stops here)
+    INITIAL_DRAIN_TARGET = 94  # first drain target from 100%
+    # Note: Set MIN_DRAIN_LEVEL to negative number (like -10) for indefinite draining since ink never goes below 0%
+    
+    # UI Settings
+    UI_UPDATE_BATCH_SIZE = 4  # number of colors to batch update
+    PROGRESS_BAR_REFRESH_RATE = 100  # milliseconds for progress bar updates
+    MAX_RETRY_ATTEMPTS = 3  # number of times to retry failed operations
+    
+    # Connection Settings
+    DEFAULT_IP = "15.8.177.130"
+    PRINTER_PORT = 80
+    
+    # Color Schemes
+    COLORS = {
+        "CYAN": {"name": "Cyan", "hex": "#00bcd4", "light": "#e0f7fa", "gradient": "#26c6da"},
+        "MAGENTA": {"name": "Magenta", "hex": "#e91e63", "light": "#fce4ec", "gradient": "#ec407a"},
+        "YELLOW": {"name": "Yellow", "hex": "#ffc107", "light": "#fff8e1", "gradient": "#ffca28"},
+        "BLACK": {"name": "Black", "hex": "#424242", "light": "#f5f5f5", "gradient": "#616161"},
+        "CMY": {"name": "CMY", "hex": "#ff6b35", "light": "#fff3e0", "gradient": "#ff8a65"},
+        "K": {"name": "Black", "hex": "#424242", "light": "#f5f5f5", "gradient": "#616161"}
+    }
+    
+    # UI Colors
+    UI_COLORS = {
+        "BACKGROUND": "#f0f0f0",
+        "CARD_BACKGROUND": "white",
+        "CARD_SHADOW": "#e0e0e0",
+        "TEXT_PRIMARY": "#2c3e50",
+        "TEXT_SECONDARY": "#495057",
+        "TEXT_MUTED": "#6c757d",
+        "BORDER_LIGHT": "#e0e0e0",
+        "INPUT_BACKGROUND": "#f8f9fa"
+    }
+    
+    # Button Colors
+    BUTTON_COLORS = {
+        "PRIMARY": "#007bff",
+        "SUCCESS": "#28a745", 
+        "WARNING": "#ff6b35",
+        "DANGER": "#dc3545",
+        "INFO": "#17a2b8",
+        "PURPLE": "#6f42c1",
+        "PINK": "#e83e8c",
+        "DISABLED": "#e9ecef",
+        "DISABLED_TEXT": "#6c757d"
+    }
+    
+    # Status Colors
+    STATUS_COLORS = {
+        "CONNECTED": "#28a745",
+        "DISCONNECTED": "#dc3545", 
+        "CONNECTING": "#fd7e14",
+        "ERROR": "#dc3545"
+    }
+    
+    # Fonts
+    FONTS = {
+        "HEADER": ("Segoe UI", 11, "bold"),
+        "LABEL": ("Segoe UI", 9, "bold"),
+        "BUTTON": ("Segoe UI", 9, "bold"),
+        "SMALL_BUTTON": ("Segoe UI", 8),
+        "LOG": ("Consolas", 9),
+        "PERCENTAGE": ("Segoe UI", 10, "bold")
+    }
+    
+    # Layout Settings
+    PADDING = {
+        "CARD": 15,
+        "CARD_INTERNAL": 12,
+        "BUTTON": 16,
+        "SMALL_BUTTON": 8,
+        "INPUT": 8
+    }
+    
+    # Icon Sizes
+    ICON_SIZE = 20
+    STATUS_DOT_SIZE = 10
+    PROGRESS_BAR_HEIGHT = 20
 
-# Drain target settings
-DRAIN_INCREMENT = 10  # percentage points to drain at each step
-MIN_DRAIN_LEVEL = 14  # minimum level to drain to (stops here)
-INITIAL_DRAIN_TARGET = 94  # first drain target from 100%
+# Create global config instance for easy access
+config = AppConfig()
 
-# UI refresh settings
-UI_UPDATE_BATCH_SIZE = 4  # number of colors to batch update
-PROGRESS_BAR_REFRESH_RATE = 100  # milliseconds for progress bar updates
+# Legacy compatibility - keep old variable names for now
+PRINT_JOB_WAIT_TIME = config.PRINT_JOB_WAIT_TIME
+INK_LEVEL_CHECK_INTERVAL = config.INK_LEVEL_CHECK_INTERVAL
+CONNECTION_TIMEOUT = config.CONNECTION_TIMEOUT
+DRAIN_INCREMENT = config.DRAIN_INCREMENT
+MIN_DRAIN_LEVEL = config.MIN_DRAIN_LEVEL
+INITIAL_DRAIN_TARGET = config.INITIAL_DRAIN_TARGET
+UI_UPDATE_BATCH_SIZE = config.UI_UPDATE_BATCH_SIZE
+PROGRESS_BAR_REFRESH_RATE = config.PROGRESS_BAR_REFRESH_RATE
+DEFAULT_IP = config.DEFAULT_IP
+PRINTER_PORT = config.PRINTER_PORT
+MAX_RETRY_ATTEMPTS = config.MAX_RETRY_ATTEMPTS
+ERROR_RECOVERY_DELAY = config.ERROR_RECOVERY_DELAY
 
 # Printer type configurations
 PRINTER_TYPES = {
@@ -44,17 +142,32 @@ PRINTER_TYPES = {
             "MAGENTA": "M_out_6x6_pn.pcl", 
             "YELLOW": "Y_out_6x6_pn.pcl",
             "BLACK": "K_out_6x6_pn.pcl"
-        }
+        },
+        "connection_type": "dune"
     },
-    "IPH": {
-        "name": "IPH (2 Cartridges)", 
+    "IPH_DUNE": {
+        "name": "IPH Dune (2 Cartridges)", 
         "cartridges": ["CMY", "K"],
-        "description": "Ink Print Head printer with 2 cartridges (CMY combined + Black)",
+        "description": "Ink Print Head Dune printer with 2 cartridges (CMY combined + Black)",
         "pcl_base_path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid",
+        "pcl_base_path_iso": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL",
+        "color_file_mapping": {
+            "CMY": "25%_CMY.pcl",
+            "K": "K_out_6x6_25_pn.pcl"
+        },
+        "connection_type": "dune"
+    },
+    "IPH_ARES": {
+        "name": "IPH Ares (2 Cartridges)", 
+        "cartridges": ["CMY", "K"],
+        "description": "Ink Print Head Ares printer with 2 cartridges (CMY combined + Black)",
+        "pcl_base_path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid",
+        "pcl_base_path_iso": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\PythonScripts\\drivenFiles\\pcl3",
         "color_file_mapping": {
             "CMY": "25%_CMY.pcl",
             "K": "ISO_K.pcl"
-        }
+        },
+        "connection_type": "ares"
     }
 }
 
@@ -63,7 +176,7 @@ PCL_BASE_PATH = PRINTER_TYPES["IIC"]["pcl_base_path"]
 COLOR_FILE_MAPPING = PRINTER_TYPES["IIC"]["color_file_mapping"]
 
 # Connection settings
-DEFAULT_IP = "15.8.177.144"
+DEFAULT_IP = "15.8.177.149"
 PRINTER_PORT = 80
 
 # Monitoring settings
@@ -76,17 +189,18 @@ class testRunner:
     """Main Soaker Helper Application"""
     
     def __init__(self):
-        self.root = tk.Tk()
-        self.root.title("Soaker Helper")
-        self.root.geometry("700x760")
+        # Create ttkbootstrap window with modern theme
+        self.root = ttk.Window(themename="superhero")  # Modern dark theme
+        self.root.title(config.WINDOW_TITLE)
+        self.root.geometry(config.WINDOW_SIZE)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Printer type variables
-        self.printer_type = tk.StringVar(value="IIC")
+        self.printer_type = ttk.StringVar(value="IIC")
         self.current_cartridges = PRINTER_TYPES["IIC"]["cartridges"]
         
         # Connection variables
-        self.ip_address = tk.StringVar(value=DEFAULT_IP)
+        self.ip_address = ttk.StringVar(value=config.DEFAULT_IP)
         self.is_connected = False
         self.connection_socket = None
         
@@ -103,7 +217,8 @@ class testRunner:
         self.is_draining = False
         self.drain_thread = None
         self.stop_drain = threading.Event()
-        self.selected_color = tk.StringVar(value=self.current_cartridges[0])
+        self.selected_color = ttk.StringVar(value=self.current_cartridges[0])
+        self.delay_var = ttk.StringVar(value="5")
         self._initializeTargets()
         
         # Printer interfaces
@@ -139,11 +254,22 @@ class testRunner:
         
     def _createInterface(self):
         """Create the main user interface"""
+        self._createMainCanvas()
+        self._createConnectionCard()
+        self._createInkLevelsFrame()
+        self._createInkLevelsUI()
+        self._createDrainControlsCard()
+        self._createActivityLogCard()
         
+        self._logMessage("Application started. Please connect to printer.")
+        self._logMessage(f"Configuration: Print wait={PRINT_JOB_WAIT_TIME}s, Check interval={INK_LEVEL_CHECK_INTERVAL}s")
+    
+    def _createMainCanvas(self):
+        """Create scrollable main canvas"""
         # Create main canvas with scrollbar for scrollable content
-        self.main_canvas = tk.Canvas(self.root, bg="#f0f0f0", highlightthickness=0)
+        self.main_canvas = ttk.Canvas(self.root, highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.main_canvas.yview)
-        self.scrollable_frame = tk.Frame(self.main_canvas, bg="#f0f0f0")
+        self.scrollable_frame = ttk.Frame(self.main_canvas)
         
         # Configure scrolling
         self.scrollable_frame.bind(
@@ -160,326 +286,229 @@ class testRunner:
         
         # Bind mouse wheel to canvas
         self._bind_mousewheel()
-        
-        # Now create all UI elements in the scrollable frame instead of self.root
-        
-        # Connection Card - Modern Design
-        connection_card = tk.Frame(self.scrollable_frame, bg="white", relief="flat", bd=0)
-        connection_card.pack(fill="x", padx=15, pady=(10, 5))
-        
-        # Add subtle shadow effect
-        shadow_frame = tk.Frame(connection_card, bg="#e0e0e0", height=1)
-        shadow_frame.pack(side="bottom", fill="x")
+    
+    def _createConnectionCard(self):
+        """Create printer connection card"""
+        # Connection Card - Modern Design using ttkbootstrap Labelframe
+        connection_card = ttk.Labelframe(self.scrollable_frame, text="Printer Connection", 
+                                        padding=config.PADDING["CARD"])
+        connection_card.pack(fill="x", padx=config.PADDING["CARD"], pady=(10, 5))
         
         # Card content
-        conn_content = tk.Frame(connection_card, bg="white", padx=12, pady=10)
+        conn_content = ttk.Frame(connection_card)
         conn_content.pack(fill="x")
         
-        # Header with icon and title
-        header_frame = tk.Frame(conn_content, bg="white")
-        header_frame.pack(fill="x", pady=(0, 8))
-        
-        # Connection icon
-        icon_canvas = tk.Canvas(header_frame, width=20, height=20, bg="white", highlightthickness=0)
-        icon_canvas.pack(side="left", padx=(0, 10))
-        # Draw printer icon
-        icon_canvas.create_rectangle(3, 6, 17, 14, fill="#6c757d", outline="")
-        icon_canvas.create_rectangle(1, 14, 19, 17, fill="#6c757d", outline="")
-        icon_canvas.create_oval(5, 15, 7, 17, fill="white", outline="")
-        icon_canvas.create_oval(13, 15, 15, 17, fill="white", outline="")
-        
-        title_label = tk.Label(header_frame, text="Printer Connection", font=("Segoe UI", 11, "bold"), 
-                              bg="white", fg="#2c3e50")
-        title_label.pack(side="left")
-        
-        # Connection form
-        form_frame = tk.Frame(conn_content, bg="white")
+        # Connection form - simplified with ttkbootstrap
+        form_frame = ttk.Frame(conn_content)
         form_frame.pack(fill="x", pady=(0, 6))
         
         # Compact IP address and printer type row
-        connection_row = tk.Frame(form_frame, bg="white")
+        connection_row = ttk.Frame(form_frame)
         connection_row.pack(fill="x", pady=(0, 8))
         
         # IP Address section (left side of row)
-        ip_section = tk.Frame(connection_row, bg="white")
+        ip_section = ttk.Frame(connection_row)
         ip_section.pack(side="left", fill="x", expand=True, padx=(0, 15))
         
-        ip_label = tk.Label(ip_section, text="IP Address", font=("Segoe UI", 9, "bold"), 
-                           bg="white", fg="#495057")
+        ip_label = ttk.Label(ip_section, text="IP Address")
         ip_label.pack(anchor="w", pady=(0, 2))
         
-        # Compact input field
-        ip_input_frame = tk.Frame(ip_section, bg="#f8f9fa", relief="flat", bd=1)
-        ip_input_frame.pack(fill="x")
-        
-        self.ip_entry = tk.Entry(ip_input_frame, textvariable=self.ip_address, font=("Segoe UI", 9),
-                                bg="#f8f9fa", fg="#495057", relief="flat", bd=0)
-        self.ip_entry.pack(fill="x", padx=8, pady=4)
+        # Modern entry field
+        self.ip_entry = ttk.Entry(ip_section, textvariable=self.ip_address, width=20)
+        self.ip_entry.pack(fill="x")
         
         # Printer type section (right side of row)
-        type_section = tk.Frame(connection_row, bg="white")
+        type_section = ttk.Frame(connection_row)
         type_section.pack(side="right", fill="x", expand=True)
         
-        type_label = tk.Label(type_section, text="Type", font=("Segoe UI", 9, "bold"), 
-                             bg="white", fg="#495057")
+        type_label = ttk.Label(type_section, text="Type")
         type_label.pack(anchor="w", pady=(0, 2))
         
-        # Compact radio buttons
-        radio_frame = tk.Frame(type_section, bg="white")
+        # Modern radio buttons
+        radio_frame = ttk.Frame(type_section)
         radio_frame.pack(anchor="w")
         
-        self.iic_radio = tk.Radiobutton(
+        self.iic_radio = ttk.Radiobutton(
             radio_frame, 
-            text="IIC", 
+            text="IIC Dune", 
             variable=self.printer_type,
             value="IIC",
-            font=("Segoe UI", 9),
-            bg="white", 
-            fg="#495057",
-            selectcolor="#007bff",
             command=lambda: self._onPrinterTypeChange("IIC")
         )
         self.iic_radio.pack(side="left", padx=(0, 15))
         
-        self.iph_radio = tk.Radiobutton(
+        self.iph_dune_radio = ttk.Radiobutton(
             radio_frame, 
-            text="IPH", 
+            text="IPH Dune", 
             variable=self.printer_type,
-            value="IPH",
-            font=("Segoe UI", 9),
-            bg="white", 
-            fg="#495057",
-            selectcolor="#007bff",
-            command=lambda: self._onPrinterTypeChange("IPH")
+            value="IPH_DUNE",
+            command=lambda: self._onPrinterTypeChange("IPH_DUNE")
         )
-        self.iph_radio.pack(side="left")
-
-        # Ensure unselected radio's indicator appears white
-        self._applyTypeRadioColors()
-        try:
-            self.printer_type.trace_add("write", lambda *args: self._applyTypeRadioColors())
-        except Exception:
-            pass
+        self.iph_dune_radio.pack(side="left", padx=(0, 15))
+        
+        self.iph_ares_radio = ttk.Radiobutton(
+            radio_frame, 
+            text="IPH Ares", 
+            variable=self.printer_type,
+            value="IPH_ARES",
+            command=lambda: self._onPrinterTypeChange("IPH_ARES")
+        )
+        self.iph_ares_radio.pack(side="left")
         
         # Button and status row
-        button_status_frame = tk.Frame(form_frame, bg="white")
+        button_status_frame = ttk.Frame(form_frame)
         button_status_frame.pack(fill="x")
         
         # Modern connect button
-        self.connect_button = tk.Button(button_status_frame, text="Connect to Printer", 
-                                       font=("Segoe UI", 9, "bold"), bg="#007bff", fg="white",
-                                       relief="flat", bd=0, padx=16, pady=6,
-                                       command=self._toggleConnection, cursor="hand2")
+        self.connect_button = ttk.Button(button_status_frame, text="Connect to Printer", 
+                                        bootstyle=PRIMARY,
+                                        command=self._toggleConnection)
         self.connect_button.pack(side="left")
         
         # Status indicator
-        status_frame = tk.Frame(button_status_frame, bg="white")
+        status_frame = ttk.Frame(button_status_frame)
         status_frame.pack(side="right")
         
         # Status dot
-        self.status_dot = tk.Canvas(status_frame, width=10, height=10, bg="white", highlightthickness=0)
+        self.status_dot = ttk.Label(status_frame, text="●", font=("Arial", 12), foreground="red")
         self.status_dot.pack(side="left", padx=(0, 8))
-        self.status_dot.create_oval(1, 1, 9, 9, fill="#dc3545", outline="")  # Red for disconnected
         
         # Status text
-        self.status_label = tk.Label(status_frame, text="Disconnected", font=("Segoe UI", 9),
-                                    bg="white", fg="#6c757d")
+        self.status_label = ttk.Label(status_frame, text="Disconnected")
         self.status_label.pack(side="left")
-        
+    
+    def _createInkLevelsFrame(self):
+        """Create ink levels frame container"""
         # Ink Levels Frame - Modern Card Design
-        self.levels_frame = tk.Frame(self.scrollable_frame, bg="#f8f9fa", relief="flat", bd=0)
+        self.levels_frame = ttk.Labelframe(self.scrollable_frame, text="Ink Levels", padding=10)
         self.levels_frame.pack(fill="x", padx=15, pady=10)
-        
-        # Create the ink levels UI
-        self._createInkLevelsUI()
-        
-        # Drain Controls Card - Modern Design
-        drain_card = tk.Frame(self.scrollable_frame, bg="white", relief="flat", bd=0)
+    
+    def _createDrainControlsCard(self):
+        """Create drain controls card"""
+        # Drain Controls Card - Modern Design using ttkbootstrap
+        drain_card = ttk.Labelframe(self.scrollable_frame, text="Ink Drain Controls", padding=15)
         drain_card.pack(fill="x", padx=15, pady=(5, 10))
         
-        # Add subtle shadow effect
-        shadow_frame = tk.Frame(drain_card, bg="#e0e0e0", height=1)
-        shadow_frame.pack(side="bottom", fill="x")
-        
-        # Card content
-        drain_content = tk.Frame(drain_card, bg="white", padx=15, pady=15)
-        drain_content.pack(fill="x")
-        
-        # Header with icon and title
-        drain_header = tk.Frame(drain_content, bg="white")
-        drain_header.pack(fill="x", pady=(0, 12))
-        
-        # Drain icon
-        drain_icon = tk.Canvas(drain_header, width=20, height=20, bg="white", highlightthickness=0)
-        drain_icon.pack(side="left", padx=(0, 10))
-        # Draw drain/settings icon
-        drain_icon.create_oval(8, 3, 12, 7, fill="#6c757d", outline="")
-        drain_icon.create_rectangle(6, 7, 14, 11, fill="#6c757d", outline="")
-        drain_icon.create_rectangle(4, 11, 16, 17, fill="#6c757d", outline="")
-        
-        title_label = tk.Label(drain_header, text="Ink Drain Controls", font=("Segoe UI", 11, "bold"), 
-                              bg="white", fg="#2c3e50")
-        title_label.pack(side="left")
-        
         # Controls section - Compact horizontal layout
-        controls_frame = tk.Frame(drain_content, bg="white")
+        controls_frame = ttk.Frame(drain_card)
         controls_frame.pack(fill="x")
         
         # Color selection label
-        color_label = tk.Label(controls_frame, text="Color:", font=("Segoe UI", 9, "bold"), 
-                              bg="white", fg="#495057")
+        color_label = ttk.Label(controls_frame, text="Color:")
         color_label.pack(side="left", padx=(0, 8))
         
-        # Compact color dropdown
+        # Modern color dropdown
         self.color_dropdown = ttk.Combobox(
             controls_frame,
             textvariable=self.selected_color,
             values=self.current_cartridges,
             state="readonly",
-            width=12,
-            font=("Segoe UI", 9)
+            width=12
         )
         self.color_dropdown.pack(side="left", padx=(0, 12))
         self.color_dropdown.bind('<<ComboboxSelected>>', self._onColorChange)
         
-        # Single drain button with modern styling
-        self.drain_button = tk.Button(
+        # Delay selection
+        delay_label = ttk.Label(controls_frame, text="Delay (s):")
+        delay_label.pack(side="left", padx=(0, 8))
+        
+        self.delay_dropdown = ttk.Combobox(
+            controls_frame,
+            textvariable=self.delay_var,
+            values=["0", "1", "2", "5", "10", "15", "30", "60"],
+            width=5
+        )
+        self.delay_dropdown.pack(side="left", padx=(0, 12))
+        
+        # Modern buttons with ttkbootstrap styling
+        self.drain_button = ttk.Button(
             controls_frame,
             text="Connect to Begin Draining",
-            font=("Segoe UI", 9, "bold"),
-            bg="#e9ecef",
-            fg="#6c757d",
-            relief="flat",
-            bd=0,
-            padx=16,
-            pady=6,
+            bootstyle=SECONDARY,
             command=self._startDrain,
-            state="disabled",
-            cursor="hand2"
+            state="disabled"
         )
         self.drain_button.pack(side="left", padx=(0, 8))
         
-        # Single print button with modern styling
-        self.single_print_button = tk.Button(
+        # NEW indefinite drain button
+        self.indefinite_drain_button = ttk.Button(
+            controls_frame,
+            text="Drain Indefinitely",
+            bootstyle=WARNING,
+            command=self._startIndefiniteDrain,
+            state="disabled"
+        )
+        self.indefinite_drain_button.pack(side="left", padx=(0, 8))
+        
+        # Single print button
+        self.single_print_button = ttk.Button(
             controls_frame,
             text="Single Print",
-            font=("Segoe UI", 9, "bold"),
-            bg="#17a2b8",
-            fg="white",
-            relief="flat",
-            bd=0,
-            padx=12,
-            pady=6,
+            bootstyle=INFO,
             command=self._singlePrint,
-            state="disabled",
-            cursor="hand2"
+            state="disabled"
         )
         self.single_print_button.pack(side="left", padx=(0, 8))
         
-        # Print PSR button with modern styling
-        self.psr_button = tk.Button(
+        # Print PSR button
+        self.psr_button = ttk.Button(
             controls_frame,
             text="Print PSR",
-            font=("Segoe UI", 9, "bold"),
-            bg="#6f42c1",
-            fg="white",
-            relief="flat",
-            bd=0,
-            padx=12,
-            pady=6,
+            bootstyle=PRIMARY,
             command=self._printPSR,
-            state="disabled",
-            cursor="hand2"
+            state="disabled"
         )
         self.psr_button.pack(side="left", padx=(0, 8))
         
-        # Print 10-Tap button with modern styling
-        self.tap_button = tk.Button(
+        # Print 10-Tap button
+        self.tap_button = ttk.Button(
             controls_frame,
             text="Print 10-Tap",
-            font=("Segoe UI", 9, "bold"),
-            bg="#e83e8c",
-            fg="white",
-            relief="flat",
-            bd=0,
-            padx=12,
-            pady=6,
+            bootstyle=SUCCESS,
             command=self._print10Tap,
-            state="disabled",
-            cursor="hand2"
+            state="disabled"
         )
         self.tap_button.pack(side="left", padx=(0, 8))
         
-        # Stop button with modern styling (initially hidden)
-        self.stop_button = tk.Button(
+        # Stop button (initially hidden)
+        self.stop_button = ttk.Button(
             controls_frame,
             text="Stop Drain",
-            font=("Segoe UI", 9, "bold"),
-            bg="#dc3545",
-            fg="white",
-            relief="flat",
-            bd=0,
-            padx=16,
-            pady=6,
+            bootstyle=DANGER,
             command=self._stopDrain,
-            state="disabled",
-            cursor="hand2"
+            state="disabled"
         )
         # Don't pack the stop button initially
-        
-        # Activity Log Card - Modern Design
-        log_card = tk.Frame(self.scrollable_frame, bg="white", relief="flat", bd=0)
+    
+    def _createActivityLogCard(self):
+        """Create activity log card"""
+        # Activity Log Card - Modern Design using ttkbootstrap
+        log_card = ttk.Labelframe(self.scrollable_frame, text="Activity Log", padding=15)
         log_card.pack(fill="x", padx=15, pady=(5, 10))
         
-        # Add subtle shadow effect
-        shadow_frame = tk.Frame(log_card, bg="#e0e0e0", height=1)
-        shadow_frame.pack(side="bottom", fill="x")
-        
-        # Card content
-        log_content = tk.Frame(log_card, bg="white", padx=15, pady=15)
-        log_content.pack(fill="both", expand=True)
-        
-        # Header with icon and title
-        log_header = tk.Frame(log_content, bg="white")
+        # Header with buttons
+        log_header = ttk.Frame(log_card)
         log_header.pack(fill="x", pady=(0, 12))
         
-        # Activity icon
-        activity_icon = tk.Canvas(log_header, width=20, height=20, bg="white", highlightthickness=0)
-        activity_icon.pack(side="left", padx=(0, 10))
-        # Draw activity/log icon (document with lines)
-        activity_icon.create_rectangle(4, 2, 14, 18, fill="#6c757d", outline="")
-        activity_icon.create_rectangle(6, 5, 12, 6, fill="white", outline="")
-        activity_icon.create_rectangle(6, 8, 12, 9, fill="white", outline="")
-        activity_icon.create_rectangle(6, 11, 10, 12, fill="white", outline="")
-        activity_icon.create_rectangle(6, 14, 12, 15, fill="white", outline="")
-        
-        title_label = tk.Label(log_header, text="Activity Log", font=("Segoe UI", 11, "bold"), 
-                              bg="white", fg="#2c3e50")
-        title_label.pack(side="left")
-        
         # Clear button
-        clear_button = tk.Button(log_header, text="Clear Log", font=("Segoe UI", 8), 
-                                bg="#6c757d", fg="white", relief="flat", bd=0,
-                                padx=8, pady=4, cursor="hand2",
-                                command=self._clearLog)
+        clear_button = ttk.Button(log_header, text="Clear Log", 
+                                 bootstyle=SECONDARY,
+                                 command=self._clearLog)
         clear_button.pack(side="right", padx=(0, 5))
         
         # Config button
-        config_button = tk.Button(log_header, text="Show Config", font=("Segoe UI", 8), 
-                                 bg="#17a2b8", fg="white", relief="flat", bd=0,
-                                 padx=8, pady=4, cursor="hand2",
-                                 command=self._displayCurrentConfig)
+        config_button = ttk.Button(log_header, text="Show Config", 
+                                  bootstyle=INFO,
+                                  command=self._displayCurrentConfig)
         config_button.pack(side="right")
         
-        # Log content area with modern styling
-        log_area = tk.Frame(log_content, bg="#f8f9fa", relief="flat", bd=1)
+        # Log content area
+        log_area = ttk.Frame(log_card)
         log_area.pack(fill="both", expand=True)
         
         # Modern log text area
-        self.log_text = tk.Text(log_area, height=10, wrap=tk.WORD, 
-                               font=("Consolas", 9), bg="#f8f9fa", fg="#495057",
-                               relief="flat", bd=0, padx=10, pady=8,
-                               selectbackground="#007bff", selectforeground="white")
+        self.log_text = ttk.Text(log_area, height=10, wrap=WORD, 
+                                font=("Consolas", 9))
         
         # Modern scrollbar
         scrollbar = ttk.Scrollbar(log_area, orient="vertical", command=self.log_text.yview)
@@ -487,14 +516,11 @@ class testRunner:
         
         self.log_text.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        
-        self._logMessage("Application started. Please connect to printer.")
-        self._logMessage(f"Configuration: Print wait={PRINT_JOB_WAIT_TIME}s, Check interval={INK_LEVEL_CHECK_INTERVAL}s")
     
     def _onPrinterTypeChange(self, printer_type):
         """Handle printer type selection change"""
         if self.is_connected:
-            messagebox.showwarning("Warning", "Please disconnect before changing printer type")
+            ttk.messagebox.showwarning("Warning", "Please disconnect before changing printer type")
             # Reset the radio button to current type
             self.printer_type.set(list(PRINTER_TYPES.keys())[list(PRINTER_TYPES.values()).index(
                 next(config for config in PRINTER_TYPES.values() if config["cartridges"] == self.current_cartridges)
@@ -517,8 +543,10 @@ class testRunner:
         unselected_color = "white"
         if hasattr(self, 'iic_radio'):
             self.iic_radio.config(selectcolor=selected_color if current == "IIC" else unselected_color)
-        if hasattr(self, 'iph_radio'):
-            self.iph_radio.config(selectcolor=selected_color if current == "IPH" else unselected_color)
+        if hasattr(self, 'iph_dune_radio'):
+            self.iph_dune_radio.config(selectcolor=selected_color if current == "IPH_DUNE" else unselected_color)
+        if hasattr(self, 'iph_ares_radio'):
+            self.iph_ares_radio.config(selectcolor=selected_color if current == "IPH_ARES" else unselected_color)
     
     def _createInkLevelsUI(self):
         """Create ink levels UI based on current printer type"""
@@ -527,11 +555,10 @@ class testRunner:
             widget.destroy()
         
         # Header
-        header_frame = tk.Frame(self.levels_frame, bg="#f8f9fa")
+        header_frame = ttk.Frame(self.levels_frame)
         header_frame.pack(fill="x", pady=(10, 15))
         
-        title_label = tk.Label(header_frame, text="Ink Levels", font=("Segoe UI", 11, "bold"), 
-                              bg="#f8f9fa", fg="#2c3e50")
+        title_label = ttk.Label(header_frame, text="Ink Levels", font=("Segoe UI", 11, "bold"))
         title_label.pack(side="left")
         
         # Create modern ink level displays
@@ -550,44 +577,27 @@ class testRunner:
         }
         
         # Main container for all ink cards
-        cards_container = tk.Frame(self.levels_frame, bg="#f8f9fa")
+        cards_container = ttk.Frame(self.levels_frame)
         cards_container.pack(fill="x", padx=10, pady=(0, 15))
         
         for cartridge in self.current_cartridges:
             color_config = all_color_configs[cartridge]
             
-            # Individual card for each ink color
-            card_frame = tk.Frame(cards_container, bg="white", relief="flat", bd=0)
+            # Individual card for each ink color using ttkbootstrap
+            card_frame = ttk.Labelframe(cards_container, text=color_config["name"], padding=10)
             card_frame.pack(side="left", fill="both", expand=True, padx=3, pady=0)
             
-            # Add subtle shadow effect
-            shadow_frame = tk.Frame(card_frame, bg="#e0e0e0", height=1)
-            shadow_frame.pack(side="bottom", fill="x")
-            
-            # Card content
-            content_frame = tk.Frame(card_frame, bg="white", padx=10, pady=10)
-            content_frame.pack(fill="both", expand=True)
-            
-            # Color name and icon
-            header_row = tk.Frame(content_frame, bg="white")
-            header_row.pack(fill="x", pady=(0, 6))
-            
             # Color indicator dot
-            dot_canvas = tk.Canvas(header_row, width=12, height=12, bg="white", highlightthickness=0)
-            dot_canvas.pack(side="left", padx=(0, 8))
-            dot_canvas.create_oval(2, 2, 10, 10, fill=color_config["hex"], outline="")
+            dot_label = ttk.Label(card_frame, text="●", font=("Arial", 12), 
+                                 foreground=color_config["hex"])
+            dot_label.pack(pady=(0, 6))
             
-            # Color name
-            name_label = tk.Label(header_row, text=color_config["name"], font=("Segoe UI", 9, "bold"), 
-                                 bg="white", fg="#34495e")
-            name_label.pack(side="left")
-            
-            # Progress bar container with rounded corners effect
-            progress_container = tk.Frame(content_frame, bg="white")
+            # Progress bar container
+            progress_container = ttk.Frame(card_frame)
             progress_container.pack(fill="x", pady=(0, 6))
             
-            # Modern progress bar
-            canvas = tk.Canvas(progress_container, height=20, width=100, bg="white", highlightthickness=0)
+            # Modern progress bar using ttkbootstrap
+            canvas = ttk.Canvas(progress_container, height=20, width=100, highlightthickness=0)
             canvas.pack(fill="x", expand=True)
             self.ink_canvases[cartridge] = canvas
             
@@ -603,8 +613,7 @@ class testRunner:
             canvas.bind("<Configure>", _on_canvas_resize)
             
             # Percentage display
-            percentage_label = tk.Label(content_frame, text="0%", font=("Segoe UI", 10, "bold"), 
-                                      bg="white", fg="#2c3e50")
+            percentage_label = ttk.Label(card_frame, text="0%", font=("Segoe UI", 10, "bold"))
             percentage_label.pack()
             
             # Store reference for updates
@@ -634,6 +643,7 @@ class testRunner:
         self._logMessage(f"Connection Timeout: {CONNECTION_TIMEOUT} seconds")
         self._logMessage(f"Drain Increment: {DRAIN_INCREMENT}%")
         self._logMessage(f"Minimum Drain Level: {MIN_DRAIN_LEVEL}%")
+        self._logMessage(f"Drain Mode: {'Indefinite (never stops)' if MIN_DRAIN_LEVEL < 0 else 'Target-based (stops at levels)'}")
         self._logMessage(f"Initial Drain Target: {INITIAL_DRAIN_TARGET}%")
         self._logMessage(f"PCL Base Path: {current_config['pcl_base_path']}")
         self._logMessage("==============================")
@@ -655,7 +665,7 @@ class testRunner:
     
     def _clearLog(self):
         """Clear the activity log"""
-        self.log_text.delete(1.0, tk.END)
+        self.log_text.delete(1.0, END)
         self._logMessage("Log cleared.")
     
     def _initializeProgressBars(self):
@@ -672,49 +682,72 @@ class testRunner:
     
     def _connectToPrinter(self):
         """Connect to the printer"""
+        print("DEBUG: _connectToPrinter() called")
         ip = self.ip_address.get().strip()
         if not ip:
-            messagebox.showerror("Error", "Please enter an IP address")
+            print("DEBUG: No IP address provided")
+            ttk.messagebox.showerror("Error", "Please enter an IP address")
             return
         
-        self.connect_button.config(state="disabled", text="Connecting...", bg="#fd7e14")
-        self.status_label.config(text="Connecting...", fg="#fd7e14")
+        print(f"DEBUG: Connecting to IP: {ip}")
+        self.connect_button.config(state="disabled", text="Connecting...")
+        self.status_label.config(text="Connecting...")
         
         # Update status dot to orange for connecting
-        self.status_dot.delete("all")
-        self.status_dot.create_oval(1, 1, 9, 9, fill="#fd7e14", outline="")
+        self.status_dot.config(foreground="orange")
         
         self._logMessage(f"Attempting to connect to {ip}...")
         
         # Start connection in separate thread
+        print("DEBUG: Starting connection thread")
         threading.Thread(target=self._performConnection, args=(ip,), daemon=True).start()
     
     def _performConnection(self, ip):
         """Perform the actual connection (runs in separate thread)"""
         try:
             current_type = self.printer_type.get()
-            if current_type == "IPH":
-                # IPH is not a Dune product: just ping to verify it is online
-                self._logMessage("IPH selected: verifying reachability via ping")
+            printer_config = PRINTER_TYPES[current_type]
+            connection_type = printer_config.get("connection_type", "dune")
+            
+            print(f"DEBUG: _performConnection() - Printer type: {current_type}")
+            print(f"DEBUG: _performConnection() - Connection type: {connection_type}")
+            print(f"DEBUG: _performConnection() - Printer config: {printer_config['name']}")
+            
+            if connection_type == "ares":
+                # IPH Ares: use ping to verify it is online + UDW_ARES
+                print(f"DEBUG: Using Ares connection method (ping + UDW_ARES)")
+                self._logMessage(f"{printer_config['name']} selected: verifying reachability via ping")
                 ping_cmd = ["ping", "-n", "1", "-w", str(CONNECTION_TIMEOUT * 1000), ip]
+                print(f"DEBUG: Ping command: {' '.join(ping_cmd)}")
                 result = subprocess.run(ping_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 if result.returncode != 0:
+                    print(f"DEBUG: Ping failed with return code: {result.returncode}")
                     raise RuntimeError("Ping failed; printer appears offline")
-                # Initialize UDW_ARES for IPH ink monitoring
+                print("DEBUG: Ping successful, initializing UDW_ARES")
+                # Initialize UDW_ARES for Ares ink monitoring
                 self.udw = UDW_ARES(ip, True, False)
                 # Initialize print interface
                 self.printer = PRINT(ip)
-                self._logMessage("IPH reachable; interfaces initialized")
+                print("DEBUG: UDW_ARES and PRINT interfaces initialized")
+                self._logMessage(f"{printer_config['name']} reachable; interfaces initialized")
+                # Update UI in main thread
+                self.root.after(0, self._onConnectionSuccess)
+            elif connection_type == "dune":
+                # Dune printers (IIC, IPH Dune): use socket connect + UDW_DUNE
+                print(f"DEBUG: Using Dune connection method (socket + UDW_DUNE)")
+                print(f"DEBUG: Attempting socket connection to {ip}:{PRINTER_PORT}")
+                self.connection_socket = socket.create_connection((ip, PRINTER_PORT), timeout=CONNECTION_TIMEOUT)
+                print("DEBUG: Socket connection successful, initializing UDW_DUNE")
+                self.udw = UDW_DUNE(ip, True, False)
+                # Initialize print interface
+                self.printer = PRINT(ip)
+                print("DEBUG: UDW_DUNE and PRINT interfaces initialized")
+                self._logMessage(f"{printer_config['name']} interfaces initialized successfully")
                 # Update UI in main thread
                 self.root.after(0, self._onConnectionSuccess)
             else:
-                # IIC: use socket connect + UDW
-                self.connection_socket = socket.create_connection((ip, PRINTER_PORT), timeout=CONNECTION_TIMEOUT)
-                self.udw = UDW_DUNE(ip, True, False)
-                self.printer = PRINT(ip)
-                self._logMessage("Printer interfaces initialized successfully")
-                # Update UI in main thread
-                self.root.after(0, self._onConnectionSuccess)
+                print(f"DEBUG: ERROR - Unknown connection type: {connection_type}")
+                raise ValueError(f"Unknown connection type: {connection_type}")
             
         except Exception as e:
             error_msg = f"Connection failed: {str(e)}"
@@ -722,29 +755,35 @@ class testRunner:
     
     def _onConnectionSuccess(self):
         """Handle successful connection (runs in main thread)"""
+        print("DEBUG: _onConnectionSuccess() called")
         self.is_connected = True
-        self.connect_button.config(state="normal", text="Disconnect from Printer", bg="#dc3545")
-        self.status_label.config(text="Connected", fg="#28a745")
+        self.connect_button.config(state="normal", text="Disconnect from Printer", bootstyle=DANGER)
+        self.status_label.config(text="Connected")
         
         # Update status dot to green
-        self.status_dot.delete("all")
-        self.status_dot.create_oval(1, 1, 9, 9, fill="#28a745", outline="")
+        self.status_dot.config(foreground="green")
         
         # Enable drain controls
+        print("DEBUG: Enabling drain controls")
         self.color_dropdown.config(state="readonly")
         self.drain_button.config(state="normal")
+        self.indefinite_drain_button.config(state="normal")
         self.single_print_button.config(state="normal")
         self.psr_button.config(state="normal")
         self.tap_button.config(state="normal")
         
         # Show reading state initially
+        print("DEBUG: Setting drain button to 'Reading Ink Levels...'")
         self.drain_button.config(
             text="Reading Ink Levels...",
             state="disabled",
-            bg="#fd7e14"
         )
         
+        # Initialize reading state
+        self.first_reading_completed = False
+        
         # Start monitoring thread
+        print("DEBUG: Starting ink monitoring")
         self._startInkMonitoring()
         
         self._logMessage("Successfully connected to printer")
@@ -752,15 +791,14 @@ class testRunner:
     
     def _onConnectionError(self, error_msg):
         """Handle connection error (runs in main thread)"""
-        self.connect_button.config(state="normal", text="Connect to Printer", bg="#007bff")
-        self.status_label.config(text="Connection Failed", fg="#dc3545")
+        self.connect_button.config(state="normal", text="Connect to Printer", bootstyle=PRIMARY)
+        self.status_label.config(text="Connection Failed")
         
         # Update status dot to red
-        self.status_dot.delete("all")
-        self.status_dot.create_oval(1, 1, 9, 9, fill="#dc3545", outline="")
+        self.status_dot.config(foreground="red")
         
         self._logMessage(error_msg)
-        messagebox.showerror("Connection Error", error_msg)
+        ttk.messagebox.showerror("Connection Error", error_msg)
     
     def _disconnectFromPrinter(self):
         """Disconnect from the printer"""
@@ -783,16 +821,16 @@ class testRunner:
         
         # Update UI
         self.is_connected = False
-        self.connect_button.config(text="Connect to Printer", bg="#007bff")
-        self.status_label.config(text="Disconnected", fg="#6c757d")
+        self.connect_button.config(text="Connect to Printer", bootstyle=PRIMARY)
+        self.status_label.config(text="Disconnected")
         
         # Update status dot to red
-        self.status_dot.delete("all")
-        self.status_dot.create_oval(1, 1, 9, 9, fill="#dc3545", outline="")
+        self.status_dot.config(foreground="red")
         
         # Disable drain controls and update button text
         self.color_dropdown.config(state="disabled")
         self.drain_button.config(state="disabled")
+        self.indefinite_drain_button.config(state="disabled")
         self.single_print_button.config(state="disabled")
         self.psr_button.config(state="disabled")
         self.tap_button.config(state="disabled")
@@ -813,12 +851,16 @@ class testRunner:
     
     def _startInkMonitoring(self):
         """Start the ink level monitoring thread"""
+        print("DEBUG: _startInkMonitoring() called")
         if self.monitoring_thread and self.monitoring_thread.is_alive():
+            print("DEBUG: Monitoring thread already running")
             return
         
+        print("DEBUG: Starting new ink monitoring thread")
         self.stop_monitoring.clear()
         self.monitoring_thread = threading.Thread(target=self._monitorInkLevels, daemon=True)
         self.monitoring_thread.start()
+        print("DEBUG: Ink monitoring thread started")
     
     def _stopInkMonitoring(self):
         """Stop the ink level monitoring thread"""
@@ -827,7 +869,8 @@ class testRunner:
             self.monitoring_thread.join(timeout=2)
     
     def _monitorInkLevels(self):
-        """Monitor ink levels (runs in separate thread)"""        
+        """Monitor ink levels (runs in separate thread)"""
+        error_count = 0
         while not self.stop_monitoring.wait(INK_LEVEL_CHECK_INTERVAL):  # Check at configured interval
             if not self.is_connected:
                 break
@@ -837,17 +880,30 @@ class testRunner:
                 updated_cartridges = []
                 printer_type = self.printer_type.get()
                 
+                # Track if this is the first real reading (transition from 0 to actual level)
+                first_reading = False
+                
                 for cartridge in self.current_cartridges:
                     if printer_type == "IIC":
-                        # IIC uses individual color monitoring
+                        # IIC uses individual color monitoring (Dune)
                         result = self.udw.udw(cmd=f"constat.get_raw_percent_remaining {cartridge}")
                         level = int(result.split(",")[2].replace(";", ""))
-                    elif printer_type == "IPH":
-                        # IPH uses gas gauge monitoring
+                    elif printer_type == "IPH_DUNE":
+                        # IPH Dune uses gas gauge monitoring with UDW_DUNE
+                        # print(f"DEBUG: Getting gas gauge for {cartridge}")
+                        result = self.udw.udw(cmd=f"constat.get_gas_gauge {cartridge}")
+                        # print(f"DEBUG: Result: {result}")
+                        level = int(result.split(",")[4].replace(";", ""))
+                    elif printer_type == "IPH_ARES":
+                        # IPH Ares uses gas gauge monitoring with UDW_ARES
                         result = self.udw.udw(cmd=f"constat.get_gas_gauge {cartridge}")
                         level = int(result.split(",")[4].replace(";", ""))
                     else:
                         continue
+                    
+                    # Check if this is first real reading (was 0, now has actual value)
+                    if self.ink_levels.get(cartridge, 0) == 0 and level > 0:
+                        first_reading = True
                     
                     # Only update if level has changed
                     if level != self.previous_ink_levels[cartridge]:
@@ -855,31 +911,55 @@ class testRunner:
                         self.ink_levels[cartridge] = level
                         updated_cartridges.append((cartridge, level))
                 
+                # Mark first reading as completed after any successful reading
+                if updated_cartridges and not self.first_reading_completed:
+                    self.first_reading_completed = True
+                    print("DEBUG: First reading completed - drain button will now work with 0% levels")
+                
                 # Batch update UI for all changed levels
                 if updated_cartridges:
-                    self.root.after(0, lambda cartridges_list=updated_cartridges: self._batchUpdateInkDisplay(cartridges_list))
+                    self.root.after(0, lambda cartridges_list=updated_cartridges, first=first_reading: self._batchUpdateInkDisplay(cartridges_list, first))
+                
+                # Reset error count on success
+                error_count = 0
                 
             except Exception as e:
+                error_count += 1
                 error_msg = f"Error reading ink levels: {str(e)}"
-                self.root.after(0, lambda msg=error_msg: self._logMessage(msg))
-                break
+                
+                # Only log every 5th error to avoid spamming, or if it's the first error
+                if error_count == 1 or error_count % 5 == 0:
+                    self.root.after(0, lambda msg=error_msg: self._logMessage(msg))
+                
+                if error_count >= 20: # Stop after 20 consecutive errors (~1 minute)
+                    self.root.after(0, lambda: self._logMessage("Stopping monitoring due to persistent errors."))
+                    break
+                
+                # Don't break immediately
+                continue
     
-    def _batchUpdateInkDisplay(self, updated_colors):
+    def _batchUpdateInkDisplay(self, updated_colors, first_reading=False):
         """Batch update multiple ink displays efficiently (runs in main thread)"""
+        print(f"DEBUG: _batchUpdateInkDisplay() called with {len(updated_colors)} colors, first_reading={first_reading}")
         selected_color = self.selected_color.get()
         update_drain_button = False
         
         for color, level in updated_colors:
+            print(f"DEBUG: Updating {color} to {level}%")
             # Update progress bar
             self._updateProgressBar(color, level)
             
             # Check if we need to update drain button
             if color == selected_color:
+                print(f"DEBUG: {color} is selected color, will update drain button")
                 update_drain_button = True
         
-        # Only update drain button once if needed
-        if update_drain_button:
+        # Force drain button update on first reading or if selected color was updated
+        if update_drain_button or first_reading:
+            print("DEBUG: Calling _updateDrainButtonText()")
             self._updateDrainButtonText()
+        else:
+            print("DEBUG: Skipping drain button update")
     
     def _updateInkDisplay(self, color, level):
         """Update ink level display (runs in main thread) - used for individual updates"""
@@ -970,57 +1050,81 @@ class testRunner:
     
     def _updateDrainButtonText(self):
         """Update the drain button text based on connection state, selected color and current level"""
+        print("DEBUG: _updateDrainButtonText() called")
         if not self.is_connected:
             # When disconnected, show helpful message
+            print("DEBUG: Not connected, setting button to 'Connect to Begin Draining'")
             self.drain_button.config(
                 text="Connect to Begin Draining",
-                state="disabled",
-                bg="#e9ecef",
-                fg="#6c757d"
+                state="disabled"
             )
             return
         
         color = self.selected_color.get()
         current_level = self.ink_levels.get(color, 0)
+        print(f"DEBUG: Current color: {color}, Current level: {current_level}%")
         
-        # If ink levels haven't been read yet (still 0%), show loading state
-        if current_level == 0:
-            self.drain_button.config(
-                text="Reading Ink Levels...",
-                state="disabled",
-                bg="#fd7e14",
-                fg="white"
-            )
-            return
+        # Only show "Reading Ink Levels..." if we haven't gotten ANY reading yet
+        # (Check if ALL cartridges are still at initial state, not just current one)
+        if not hasattr(self, 'first_reading_completed') or not self.first_reading_completed:
+            all_zero = all(self.ink_levels.get(cart, 0) == 0 for cart in self.current_cartridges)
+            if all_zero:
+                print("DEBUG: No ink levels read yet, setting button to 'Reading Ink Levels...'")
+                self.drain_button.config(
+                    text="Reading Ink Levels...",
+                    state="disabled"
+                )
+                return
         
         target_level = self._calculateNextDrainTarget(current_level)
+        print(f"DEBUG: Calculated target level: {target_level}%")
+        can_drain = target_level >= MIN_DRAIN_LEVEL and current_level > target_level
         
-        if target_level >= MIN_DRAIN_LEVEL and current_level > target_level:
+        print(f"DEBUG: Current: {current_level}%, Target: {target_level}%, MIN_DRAIN_LEVEL: {MIN_DRAIN_LEVEL}%, can_drain={can_drain}")
+        
+        if can_drain:
+            if MIN_DRAIN_LEVEL < 0:
+                # Negative MIN_DRAIN_LEVEL means indefinite draining
+                button_text = f"Drain {color} Indefinitely"
+                button_color = "#ff6b35"  # Orange for indefinite
+            else:
+                # Normal target-based draining
+                button_text = f"Drain {color} to {target_level}%"
+                button_color = "#28a745"  # Green for normal
+            
+            print(f"DEBUG: Setting drain button to '{button_text}'")
+            if MIN_DRAIN_LEVEL < 0:
+                # Use WARNING style for indefinite draining
+                bootstyle = WARNING if not self.is_draining else SECONDARY
+            else:
+                # Use SUCCESS style for normal draining
+                bootstyle = SUCCESS if not self.is_draining else SECONDARY
+            
             self.drain_button.config(
-                text=f"Drain {color} to {target_level}%",
+                text=button_text,
                 state="normal" if not self.is_draining else "disabled",
-                bg="#28a745" if not self.is_draining else "#e9ecef",
-                fg="white" if not self.is_draining else "#6c757d"
+                bootstyle=bootstyle
             )
         else:
+            status_text = f"{color} at Minimum Level"
+            print(f"DEBUG: Setting drain button to '{status_text}'")
             self.drain_button.config(
-                text=f"{color} at Minimum Level",
+                text=status_text,
                 state="disabled",
-                bg="#e9ecef",
-                fg="#6c757d"
+                bootstyle=SECONDARY
             )
     
     def _singlePrint(self):
         """Send a single print job for the selected color"""
         if not self.is_connected:
-            messagebox.showwarning("Warning", "Please connect to printer first")
+            ttk.messagebox.showwarning("Warning", "Please connect to printer first")
             return
         
         color = self.selected_color.get()
         self._logMessage(f"Sending single {color} print job...")
         
         # Disable button temporarily
-        self.single_print_button.config(state="disabled", bg="#6c757d")
+        self.single_print_button.config(state="disabled")
         
         # Send print job in separate thread
         threading.Thread(target=self._performSinglePrint, args=(color,), daemon=True).start()
@@ -1033,7 +1137,17 @@ class testRunner:
             
             # Get the appropriate PCL file based on printer type
             if cartridge in printer_config["color_file_mapping"]:
-                pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                # For IPH printers, use different base paths for different cartridges
+                if printer_type in ["IPH_DUNE", "IPH_ARES"]:
+                    if cartridge == "K":
+                        # Use iso base path for K cartridge
+                        pcl_file = f'{printer_config["pcl_base_path_iso"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                    else:
+                        # Use regular base path for CMY cartridge
+                        pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                else:
+                    # For other printer types, use regular base path
+                    pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
             else:
                 # Fallback for IIC legacy naming
                 color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
@@ -1043,6 +1157,9 @@ class testRunner:
                 else:
                     raise ValueError(f"Unknown cartridge type: {cartridge}")
             
+            # Debug: Log the PCL file path being used
+            self.root.after(0, lambda path=pcl_file: self._logMessage(f"DEBUG: Single print using PCL file: {path}"))
+            
             self.printer.printPCL(pcl_file)
             self.root.after(0, lambda: self._logMessage(f"✅ {cartridge} print job sent successfully"))
             
@@ -1050,7 +1167,6 @@ class testRunner:
             time.sleep(1)
             self.root.after(0, lambda: self.single_print_button.config(
                 state="normal" if self.is_connected else "disabled", 
-                bg="#17a2b8"
             ))
             
         except Exception as e:
@@ -1059,19 +1175,18 @@ class testRunner:
             # Re-enable button on error
             self.root.after(0, lambda: self.single_print_button.config(
                 state="normal" if self.is_connected else "disabled", 
-                bg="#17a2b8"
             ))
     
     def _printPSR(self):
         """Send a Printer Status Report (PSR) print job"""
         if not self.is_connected:
-            messagebox.showwarning("Warning", "Please connect to printer first")
+            ttk.messagebox.showwarning("Warning", "Please connect to printer first")
             return
         
         self._logMessage("Sending Printer Status Report (PSR)...")
         
         # Disable button temporarily
-        self.psr_button.config(state="disabled", bg="#6c757d")
+        self.psr_button.config(state="disabled")
         
         # Send PSR print job in separate thread
         threading.Thread(target=self._performPSRPrint, daemon=True).start()
@@ -1086,7 +1201,6 @@ class testRunner:
             time.sleep(1)
             self.root.after(0, lambda: self.psr_button.config(
                 state="normal" if self.is_connected else "disabled", 
-                bg="#6f42c1"
             ))
             
         except Exception as e:
@@ -1095,19 +1209,18 @@ class testRunner:
             # Re-enable button on error
             self.root.after(0, lambda: self.psr_button.config(
                 state="normal" if self.is_connected else "disabled", 
-                bg="#6f42c1"
             ))
     
     def _print10Tap(self):
         """Send a 10-Tap diagnostic print job"""
         if not self.is_connected:
-            messagebox.showwarning("Warning", "Please connect to printer first")
+            ttk.messagebox.showwarning("Warning", "Please connect to printer first")
             return
         
         self._logMessage("Sending 10-Tap diagnostic report...")
         
         # Disable button temporarily
-        self.tap_button.config(state="disabled", bg="#6c757d")
+        self.tap_button.config(state="disabled")
         
         # Send 10-Tap print job in separate thread
         threading.Thread(target=self._perform10TapPrint, daemon=True).start()
@@ -1122,7 +1235,6 @@ class testRunner:
             time.sleep(1)
             self.root.after(0, lambda: self.tap_button.config(
                 state="normal" if self.is_connected else "disabled", 
-                bg="#e83e8c"
             ))
             
         except Exception as e:
@@ -1131,7 +1243,6 @@ class testRunner:
             # Re-enable button on error
             self.root.after(0, lambda: self.tap_button.config(
                 state="normal" if self.is_connected else "disabled", 
-                bg="#e83e8c"
             ))
     
     def _startDrain(self):
@@ -1141,46 +1252,91 @@ class testRunner:
         target_level = self._calculateNextDrainTarget(current_level)
         
         if target_level < MIN_DRAIN_LEVEL or current_level <= target_level:
-            messagebox.showwarning("Warning", f"{color} ink is already at minimum level")
+            ttk.messagebox.showwarning("Warning", f"{color} ink is already at minimum level")
             return
         
         self._logMessage(f"Starting {color} ink drain from {current_level}% to {target_level}%")
         
         # Update UI
         self.is_draining = True
-        self.drain_button.config(state="disabled", bg="#e9ecef", fg="#6c757d")
-        self.single_print_button.config(state="disabled", bg="#6c757d")
-        self.psr_button.config(state="disabled", bg="#6c757d")
-        self.tap_button.config(state="disabled", bg="#6c757d")
+        self.drain_button.config(state="disabled")
+        self.single_print_button.config(state="disabled")
+        self.psr_button.config(state="disabled")
+        self.tap_button.config(state="disabled")
         self.color_dropdown.config(state="disabled")
         self.stop_button.pack(side="left", padx=(8, 0))
         self.stop_button.config(state="normal")
         
         # Start drain thread
         self.stop_drain.clear()
+        try:
+            delay = float(self.delay_var.get())
+        except ValueError:
+            delay = 5.0
+            
         self.drain_thread = threading.Thread(
             target=self._performDrain, 
-            args=(color, target_level), 
+            args=(color, target_level, delay), 
             daemon=True
         )
         self.drain_thread.start()
     
-    def _performDrain(self, cartridge, target_level):
-        """Perform the actual ink draining (runs in separate thread)"""        
+    def _startIndefiniteDrain(self):
+        """Start indefinite draining ink for selected color"""
+        color = self.selected_color.get()
+        current_level = self.ink_levels.get(color, 0)
+        
+        self._logMessage(f"Starting INDEFINITE {color} ink drain from {current_level}% (will continue until manually stopped - no ink level checking)")
+        
+        # Update UI
+        self.is_draining = True
+        self.drain_button.config(state="disabled")
+        self.indefinite_drain_button.config(state="disabled")
+        self.single_print_button.config(state="disabled")
+        self.psr_button.config(state="disabled")
+        self.tap_button.config(state="disabled")
+        self.color_dropdown.config(state="disabled")
+        self.stop_button.pack(side="left", padx=(8, 0))
+        self.stop_button.config(state="normal")
+        
+        # Start drain thread (continuous print jobs)
+        self.stop_drain.clear()
+        try:
+            delay = float(self.delay_var.get())
+        except ValueError:
+            delay = 5.0
+
+        self.drain_thread = threading.Thread(
+            target=self._performIndefiniteDrain, 
+            args=(color, delay), 
+            daemon=True
+        )
+        self.drain_thread.start()
+    
+    def _performIndefiniteDrain(self, cartridge, delay):
+        """Perform indefinite ink draining (runs in separate thread)"""        
+        print(f"DEBUG: _performIndefiniteDrain() called for {cartridge} with delay {delay}s")
         try:
             printer_type = self.printer_type.get()
             printer_config = PRINTER_TYPES[printer_type]
+            print(f"DEBUG: Indefinite drain operation - Printer type: {printer_type}")
+            print(f"DEBUG: Indefinite drain operation - Cartridge: {cartridge}")
             
+            # Keep sending print jobs indefinitely until manually stopped
             while not self.stop_drain.is_set():
-                current_level = self.ink_levels.get(cartridge, 0)
-                
-                if current_level <= target_level:
-                    self.root.after(0, lambda: self._onDrainComplete(cancelled=False))
-                    break
-                
                 # Get the appropriate PCL file based on printer type
                 if cartridge in printer_config["color_file_mapping"]:
-                    pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                    # For IPH printers, use different base paths for different cartridges
+                    if printer_type in ["IPH_DUNE", "IPH_ARES"]:
+                        if cartridge == "K":
+                            # Use iso base path for K cartridge
+                            pcl_file = f'{printer_config["pcl_base_path_iso"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                        else:
+                            # Use regular base path for CMY cartridge
+                            pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                    else:
+                        # For other printer types, use regular base path
+                        pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
                 else:
                     # Fallback for IIC legacy naming
                     color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
@@ -1190,11 +1346,71 @@ class testRunner:
                     else:
                         raise ValueError(f"Unknown cartridge type: {cartridge}")
                 
+                # Debug: Log the PCL file path being used
+                self.root.after(0, lambda path=pcl_file: self._logMessage(f"DEBUG: Using PCL file: {path}"))
+                
                 self.printer.printPCL(pcl_file)
-                self.root.after(0, lambda: self._logMessage(f"Printing {cartridge} drain job... (waiting {PRINT_JOB_WAIT_TIME}s)"))
+                self.root.after(0, lambda: self._logMessage(f"Printing {cartridge} indefinite drain job... (waiting {delay}s)"))
                 
                 # Wait for print job completion using configurable time
-                if self.stop_drain.wait(PRINT_JOB_WAIT_TIME):
+                if self.stop_drain.wait(delay):
+                    break
+                    
+        except Exception as e:
+            error_msg = f"Error during {cartridge} indefinite drain: {str(e)}"
+            self.root.after(0, lambda msg=error_msg: self._logMessage(msg))
+            self.root.after(0, lambda: self._onDrainComplete(cancelled=False))
+    
+    def _performDrain(self, cartridge, target_level, delay):
+        """Perform the actual ink draining (runs in separate thread)"""        
+        print(f"DEBUG: _performDrain() called for {cartridge} to {target_level}% with delay {delay}s")
+        try:
+            printer_type = self.printer_type.get()
+            printer_config = PRINTER_TYPES[printer_type]
+            print(f"DEBUG: Drain operation - Printer type: {printer_type}")
+            print(f"DEBUG: Drain operation - Cartridge: {cartridge}, Target: {target_level}%")
+            
+            while not self.stop_drain.is_set():
+                current_level = self.ink_levels.get(cartridge, 0)
+                
+                # Stop when we reach the target level (if MIN_DRAIN_LEVEL is negative, we'll never stop)
+                should_stop = current_level <= target_level
+                print(f"DEBUG: Current: {current_level}%, Target: {target_level}%, Should stop: {should_stop}")
+                
+                if should_stop:
+                    self.root.after(0, lambda: self._onDrainComplete(cancelled=False))
+                    break
+                
+                # Get the appropriate PCL file based on printer type
+                if cartridge in printer_config["color_file_mapping"]:
+                    # For IPH printers, use different base paths for different cartridges
+                    if printer_type in ["IPH_DUNE", "IPH_ARES"]:
+                        if cartridge == "K":
+                            # Use iso base path for K cartridge
+                            pcl_file = f'{printer_config["pcl_base_path_iso"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                        else:
+                            # Use regular base path for CMY cartridge
+                            pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                    else:
+                        # For other printer types, use regular base path
+                        pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
+                else:
+                    # Fallback for IIC legacy naming
+                    color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
+                    if cartridge in color_codes:
+                        color_code = color_codes[cartridge]
+                        pcl_file = f'{printer_config["pcl_base_path"]}\\{color_code}_out_6x6_pn.pcl'
+                    else:
+                        raise ValueError(f"Unknown cartridge type: {cartridge}")
+                
+                # Debug: Log the PCL file path being used
+                self.root.after(0, lambda path=pcl_file: self._logMessage(f"DEBUG: Using PCL file: {path}"))
+                
+                self.printer.printPCL(pcl_file)
+                self.root.after(0, lambda: self._logMessage(f"Printing {cartridge} drain job... (waiting {delay}s)"))
+                
+                # Wait for print job completion using configurable time
+                if self.stop_drain.wait(delay):
                     break
                     
         except Exception as e:
@@ -1216,10 +1432,11 @@ class testRunner:
         self.stop_button.pack_forget()
         self.stop_button.config(state="disabled")
         self.color_dropdown.config(state="readonly")
-        self.drain_button.config(state="normal", bg="#28a745", fg="white")
-        self.single_print_button.config(state="normal", bg="#17a2b8")
-        self.psr_button.config(state="normal", bg="#6f42c1")
-        self.tap_button.config(state="normal", bg="#e83e8c")
+        self.drain_button.config(state="normal", bootstyle=SUCCESS)
+        self.indefinite_drain_button.config(state="normal", bootstyle=WARNING)
+        self.single_print_button.config(state="normal", bootstyle=INFO)
+        self.psr_button.config(state="normal", bootstyle=PRIMARY)
+        self.tap_button.config(state="normal", bootstyle=SUCCESS)
         
         # Update drain button text
         self._updateDrainButtonText()
@@ -1245,12 +1462,12 @@ class testRunner:
         
         # Ensure this runs in main thread
         if threading.current_thread() == threading.main_thread():
-            self.log_text.insert(tk.END, log_entry)
-            self.log_text.see(tk.END)
+            self.log_text.insert(END, log_entry)
+            self.log_text.see(END)
         else:
             self.root.after(0, lambda: (
-                self.log_text.insert(tk.END, log_entry),
-                self.log_text.see(tk.END)
+                self.log_text.insert(END, log_entry),
+                self.log_text.see(END)
             ))
     
     def on_closing(self):

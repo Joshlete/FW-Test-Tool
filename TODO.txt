@@ -18,3 +18,7 @@ Both:
 * add a message to disconnect from tab printer when trying to change IP.
 * figure out why directory goes back to last test when program is force closed.
 * for cdm, update yellow color for partial files saved.
+
+
+V2 program:
+* viewing a cdm, then full screen, the view doesn't fullscreen either. It stays the same size. make it adjust as well.

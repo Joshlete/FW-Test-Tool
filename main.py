@@ -32,7 +32,7 @@ class App(tk.Tk):
         print("> [App.__init__] Initializing App")
         super().__init__()
         self.title("FW Test Tool")
-        self.geometry("900x1000")
+        self.geometry("1220x1000")
         self.configure(bg=ModernStyle.COLORS['bg_light'])
         
         # Initialize config manager first
@@ -184,6 +184,8 @@ class App(tk.Tk):
                 label=file['name'],
                 command=lambda path=file['path']: (
                     print(f"Sending job from menu: {path}"),
+                    # Ensure latest IP is used right before sending
+                    self.print.update_ip(self.get_ip_address()),
                     self.print.send_job(path)
                 )
             )
@@ -269,6 +271,13 @@ class App(tk.Tk):
             if ip != self._ip_address:
                 self._ip_address = ip
                 self.config_manager.set("ip_address", ip)
+
+                # Keep Print helper in sync with the current IP
+                if hasattr(self, "print") and self.print:
+                    try:
+                        self.print.update_ip(ip)
+                    except Exception as e:
+                        print(f">! [App._on_ip_change] Failed to update Print IP: {e}")
                 
                 # Notify callbacks
                 for callback in self._ip_callbacks:
