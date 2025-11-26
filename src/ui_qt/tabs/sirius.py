@@ -193,7 +193,7 @@ class SiriusTab(QtTabContent):
                 step_num = self.step_manager.get_step()
                 
                 for img_bytes, desc in screenshots:
-                    filename = f"{step_num}. EWS {desc}.png"
+                    filename = f"{step_num}. {desc}.png"
                     path = os.path.join(self.ledm_manager.directory, filename)
                     with open(path, 'wb') as f:
                         f.write(img_bytes)

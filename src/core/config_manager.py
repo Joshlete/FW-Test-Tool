@@ -82,9 +82,12 @@ class ConfigManager:
             # Create a temporary file
             temp_file = f"{self.CONFIG_FILE}.tmp"
             
-            # Write to temporary file first with pretty printing
+            # Write to temporary file first with pretty printing and tab-prefixed lines
+            pretty = json.dumps(self.config, indent=4, sort_keys=True)
+            if not pretty.endswith('\n'):
+                pretty += '\n'
             with open(temp_file, "w") as f:
-                json.dump(self.config, f, indent=4, sort_keys=True)
+                f.write('\t' + pretty.replace('\n', '\n\t'))
             
             # Atomic rename operation
             os.replace(temp_file, self.CONFIG_FILE)

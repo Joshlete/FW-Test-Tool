@@ -69,7 +69,10 @@ class AlertsWidget(QWidget):
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
             if widget:
-                widget.deleteLater()
+                if widget == self.empty_lbl:
+                    widget.hide()
+                else:
+                    widget.deleteLater()
         
         if not alerts_data:
             # Show empty state

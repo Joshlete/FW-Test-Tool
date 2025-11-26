@@ -86,13 +86,11 @@ class BaseFetcher(ABC):
                 file_name = f"{prefix}{endpoint_name}{extension}"
                 file_path = f"{directory}/{file_name}"
 
-                # format the json content to pretty print  
+                # format the json content to pretty print
                 try:
-                    # Parse the content to check if it's valid JSON
                     json_data = json.loads(content)
-                    # Check if content is already pretty-printed by comparing lengths
-                    if len(content) < len(json.dumps(json_data, indent=4)):
-                        content = json.dumps(json_data, indent=4)
+                    # Always normalize to 4 spaces; removes any leading tabs/odd spacing
+                    content = json.dumps(json_data, indent=4)
                 except json.JSONDecodeError:
                     # If not valid JSON, keep the content as is (might be XML)
                     pass
@@ -171,7 +169,9 @@ class DuneFetcher(BaseFetcher):
             "cdm/supply/v1/platformInfo",
             "cdm/supply/v1/supplyHistory",
             "cdm/eventing/v1/events/dcrSupplyData",
-            "cdm/system/v1/identity"
+            "cdm/system/v1/identity",
+            "cdm/eventing/v1/events/lifetimeCounterSnapshot",
+            "cdm/supply/v1/lifetimeCounters"
         ]
 
     def get_url(self, endpoint):

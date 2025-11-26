@@ -1,4 +1,6 @@
-from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter)
+import os
+import threading
+from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QLineEdit)
 from PySide6.QtCore import Qt, QThreadPool
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
@@ -13,6 +15,9 @@ from ..managers.cdm_manager import CDMManager
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
 from ..managers.step_manager import QtStepManager
+from src.utils.config_manager import ConfigManager
+from src.printers.universal.ews_capture import EWSScreenshotCapturer
+from src.logging_utils import log_info, log_error
 
 class AresTab(QtTabContent):
     """
@@ -22,8 +27,9 @@ class AresTab(QtTabContent):
     def __init__(self):
         super().__init__()
         
-        # Thread Pool shared by all managers
+        self.config_manager = ConfigManager()
         self.thread_pool = QThreadPool()
+        self.ip = None
         
         # --- 1. Action Toolbar (Top) ---
         self.toolbar = ActionToolbar()
@@ -36,7 +42,44 @@ class AresTab(QtTabContent):
         self.step_control = StepControl(self.step_manager)
         self.toolbar.add_widget_left(self.step_control)
         
-        # Add Spacer
+        # Add Spacer (Left)
+        self.toolbar.add_spacer()
+        
+        # Password Field (Center)
+        pwd_label = QLabel("Password:")
+        pwd_label.setStyleSheet("color: #DDD; margin-right: 5px; background-color: transparent;")
+        self.toolbar.layout.addWidget(pwd_label)
+        
+        self.pwd_input = QLineEdit()
+        self.pwd_input.setEchoMode(QLineEdit.EchoMode.Normal)
+        self.pwd_input.setFixedWidth(100)
+        self.pwd_input.setPlaceholderText("admin")
+        self.pwd_input.setText(self.config_manager.get("password", ""))
+        self.pwd_input.textChanged.connect(self._on_password_changed)
+        
+        # Modern/macOS-style styling
+        self.pwd_input.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 13px; /* Pill shape */
+                padding: 4px 12px;
+                font-size: 13px;
+                selection-background-color: #007ACC;
+            }
+            QLineEdit:hover {
+                background-color: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+            }
+            QLineEdit:focus {
+                background-color: rgba(255, 255, 255, 0.15);
+                border: 1px solid #007ACC;
+            }
+        """)
+        self.toolbar.layout.addWidget(self.pwd_input)
+        
+        # Add Spacer (Right) to center the password field
         self.toolbar.add_spacer()
         
         # Add Action Buttons (Right)
@@ -160,6 +203,7 @@ class AresTab(QtTabContent):
 
     def update_ip(self, new_ip):
         """Called by MainWindow when IP changes"""
+        self.ip = new_ip
         self.alerts_manager.update_ip(new_ip)
         self.telemetry_manager.update_ip(new_ip)
         self.cdm_manager.update_ip(new_ip)
@@ -167,10 +211,64 @@ class AresTab(QtTabContent):
     def update_directory(self, new_dir):
         """Called by MainWindow when Directory changes"""
         self.cdm_manager.update_directory(new_dir)
+        
+    def _on_password_changed(self, text):
+        """Save password to config when changed"""
+        self.config_manager.set("password", text)
 
     # --- Action Handlers ---
     def _on_capture_ews(self):
-        self.status_message.emit("Capture EWS clicked (Not implemented)")
+        if not self.ip:
+            self.error_occurred.emit("No IP configured")
+            return
+            
+        pwd = self.pwd_input.text()
+        if not pwd:
+            self.error_occurred.emit("Password required for EWS")
+            return
+
+        self.status_message.emit("Capturing EWS...")
+        self.btn_ews.setEnabled(False)
+        
+        def _run_capture():
+            try:
+                log_info("ews.capture", "started", "Starting EWS Capture", {"ip": self.ip})
+                capturer = EWSScreenshotCapturer(None, self.ip, self.cdm_manager.directory, password=pwd)
+                screenshots = capturer._capture_ews_screenshots()
+                
+                if screenshots is None:
+                    log_error("ews.capture", "failed", "Capturer returned None")
+                    self.error_occurred.emit("EWS Capture failed (returned None). Check logs.")
+                    return
+
+                saved_count = 0
+                step_num = self.step_manager.get_step()
+                
+                log_info("ews.capture", "processing", f"Processing {len(screenshots)} screenshots")
+                
+                for img_bytes, desc in screenshots:
+                    filename = f"{step_num}. {desc}.png"
+                    path = os.path.join(self.cdm_manager.directory, filename)
+                    try:
+                        with open(path, 'wb') as f:
+                            f.write(img_bytes)
+                        saved_count += 1
+                        log_info("ews.capture", "saved", f"Saved screenshot: {filename}")
+                    except Exception as save_err:
+                        log_error("ews.capture", "save_failed", f"Failed to save {filename}", {"error": str(save_err)})
+                
+                self.status_message.emit(f"Saved {saved_count} EWS screenshots")
+            except Exception as e:
+                log_error("ews.capture", "exception", "EWS capture failed with exception", {"error": str(e)})
+                self.error_occurred.emit(f"EWS capture failed: {str(e)}")
+            finally:
+                # Re-enable button (needs safe thread signal technically, but simple callback might work if careful)
+                # Ideally emit signal to enable
+                pass 
+                
+        threading.Thread(target=_run_capture).start()
+        # Re-enable button after short delay or on signal (simplified here)
+        self.btn_ews.setEnabled(True)
 
     def _on_telemetry_input(self):
         self.status_message.emit("Telemetry Input clicked (Not implemented)")

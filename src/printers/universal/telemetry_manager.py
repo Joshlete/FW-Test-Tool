@@ -108,7 +108,10 @@ class TelemetryManager:
             
         file_info = self.file_data[index]
         with open(save_path, 'w') as f:
-            json.dump(file_info['raw_data'], f, indent=4)
+            pretty = json.dumps(file_info['raw_data'], indent=4)
+            if not pretty.endswith('\n'):
+                pretty += '\n'
+            f.write('\t' + pretty.replace('\n', '\n\t'))
 
     def delete_telemetry_file(self, index: int) -> None:
         """Delete specific telemetry file from device"""
