@@ -24,6 +24,7 @@ class SnipOverlay(QWidget):
         # Selection rectangle
         self.selection_rect = start_rect if start_rect else QRect()
         self.using_remembered = False
+        self._has_dragged = False
 
         if start_rect:
             self.using_remembered = True
@@ -40,6 +41,10 @@ class SnipOverlay(QWidget):
     def closeEvent(self, event):
         self.releaseKeyboard()
         super().closeEvent(event)
+
+    def _cancel(self):
+        self.cancelled.emit()
+        self.close()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -74,19 +79,22 @@ class SnipOverlay(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton:
-            # Right click to cancel
-            self.cancelled.emit()
-            self.close()
+             # Right click to cancel
+             self._cancel()
         elif event.button() == Qt.MouseButton.LeftButton:
             self.start_point = event.pos()
             self.end_point = self.start_point
             self.selection_rect = QRect()
             self.is_drawing = True
+            self._has_dragged = False
             self.using_remembered = False
             self.update()
 
     def mouseMoveEvent(self, event):
         if self.is_drawing:
+            if (abs(event.pos().x() - self.start_point.x()) > 1 or
+                    abs(event.pos().y() - self.start_point.y()) > 1):
+                self._has_dragged = True
             self.end_point = event.pos()
             self.selection_rect = QRect(self.start_point, self.end_point).normalized()
             self.update()
@@ -97,17 +105,15 @@ class SnipOverlay(QWidget):
             self.end_point = event.pos()
             self.selection_rect = QRect(self.start_point, self.end_point).normalized()
             
-            # If it's a click (too small), treat as cancel (same as right click)
-            if self.selection_rect.width() <= 5 or self.selection_rect.height() <= 5:
-                 self.cancelled.emit()
-                 self.close()
+            # If no drag occurred, treat as cancel (same as right click)
+            if not self._has_dragged or self.selection_rect.width() <= 5 or self.selection_rect.height() <= 5:
+                 self._cancel()
             else:
                  self.finish_capture()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
-            self.cancelled.emit()
-            self.close()
+            self._cancel()
         elif event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             if not self.selection_rect.isNull():
                 self.finish_capture()
@@ -235,19 +241,23 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
                      check_path = initial_path + ".png"
                 counter += 1
 
+            filters = "All Files (*);;PNG Images (*.png);;JPEG Images (*.jpg)"
             file_path, selected_filter = QFileDialog.getSaveFileName(
                 None,
                 "Save Screenshot",
                 initial_path, # Pass path WITHOUT extension if it didn't have one
-                "Images (*.png *.jpg);;All Files (*)"
+                filters,
+                "All Files (*)"
             )
 
             if file_path:
                 # Ensure extension if user didn't type one
                 if not os.path.splitext(file_path)[1]:
                      # Use selected filter to guess or default to png
-                     if "jpg" in selected_filter:
+                     if "jpg" in selected_filter.lower():
                          file_path += ".jpg"
+                     elif "png" in selected_filter.lower():
+                         file_path += ".png"
                      else:
                          file_path += ".png"
 

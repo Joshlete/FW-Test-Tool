@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         self.config_bar.ip_changed.connect(self.sirius_tab.update_ip)
         self.config_bar.directory_changed.connect(self.ares_tab.update_directory)
         self.config_bar.directory_changed.connect(self.sirius_tab.update_directory)
-        self.config_bar.directory_changed.connect(configure_file_logging)
+        # self.config_bar.directory_changed.connect(configure_file_logging) # Keep log in app root
         
         # Connect Config Bar to Config Manager (Auto-Save)
         self.config_bar.ip_changed.connect(lambda ip: self.config_manager.set("last_ip", ip))
@@ -88,9 +88,10 @@ class MainWindow(QMainWindow):
             self.config_manager.set("last_active_tab", tab_name)
         
     def _init_logging(self):
-        """Ensure file logging targets the current output directory."""
-        saved_dir = self.config_manager.get("output_directory") or os.getcwd()
-        configure_file_logging(saved_dir)
+        """Ensure file logging targets the application root directory."""
+        # Always save logs to where the program is located (current working directory)
+        log_dir = os.getcwd()
+        configure_file_logging(log_dir)
 
     def resizeEvent(self, event):
         """Reposition toast when window resizes"""
