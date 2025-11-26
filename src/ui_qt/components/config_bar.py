@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
+import os
 
 class ConfigBar(QFrame):
     """
@@ -55,14 +56,26 @@ class ConfigBar(QFrame):
         self.dir_input.setPlaceholderText("No directory selected")
         self.dir_input.setReadOnly(True)
         
+        # Auto-fill if directory already set in config
+        if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'config_manager'):
+             saved_dir = self.parent().config_manager.get("output_directory")
+             if saved_dir:
+                 self.dir_input.setText(saved_dir)
+        
         self.browse_btn = QPushButton("📂")
         self.browse_btn.setFixedWidth(32)
         self.browse_btn.setToolTip("Browse Directory")
         self.browse_btn.clicked.connect(self._browse_directory)
+        
+        self.open_btn = QPushButton("↗")
+        self.open_btn.setFixedWidth(32)
+        self.open_btn.setToolTip("Open in File Explorer")
+        self.open_btn.clicked.connect(self._open_in_explorer)
 
         dir_layout.addWidget(dir_label)
         dir_layout.addWidget(self.dir_input, 1)
         dir_layout.addWidget(self.browse_btn)
+        dir_layout.addWidget(self.open_btn)
 
         # Add to main layout
         layout.addLayout(ip_layout)
@@ -71,7 +84,14 @@ class ConfigBar(QFrame):
 
     def _browse_directory(self):
         """Open a directory selection dialog."""
-        directory = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+        start_dir = self.dir_input.text() or ""
+        directory = QFileDialog.getExistingDirectory(self, "Select Output Directory", start_dir)
         if directory:
             self.dir_input.setText(directory)
             self.directory_changed.emit(directory)
+
+    def _open_in_explorer(self):
+        """Open the current directory in the file explorer."""
+        path = self.dir_input.text()
+        if path and os.path.isdir(path):
+            os.startfile(path)

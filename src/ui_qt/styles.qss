@@ -344,3 +344,87 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: none;
 }
+
+/* ========================================= */
+/* --- Action Toolbar & Step Control CSS --- */
+/* ========================================= */
+
+/* Action Toolbar Container */
+QFrame#ActionToolbar {
+    background-color: #252526;
+    border-bottom: 1px solid #333333;
+}
+
+/* Step Control Widget */
+QWidget#StepControl {
+    background: transparent;
+}
+
+QLabel#StepLabel {
+    color: #AAAAAA;
+    font-weight: bold;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+/* Step Buttons */
+QPushButton#StepBtn {
+    background-color: #3E3E42;
+    border: 1px solid #555555;
+    border-radius: 4px;
+    color: #CCCCCC;
+    font-size: 12px;
+    font-weight: bold;
+    margin: 0;
+    padding: 0;
+}
+
+QPushButton#StepBtn:hover {
+    background-color: #505050;
+    border-color: #007ACC;
+    color: #FFFFFF;
+}
+
+QPushButton#StepBtn:pressed {
+    background-color: #252526;
+    border-color: #005A9E;
+}
+
+/* Step Input Field */
+QLineEdit#StepInput {
+    background-color: #1E1E1E;
+    border: 1px solid #444444;
+    border-radius: 4px;
+    color: #FFFFFF;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 0;
+    margin: 0;
+}
+
+QLineEdit#StepInput:focus {
+    border: 1px solid #007ACC;
+    background-color: #252526;
+}
+
+/* Action Buttons (General Toolbar Buttons) */
+QPushButton#ActionButton {
+    background-color: #333333;
+    color: #E0E0E0;
+    border: 1px solid #444444;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QPushButton#ActionButton:hover {
+    background-color: #444444;
+    border-color: #555555;
+    color: #FFFFFF;
+}
+
+QPushButton#ActionButton:pressed {
+    background-color: #222222;
+    border-color: #007ACC;
+}

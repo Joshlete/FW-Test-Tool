@@ -1,11 +1,11 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, 
-                               QTreeWidgetItem, QPushButton, QHeaderView, QMenu)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
+                               QScrollArea, QLabel, QFrame)
 from PySide6.QtCore import Qt, Signal
+from .telemetry_card import TelemetryCard
 
 class TelemetryWidget(QWidget):
     """
-    Reusable widget for displaying Telemetry data in a table format.
-    Supports fetching, displaying, and context menu actions.
+    Modern Widget for displaying Telemetry data as a list of compact cards.
     """
     
     # Signal to let the parent know fetch was requested
@@ -16,36 +16,40 @@ class TelemetryWidget(QWidget):
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
         
-        # --- Toolbar (Update Button) ---
+        # --- Toolbar (Update Button on Left) ---
         toolbar = QHBoxLayout()
         self.update_btn = QPushButton("Update Telemetry")
+        self.update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.update_btn.setFixedWidth(140)
         self.update_btn.clicked.connect(self.fetch_requested.emit)
         toolbar.addWidget(self.update_btn)
         toolbar.addStretch()
         layout.addLayout(toolbar)
         
-        # --- Telemetry Table (TreeWidget) ---
-        self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["ID", "Color", "State Reason", "Trigger"])
+        # --- Scroll Area for Cards ---
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setStyleSheet("background-color: transparent;") # Transparent background
         
-        # Column sizing
-        header = self.tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # ID
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # Color
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)          # Reason (fills space)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents) # Trigger
+        # Container widget inside scroll area
+        self.cards_container = QWidget()
+        self.cards_container.setStyleSheet("background-color: transparent;")
+        self.cards_layout = QVBoxLayout(self.cards_container)
+        self.cards_layout.setContentsMargins(0, 0, 5, 0) # Right margin for scrollbar
+        self.cards_layout.setSpacing(4) # Tight spacing
+        self.cards_layout.addStretch() # Push items to top
         
-        # Enable context menu
-        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._show_context_menu)
+        self.scroll_area.setWidget(self.cards_container)
+        layout.addWidget(self.scroll_area)
         
-        layout.addWidget(self.tree)
+        # Empty State Label (Hidden by default)
+        self.empty_lbl = QLabel("No telemetry data")
+        self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_lbl.setStyleSheet("color: #666; font-size: 14px; font-style: italic;")
         
-        self._telemetry_data_map = {}
-
     def set_loading(self, is_loading):
         """Updates button state based on loading status."""
         self.update_btn.setEnabled(not is_loading)
@@ -53,21 +57,28 @@ class TelemetryWidget(QWidget):
 
     def populate_telemetry(self, events_data, is_dune_format=False):
         """
-        Populates the table with telemetry events.
+        Populates the list with telemetry cards.
         
         Args:
             events_data (list): List of dicts containing telemetry events.
             is_dune_format (bool): Different extraction logic for Dune vs Trillium.
         """
-        self.tree.clear()
-        self._telemetry_data_map.clear()
+        # 1. Clear existing cards
+        while self.cards_layout.count() > 1: # Keep stretch
+            item = self.cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
         
         if not events_data:
-            item = QTreeWidgetItem(["No Telemetry"])
-            self.tree.addTopLevelItem(item)
+            self.cards_layout.insertWidget(0, self.empty_lbl)
+            self.empty_lbl.show()
             return
+        
+        self.empty_lbl.hide()
+        self.cards_layout.removeWidget(self.empty_lbl)
 
-        # Order events (Newest First)
+        # 2. Sort Data (Newest First)
         if is_dune_format:
             sorted_events = sorted(
                 events_data,
@@ -77,53 +88,7 @@ class TelemetryWidget(QWidget):
         else:
             sorted_events = list(reversed(events_data))
 
-        # Color Mapping
-        color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black', 'CMY': 'Tri-Color'}
-
+        # 3. Create Cards
         for event in sorted_events:
-            # Extract basic details
-            seq_num = str(event.get('sequenceNumber', 'N/A'))
-            
-            # Navigate JSON structure based on format
-            if is_dune_format:
-                details = event.get('eventDetail', {})
-            else:
-                details = event.get('eventDetail', {}).get('eventDetailConsumable', {})
-            
-            # Extract Fields
-            color_code = details.get('identityInfo', {}).get('supplyColorCode', 'Unknown')
-            state_reasons = details.get('stateInfo', {}).get('stateReasons', [])
-            trigger = details.get('notificationTrigger', 'N/A')
-            
-            # Format for display
-            color_name = color_map.get(color_code, color_code)
-            reason_str = ', '.join(state_reasons) if state_reasons else 'None'
-            
-            # Create Tree Item
-            item = QTreeWidgetItem([seq_num, color_name, reason_str, trigger])
-            
-            # Store raw data
-            self._telemetry_data_map[id(item)] = event
-            
-            self.tree.addTopLevelItem(item)
-
-    def _show_context_menu(self, position):
-        """Show right-click menu for the selected item."""
-        item = self.tree.itemAt(position)
-        if not item:
-            return
-            
-        event = self._telemetry_data_map.get(id(item))
-        if not event:
-            return
-
-        menu = QMenu()
-        
-        view_action = menu.addAction("View Details")
-        view_action.triggered.connect(lambda: print(f"TODO: Show JSON Viewer for Event {event.get('sequenceNumber')}"))
-        
-        save_action = menu.addAction("Save to File")
-        save_action.triggered.connect(lambda: print(f"TODO: Save JSON for Event {event.get('sequenceNumber')}"))
-            
-        menu.exec(self.tree.viewport().mapToGlobal(position))
-
+            card = TelemetryCard(event, is_dune_format)
+            self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)

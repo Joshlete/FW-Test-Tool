@@ -4,9 +4,15 @@ from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
 from ..components.cdm_widget import CDMWidget
+from ..components.slide_panel import SlidePanel
 from ..managers.alerts_manager import AlertsManager
 from ..managers.telemetry_manager import TelemetryManager
 from ..managers.cdm_manager import CDMManager
+
+# New Imports for Action Toolbar & Steps
+from ..components.action_toolbar import ActionToolbar
+from ..components.step_control import StepControl
+from ..managers.step_manager import QtStepManager
 
 class AresTab(QtTabContent):
     """
@@ -18,6 +24,24 @@ class AresTab(QtTabContent):
         
         # Thread Pool shared by all managers
         self.thread_pool = QThreadPool()
+        
+        # --- 1. Action Toolbar (Top) ---
+        self.toolbar = ActionToolbar()
+        self.layout.addWidget(self.toolbar)
+        
+        # Setup Step Manager
+        self.step_manager = QtStepManager(tab_name="ares")
+        
+        # Create Step Control and add to toolbar (Left)
+        self.step_control = StepControl(self.step_manager)
+        self.toolbar.add_widget_left(self.step_control)
+        
+        # Add Spacer
+        self.toolbar.add_spacer()
+        
+        # Add Action Buttons (Right)
+        self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
+        self.btn_telemetry = self.toolbar.add_action_button("Telemetry Input", self._on_telemetry_input)
         
         # --- Main Splitter (Horizontal) ---
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -34,6 +58,11 @@ class AresTab(QtTabContent):
         cdm_layout.addWidget(self.cdm_widget)
         
         # --- Right Panel: Alerts & Telemetry ---
+        # We wrap the right splitter in a frame so the SlidePanel can overlay it
+        right_panel_container = QFrame()
+        right_panel_layout = QVBoxLayout(right_panel_container)
+        right_panel_layout.setContentsMargins(0, 0, 0, 0)
+        
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         
         # 1. Alerts Section
@@ -58,15 +87,21 @@ class AresTab(QtTabContent):
         telemetry_layout.addWidget(telemetry_label)
         telemetry_layout.addWidget(self.telemetry_widget)
         
-        # Assemble Right Panel
+        # Assemble Right Panel Splitter
         right_splitter.addWidget(alerts_container)
         right_splitter.addWidget(telemetry_container)
         right_splitter.setStretchFactor(0, 1)
         right_splitter.setStretchFactor(1, 1)
         
+        right_panel_layout.addWidget(right_splitter)
+        
+        # --- Slide Panel (Overlay) ---
+        # It is parented to right_panel_container so it covers only the right side
+        self.slide_panel = SlidePanel(right_panel_container)
+        
         # Assemble Main Layout
         main_splitter.addWidget(cdm_container)
-        main_splitter.addWidget(right_splitter)
+        main_splitter.addWidget(right_panel_container)
         main_splitter.setStretchFactor(0, 1)
         main_splitter.setStretchFactor(1, 2)
         
@@ -75,7 +110,13 @@ class AresTab(QtTabContent):
         # --- Initialize Managers (Logic) ---
         self.alerts_manager = AlertsManager(self.alerts_widget, self.thread_pool)
         self.telemetry_manager = TelemetryManager(self.telemetry_widget, self.thread_pool)
-        self.cdm_manager = CDMManager(self.cdm_widget, self.thread_pool)
+        self.cdm_manager = CDMManager(self.cdm_widget, self.thread_pool, self.step_manager)
+        
+        # Override the CDM widget's data display handler so the slide panel is used
+        self.cdm_widget.display_data = self.show_data_in_slide_panel
+        
+        # Connect refresh signal from SlidePanel to CDMManager logic
+        self.slide_panel.refresh_requested.connect(self.cdm_manager.view_cdm_data)
         
         # Propagate Status Signals from Managers to Tab
         self.alerts_manager.status_message.connect(self.status_message.emit)
@@ -90,9 +131,27 @@ class AresTab(QtTabContent):
         # Set Default IP (Placeholder until MainWindow sets it)
         self.update_ip("15.8.177.192")
 
+    def show_data_in_slide_panel(self, endpoint, content):
+        """Custom handler to show data in the slide panel instead of a dialog."""
+        # Format JSON if possible
+        try:
+            import json
+            parsed = json.loads(content)
+            content = json.dumps(parsed, indent=4)
+        except:
+            pass
+            
+        self.slide_panel.open_panel(endpoint, content)
+
+    def resizeEvent(self, event):
+        """Ensure slide panel resizes with the window."""
+        super().resizeEvent(event)
+        if hasattr(self, 'slide_panel') and self.slide_panel.isVisible():
+             # Trigger resize of panel
+             self.slide_panel.resizeEvent(None)
+
     def on_show(self):
         # print("Ares Tab Shown")
-        # self.status_message.emit("Ares Tab Active")
         pass
 
     def on_hide(self):
@@ -108,3 +167,10 @@ class AresTab(QtTabContent):
     def update_directory(self, new_dir):
         """Called by MainWindow when Directory changes"""
         self.cdm_manager.update_directory(new_dir)
+
+    # --- Action Handlers ---
+    def _on_capture_ews(self):
+        self.status_message.emit("Capture EWS clicked (Not implemented)")
+
+    def _on_telemetry_input(self):
+        self.status_message.emit("Telemetry Input clicked (Not implemented)")

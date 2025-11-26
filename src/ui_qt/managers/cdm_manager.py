@@ -12,10 +12,11 @@ class CDMManager(QObject):
     status_message = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, widget, thread_pool):
+    def __init__(self, widget, thread_pool, step_manager=None):
         super().__init__()
         self.widget = widget
         self.thread_pool = thread_pool
+        self.step_manager = step_manager
         self.ip = None
         self.directory = os.getcwd()
         
@@ -29,6 +30,66 @@ class CDMManager(QObject):
 
     def update_directory(self, directory):
         self.directory = directory
+
+    def _get_versioned_filename(self, directory, base_filename, extension):
+        """
+        Generates a versioned filename if conflicts exist.
+        Logic:
+        1. Checks if base file exists.
+        2. If yes, checks if _1 version exists.
+        3. If _1 not exists -> renames original to _1, new file becomes _2.
+        4. If _1 exists -> scans for highest version N, new file becomes N+1.
+        """
+        base_path = os.path.join(directory, base_filename + extension)
+        
+        if not os.path.exists(base_path):
+            # Even if base path doesn't exist, we must check if _1 exists
+            # Case: We renamed base -> _1 previously, so base no longer exists.
+            # But logically we are in a sequence now.
+            v1_filename = f"{base_filename}_1{extension}"
+            v1_path = os.path.join(directory, v1_filename)
+            
+            if os.path.exists(v1_path):
+                 # Sequence exists, treat as if base existed and skip to version scan
+                 pass
+            else:
+                # Truly fresh file
+                return base_filename + extension
+            
+        # Base file exists OR _1 file exists, check for _1 version
+        v1_filename = f"{base_filename}_1{extension}"
+        v1_path = os.path.join(directory, v1_filename)
+        
+        if not os.path.exists(v1_path):
+            # _1 doesn't exist, rename original to _1
+            # Note: If we are here because base_path exists, rename it.
+            if os.path.exists(base_path):
+                try:
+                    os.rename(base_path, v1_path)
+                except OSError as e:
+                    log_error("cdm.save", "rename_failed", f"Failed to rename {base_path} to {v1_path}", {"error": str(e)})
+                    # Fallback: just return _2 if rename fails
+                    return f"{base_filename}_2{extension}"
+            
+            # Return _2 for the new file
+            return f"{base_filename}_2{extension}"
+            
+        # _1 exists, scan for highest version
+        import re
+        pattern = re.compile(rf"^{re.escape(base_filename)}_(\d+){re.escape(extension)}$")
+        max_version = 1
+        
+        for filename in os.listdir(directory):
+            match = pattern.match(filename)
+            if match:
+                try:
+                    version = int(match.group(1))
+                    if version > max_version:
+                        max_version = version
+                except ValueError:
+                    pass
+                    
+        return f"{base_filename}_{max_version + 1}{extension}"
 
     def capture_cdm(self, selected_endpoints, variant=None):
         if not self.ip:
@@ -67,14 +128,27 @@ class CDMManager(QObject):
                 
             # Determine Filename
             endpoint_name = endpoint.split('/')[-1].split('.')[0]
-            if "rtp" in endpoint: endpoint_name = "rtp_alerts"
-            if "cdm/alert" in endpoint: endpoint_name = "alert_alerts"
             
-            filename = f"CDM {endpoint_name}"
+            if "rtp" in endpoint:
+                endpoint_name = "rtp_alerts"
+            elif "cdm/alert" in endpoint:
+                endpoint_name = "alert_alerts"
+            elif "cdm/supply/v1/alerts" in endpoint:
+                 endpoint_name = "alerts"
+            
+            # Get step number
+            step_str = ""
+            if self.step_manager:
+                step_str = f"{self.step_manager.get_step()}. "
+            
+            # Construct filename components
             if variant:
-                filename = f"{variant}. {filename}"
+                base_name = f"{step_str}{variant}. CDM_{endpoint_name}"
+            else:
+                base_name = f"{step_str}CDM_{endpoint_name}"
             
-            filename += ".json"
+            # Get versioned filename
+            filename = self._get_versioned_filename(self.directory, base_name, ".json")
             full_path = os.path.join(self.directory, filename)
             
             try:

@@ -59,6 +59,37 @@ class FetchAlertsWorker(QRunnable):
         except Exception as e:
             self.signals.error.emit(f"Error fetching alerts: {str(e)}")
 
+class AlertActionWorker(QRunnable):
+    """
+    Worker thread to send an action for an alert (acknowledge, continue, etc).
+    """
+    def __init__(self, ip_address, alert_id, action_value):
+        super().__init__()
+        self.ip = ip_address
+        self.alert_id = alert_id
+        self.action_value = action_value
+        self.signals = WorkerSignals()
+
+    @Slot()
+    def run(self):
+        self.signals.start.emit()
+        url = f"https://{self.ip}/cdm/supply/v1/alerts/{self.alert_id}/action"
+        
+        # Special handling for 'continue_' value (from legacy code)
+        action_val = self.action_value
+        if action_val == "continue_":
+            action_val = "continue"
+            
+        payload = {"selectedAction": action_val}
+        
+        try:
+            response = requests.put(url, json=payload, verify=False, timeout=10)
+            response.raise_for_status()
+            self.signals.finished.emit(True)
+            
+        except Exception as e:
+            self.signals.error.emit(f"Failed to send action: {str(e)}")
+
 class FetchTelemetryWorker(QRunnable):
     """
     Worker thread to fetch telemetry from the printer.
