@@ -14,6 +14,7 @@ from ..managers.cdm_manager import CDMManager
 # New Imports for Action Toolbar & Steps
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
+from ..components.snip_tool import QtSnipTool
 from ..managers.step_manager import QtStepManager
 from src.utils.config_manager import ConfigManager
 from src.printers.universal.ews_capture import EWSScreenshotCapturer
@@ -30,6 +31,11 @@ class AresTab(QtTabContent):
         self.config_manager = ConfigManager()
         self.thread_pool = QThreadPool()
         self.ip = None
+        
+        # Snip Tool
+        self.snip_tool = QtSnipTool(self.config_manager)
+        self.snip_tool.capture_completed.connect(lambda path: self.status_message.emit(f"Saved screenshot: {os.path.basename(path)}"))
+        self.snip_tool.error_occurred.connect(lambda err: self.error_occurred.emit(f"Snip failed: {err}"))
         
         # --- 1. Action Toolbar (Top) ---
         self.toolbar = ActionToolbar()
@@ -83,6 +89,7 @@ class AresTab(QtTabContent):
         self.toolbar.add_spacer()
         
         # Add Action Buttons (Right)
+        self.btn_snip = self.toolbar.add_action_button("Snip", self._on_snip)
         self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
         self.btn_telemetry = self.toolbar.add_action_button("Telemetry Input", self._on_telemetry_input)
         
@@ -217,6 +224,11 @@ class AresTab(QtTabContent):
         self.config_manager.set("password", text)
 
     # --- Action Handlers ---
+    def _on_snip(self):
+        step_num = self.step_manager.get_step()
+        filename = f"{step_num}. "
+        self.snip_tool.start_capture(self.cdm_manager.directory, filename)
+
     def _on_capture_ews(self):
         if not self.ip:
             self.error_occurred.emit("No IP configured")
