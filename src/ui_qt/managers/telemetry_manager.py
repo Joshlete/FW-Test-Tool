@@ -10,10 +10,11 @@ class TelemetryManager(QObject):
     status_message = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, widget, thread_pool):
+    def __init__(self, widget, thread_pool, is_dune=False):
         super().__init__()
         self.widget = widget
         self.thread_pool = thread_pool
+        self.is_dune = is_dune
         self.ip = None
         
         # Connect UI signals to logic
@@ -39,7 +40,7 @@ class TelemetryManager(QObject):
 
     def _on_success(self, events):
         self.widget.set_loading(False)
-        self.widget.populate_telemetry(events, is_dune_format=False)
+        self.widget.populate_telemetry(events, is_dune_format=self.is_dune)
         self.status_message.emit(f"Fetched {len(events)} telemetry events")
         log_info(
             "telemetry.fetch",

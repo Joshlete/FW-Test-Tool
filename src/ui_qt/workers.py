@@ -103,7 +103,7 @@ class FetchTelemetryWorker(QRunnable):
     def run(self):
         self.signals.start.emit()
         # Common telemetry endpoint (this might vary by printer type)
-        url = f"https://{self.ip}/cdm/system/v1/telemetry/events"
+        url = f"https://{self.ip}/cdm/eventing/v1/events/supply"
         
         try:
             response = requests.get(url, verify=False, timeout=5)

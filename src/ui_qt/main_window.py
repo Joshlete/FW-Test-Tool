@@ -5,6 +5,7 @@ from src.ui_qt.components.config_bar import ConfigBar
 from src.ui_qt.tabs.settings import SettingsTab
 from src.ui_qt.tabs.ares import AresTab
 from src.ui_qt.tabs.sirius import SiriusTab
+from src.ui_qt.tabs.dune import DuneTab
 from src.ui_qt.tabs.log import LogTab
 from src.utils.config_manager import ConfigManager
 from src.logging_utils import configure_file_logging
@@ -67,8 +68,10 @@ class MainWindow(QMainWindow):
         # Connect Config Bar Signals
         self.config_bar.ip_changed.connect(self.ares_tab.update_ip)
         self.config_bar.ip_changed.connect(self.sirius_tab.update_ip)
+        self.config_bar.ip_changed.connect(self.dune_tab.update_ip)
         self.config_bar.directory_changed.connect(self.ares_tab.update_directory)
         self.config_bar.directory_changed.connect(self.sirius_tab.update_directory)
+        self.config_bar.directory_changed.connect(self.dune_tab.update_directory)
         # self.config_bar.directory_changed.connect(configure_file_logging) # Keep log in app root
         
         # Connect Config Bar to Config Manager (Auto-Save)
@@ -102,8 +105,13 @@ class MainWindow(QMainWindow):
     def _init_tabs(self):
         """Create real tabs where implemented, placeholders otherwise."""
         
-        # 1. Dune (Placeholder)
-        self.content_stack.addWidget(self._create_placeholder("Dune"))
+        # 1. Dune
+        self.dune_tab = DuneTab()
+        self.content_stack.addWidget(self.dune_tab)
+        
+        # Connect Dune Signals to Toast
+        self.dune_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
+        self.dune_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
         # 2. Sirius
         self.sirius_tab = SiriusTab()
@@ -148,11 +156,13 @@ class MainWindow(QMainWindow):
             self.config_bar.ip_input.setText(last_ip)
             self.ares_tab.update_ip(last_ip)
             self.sirius_tab.update_ip(last_ip)
+            self.dune_tab.update_ip(last_ip)
             
         if output_dir:
             self.config_bar.dir_input.setText(output_dir)
             self.ares_tab.update_directory(output_dir)
             self.sirius_tab.update_directory(output_dir)
+            self.dune_tab.update_directory(output_dir)
 
         # Load last active tab
         last_tab_name = self.config_manager.get("last_active_tab")
