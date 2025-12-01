@@ -100,6 +100,51 @@ class DuneActionManager(QObject):
 
         self.status_message.emit(f"Executing {command_name}...")
         
+        # Special handling for Print commands to simplify output
+        if command_name.startswith("Print"):
+            # Override worker signal handling to simplify the success message
+            worker = SSHCommandWorker(self.ip, cmd_str, self.vnc_manager)
+            worker.signals = self
+            
+            # We need a custom slot or lambda to intercept the finished signal, 
+            # but SSHCommandWorker emits directly to self.command_finished.
+            # Instead, we can modify the worker to accept a custom callback or 
+            # handle it here by wrapping the signal.
+            
+            # Simpler approach: subclass or create a dedicated worker for this if needed, 
+            # but for now let's just use a flag or inspect the command in the worker.
+            # Actually, let's just monkey-patch the emit for this specific instance or 
+            # use a different signal connection strategy.
+            
+            # Better: Just update the worker logic to handle it? No, that affects all commands.
+            # Let's create a custom worker instance that overrides the signals behavior
+            # or better yet, let the UI handle the message simplification? 
+            # The user asked for "details sent to log".
+            
+            def on_print_finished(success, output):
+                if success:
+                    # Log the full detail
+                    log_info("dune.command", "print_success", f"{command_name} Output: {output}")
+                    # Emit simple message to UI
+                    self.status_message.emit(f"{command_name} successful")
+                else:
+                    log_error("dune.command", "print_failed", f"{command_name} Failed: {output}")
+                    self.error_occurred.emit(f"{command_name} Failed: {output}")
+
+            # Disconnect standard signal for this call to avoid double emission? 
+            # SSHCommandWorker emits to self.signals.command_finished.
+            # We can create a temporary signal holder to intercept.
+            
+            class SignalProxy(QObject):
+                command_finished = Signal(bool, str)
+            
+            proxy = SignalProxy()
+            proxy.command_finished.connect(on_print_finished)
+            
+            worker.signals = proxy # Inject proxy instead of self
+            self.thread_pool.start(worker)
+            return
+
         worker = SSHCommandWorker(self.ip, cmd_str, self.vnc_manager)
         worker.signals = self
         self.thread_pool.start(worker)
