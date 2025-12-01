@@ -1,7 +1,7 @@
 from PySide6.QtCore import QObject, Signal, QRunnable, Slot
 from PySide6.QtGui import QImage, QPixmap
-from src.printers.universal.vncapp import VNCConnection
-from src.logging_utils import log_info, log_error
+from src.utils.vnc_connection import VNCConnection
+from src.utils.logging.app_logger import log_info, log_error
 import io
 from PIL import Image
 

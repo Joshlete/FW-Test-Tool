@@ -2,7 +2,7 @@ import os
 import json
 from PySide6.QtCore import QObject, Signal
 from ..workers import FetchCDMWorker
-from src.logging_utils import log_error, log_info
+from src.utils.logging.app_logger import log_error, log_info
 
 class CDMManager(QObject):
     """

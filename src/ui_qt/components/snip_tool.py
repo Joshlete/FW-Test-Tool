@@ -2,7 +2,7 @@ import os
 from PySide6.QtWidgets import QWidget, QApplication, QRubberBand, QLabel, QFileDialog
 from PySide6.QtCore import Qt, QRect, Signal, QPoint, QSize, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QScreen, QPixmap, QGuiApplication, QCursor
-from src.logging_utils import log_info, log_error
+from src.utils.logging.app_logger import log_info, log_error
 
 class SnipOverlay(QWidget):
     captured = Signal(QPixmap, QRect) # Emits captured pixmap and rect

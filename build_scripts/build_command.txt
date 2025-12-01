@@ -2,7 +2,7 @@ PyInstaller Build Command for FW Test Tool V1.39
 ================================================
 
 Command:
-py -m PyInstaller --name "FW Test Tool V1.39" --onefile --console --add-data "config.json;." --add-data "C:\Users\Trex\AppData\Local\ms-playwright;ms-playwright" --clean main.py
+py -m PyInstaller --name "FW Test Tool V1.39" --onefile --console --add-data "config.json;." --add-data "C:\Users\Trex\AppData\Local\ms-playwright;ms-playwright" --clean main_qt.py
 
 Explanation of parameters:
 - --name "FW Test Tool V1.39": Sets the output executable name
@@ -11,6 +11,6 @@ Explanation of parameters:
 - --add-data "config.json;.": Includes config.json in the root of the executable
 - --add-data "C:\Users\Trex\AppData\Local\ms-playwright;ms-playwright": Includes Playwright browser files
 - --clean: Cleans PyInstaller cache before building
-- main.py: The main Python file to build
+- main_qt.py: The main Python file to build
 
 Last used: $(Get-Date)

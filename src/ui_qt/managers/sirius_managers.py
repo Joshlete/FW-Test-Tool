@@ -3,8 +3,8 @@ import json
 import xml.etree.ElementTree as ET
 from PySide6.QtCore import QObject, Signal
 from ..workers_sirius import FetchSiriusAlertsWorker, FetchSiriusLEDMWorker, FetchSiriusTelemetryWorker
-from src.logging_utils import log_error, log_info
-from src.printers.universal.telemetry_manager import TelemetryManager as UniversalTelemetryManager
+from src.utils.logging.app_logger import log_error, log_info
+from src.utils.ssh_telemetry import TelemetryManager as UniversalTelemetryManager
 
 class SiriusAlertsManager(QObject):
     """

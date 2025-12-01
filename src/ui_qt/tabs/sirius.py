@@ -14,7 +14,7 @@ from ..components.step_control import StepControl
 from ..managers.step_manager import QtStepManager
 from ..managers.sirius_managers import SiriusAlertsManager, SiriusLEDMManager, SiriusTelemetryManager
 from src.utils.config_manager import ConfigManager
-from src.printers.universal.ews_capture import EWSScreenshotCapturer
+from src.utils.ews_capture import EWSScreenshotCapturer
 
 class SiriusTab(QtTabContent):
     """

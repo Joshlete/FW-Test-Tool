@@ -8,7 +8,7 @@ class ConfigManager:
     - Auto-saves changes immediately.
     """
     def __init__(self, filename="config.json"):
-        # Get the directory where main.py/main_qt.py is located
+        # Get the directory where main_qt.py is located
         base_dir = os.getcwd() 
         self.filepath = os.path.join(base_dir, filename)
         self._config = {}

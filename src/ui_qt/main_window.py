@@ -8,7 +8,7 @@ from src.ui_qt.tabs.sirius import SiriusTab
 from src.ui_qt.tabs.dune import DuneTab
 from src.ui_qt.tabs.log import LogTab
 from src.utils.config_manager import ConfigManager
-from src.logging_utils import configure_file_logging
+from src.utils.logging.app_logger import configure_file_logging
 from src.ui_qt.components.toast import ToastWidget
 from src.version import VERSION
 import os

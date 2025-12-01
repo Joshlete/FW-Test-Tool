@@ -2,7 +2,7 @@ from PySide6.QtCore import QObject, Signal, QRunnable, Slot
 import requests
 import xml.etree.ElementTree as ET
 import urllib3
-from src.printers.universal.telemetry_manager import TelemetryManager
+from src.utils.ssh_telemetry import TelemetryManager
 
 # Suppress insecure request warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

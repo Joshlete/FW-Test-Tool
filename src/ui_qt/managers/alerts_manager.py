@@ -1,6 +1,6 @@
 from PySide6.QtCore import QObject, Signal
 from ..workers import FetchAlertsWorker, AlertActionWorker
-from src.logging_utils import log_error, log_info
+from src.utils.logging.app_logger import log_error, log_info
 
 class AlertsManager(QObject):
     """

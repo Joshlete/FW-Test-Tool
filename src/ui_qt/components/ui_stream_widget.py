@@ -5,7 +5,7 @@ from PySide6.QtGui import QImage, QPixmap, QAction
 import io
 import requests
 from PIL import Image
-from src.printers.sirius.ui_capture import SiriusConnection
+from src.utils.sirius_connection import SiriusConnection
 from src.utils.config_manager import ConfigManager
 
 class ConnectWorker(QThread):

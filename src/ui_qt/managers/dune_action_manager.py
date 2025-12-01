@@ -3,7 +3,7 @@ import threading
 import paramiko
 import time
 from PySide6.QtCore import QObject, Signal, QRunnable, Slot
-from src.logging_utils import log_info, log_error
+from src.utils.logging.app_logger import log_info, log_error
 
 class SSHCommandWorker(QRunnable):
     """Worker to execute SSH commands in background."""

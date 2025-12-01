@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from .base import QtTabContent
-from src.logging_utils import clear_recent_logs, get_recent_logs, get_log_signaler
+from src.utils.logging.app_logger import clear_recent_logs, get_recent_logs, get_log_signaler
 import json
 
 

@@ -3,8 +3,8 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
 import json
 import os
 from ..workers import FetchTelemetryWorker
-from src.logging_utils import log_error, log_info
-from src.core.file_manager import FileManager
+from src.utils.logging.app_logger import log_error, log_info
+from src.utils.file_manager import FileManager
 
 class TelemetryManager(QObject):
     """

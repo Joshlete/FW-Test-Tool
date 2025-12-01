@@ -293,3 +293,4 @@ class FileManager:
             True if file exists
         """
         return os.path.exists(filepath)
+

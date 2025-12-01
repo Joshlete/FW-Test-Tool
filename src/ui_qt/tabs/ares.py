@@ -17,8 +17,8 @@ from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
 from ..managers.step_manager import QtStepManager
 from src.utils.config_manager import ConfigManager
-from src.printers.universal.ews_capture import EWSScreenshotCapturer
-from src.logging_utils import log_info, log_error
+from src.utils.ews_capture import EWSScreenshotCapturer
+from src.utils.logging.app_logger import log_info, log_error
 
 class AresTab(QtTabContent):
     """

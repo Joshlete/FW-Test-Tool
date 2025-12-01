@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QPushButton, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint, QSize
-from src.logging_utils import log_info, log_error
+from src.utils.logging.app_logger import log_info, log_error
 
 class ToastWidget(QWidget):
     """
