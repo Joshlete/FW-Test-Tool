@@ -107,6 +107,11 @@ class FetchTelemetryWorker(QRunnable):
         
         try:
             response = requests.get(url, verify=False, timeout=5)
+            
+            if response.status_code == 401:
+                self.signals.error.emit("Unauthorized (401): Please run AUTH command")
+                return
+                
             response.raise_for_status()
             
             data = response.json()
