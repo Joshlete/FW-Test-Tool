@@ -71,17 +71,30 @@ class AlertCard(QFrame):
         layout.addWidget(self.title)
 
         # --- Separator ---
-        sep = QLabel("•")
-        sep.setStyleSheet("color: #666;")
-        layout.addWidget(sep)
+        # sep = QLabel("•")
+        # sep.setStyleSheet("color: #666;")
+        # layout.addWidget(sep)
         
-        # --- Info (Category | Priority) ---
+        # --- Info (Category) ---
         cat = alert_data.get('category', 'General')
-        pri = alert_data.get('priority', '')
-        info_text = f"{cat} (Pri: {pri})"
-        self.info = QLabel(info_text)
+        self.info = QLabel(cat)
         self.info.setStyleSheet("color: #AAAAAA; font-size: 12px;")
         layout.addWidget(self.info)
+        
+        # --- Priority Bubble ---
+        pri = alert_data.get('priority', '')
+        if pri:
+            pri_lbl = QLabel(f"Priority: {pri}")
+            pri_lbl.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(255, 255, 255, 0.1);
+                    color: #CCC;
+                    border-radius: 8px;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                }
+            """)
+            layout.addWidget(pri_lbl)
         
         layout.addStretch(1) # Push actions to the right
 

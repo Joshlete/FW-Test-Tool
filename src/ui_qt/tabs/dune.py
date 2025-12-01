@@ -1,6 +1,6 @@
 import os
-from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QFrame, QSplitter, QSplitterHandle, QLineEdit, QMenu, QWidget, QSizePolicy, QGridLayout)
-from PySide6.QtCore import Qt, QThreadPool, QSize, QByteArray, QRect
+from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QSplitterHandle, QLineEdit, QMenu)
+from PySide6.QtCore import Qt, QThreadPool, QByteArray
 from PySide6.QtGui import QAction, QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
@@ -11,12 +11,10 @@ from ..components.dune_ui_stream_widget import DuneUIStreamWidget
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
-from ..components.modern_button import ModernButton # Assuming this exists or standard QPushButton
-
+from ..components.modern_button import ModernButton
 from ..managers.alerts_manager import AlertsManager
 from ..managers.telemetry_manager import TelemetryManager
 from ..managers.cdm_manager import CDMManager
-# from ..managers.step_manager import QtStepManager # Inherited from QtTabContent
 from ..managers.dune_vnc_manager import DuneVNCManager
 from ..managers.dune_action_manager import DuneActionManager
 
@@ -58,8 +56,6 @@ class DuneSplitter(QSplitter):
     def createHandle(self):
         return DuneSplitterHandle(self.orientation(), self)
 
-# Note: DuneControlPanel class removed as controls are now integrated into stream widget or toolbar
-
 class DuneTab(QtTabContent):
     """
     Dune Tab Implementation with 3-Column Layout.
@@ -70,10 +66,7 @@ class DuneTab(QtTabContent):
         self.config_manager = ConfigManager()
         self.thread_pool = QThreadPool()
         self.ip = None
-        
-        # --- Managers ---
-        # self.step_manager is already initialized by super().__init__
-        
+
         # Pass file_manager to SnipTool
         self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
         

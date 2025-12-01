@@ -13,7 +13,7 @@ class TelemetryCard(QFrame):
         super().__init__(parent)
         self.event_data = event_data
         self.setObjectName("TelemetryCard")
-        self.setFixedHeight(46) # Force single line height
+        self.setFixedHeight(28) # Force single line height
         
         # Enable custom context menu
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -64,7 +64,7 @@ class TelemetryCard(QFrame):
 
         # --- Layout ---
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setContentsMargins(10, 2, 10, 2)
         layout.setSpacing(12)
 
         # --- Indicator (Color Code) ---
@@ -84,9 +84,9 @@ class TelemetryCard(QFrame):
         layout.addWidget(color_lbl)
 
         # --- Separator ---
-        sep1 = QLabel("•")
-        sep1.setStyleSheet("color: #444;")
-        layout.addWidget(sep1)
+        # sep1 = QLabel("•")
+        # sep1.setStyleSheet("color: #444;")
+        # layout.addWidget(sep1)
 
         # --- Trigger ---
         trigger_lbl = QLabel(trigger)
@@ -94,9 +94,9 @@ class TelemetryCard(QFrame):
         layout.addWidget(trigger_lbl)
 
         # --- Separator ---
-        sep2 = QLabel("•")
-        sep2.setStyleSheet("color: #444;")
-        layout.addWidget(sep2)
+        # sep2 = QLabel("•")
+        # sep2.setStyleSheet("color: #444;")
+        # layout.addWidget(sep2)
 
         # --- Reasons ---
         reasons_lbl = QLabel(reasons_str)
