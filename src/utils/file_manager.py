@@ -82,6 +82,11 @@ class FileManager:
         
         # Clean up filename - remove invalid characters
         clean_filename = ''.join(c for c in prefixed_filename if c.isalnum() or c in '._- ')
+        clean_filename = clean_filename.strip()
+        
+        # Avoid double dots if filename ends with dot and extension starts with dot
+        if clean_filename.endswith('.') and extension.startswith('.'):
+            clean_filename = clean_filename[:-1]
         
         # Create initial filepath
         filepath = os.path.join(directory, f"{clean_filename}{extension}")

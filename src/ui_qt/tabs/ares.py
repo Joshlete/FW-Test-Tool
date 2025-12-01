@@ -15,7 +15,7 @@ from ..managers.cdm_manager import CDMManager
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
-from ..managers.step_manager import QtStepManager
+# from ..managers.step_manager import QtStepManager # Inherited from QtTabContent
 from src.utils.config_manager import ConfigManager
 from src.utils.ews_capture import EWSScreenshotCapturer
 from src.utils.logging.app_logger import log_info, log_error
@@ -26,14 +26,14 @@ class AresTab(QtTabContent):
     Uses separate managers for logic (composition pattern).
     """
     def __init__(self):
-        super().__init__()
+        super().__init__(tab_name="ares") # Initializes step_manager and file_manager
         
         self.config_manager = ConfigManager()
         self.thread_pool = QThreadPool()
         self.ip = None
         
         # Snip Tool
-        self.snip_tool = QtSnipTool(self.config_manager)
+        self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
         self.snip_tool.capture_completed.connect(lambda path: self.status_message.emit(f"Saved screenshot: {os.path.basename(path)}"))
         self.snip_tool.error_occurred.connect(lambda err: self.error_occurred.emit(f"Snip failed: {err}"))
         
@@ -41,8 +41,7 @@ class AresTab(QtTabContent):
         self.toolbar = ActionToolbar()
         self.layout.addWidget(self.toolbar)
         
-        # Setup Step Manager
-        self.step_manager = QtStepManager(tab_name="ares")
+        # self.step_manager is already initialized by super().__init__
         
         # Create Step Control and add to toolbar (Left)
         self.step_control = StepControl(self.step_manager)
@@ -159,12 +158,16 @@ class AresTab(QtTabContent):
 
         # --- Initialize Managers (Logic) ---
         self.alerts_manager = AlertsManager(self.alerts_widget, self.thread_pool)
-        default_dir = self.config_manager.get("output_directory") or os.getcwd()
+        
+        # Use file_manager's directory
+        default_dir = self.file_manager.default_directory
+        
         self.telemetry_manager = TelemetryManager(
             self.telemetry_widget,
             self.thread_pool,
             step_manager=self.step_manager,
-            default_directory=default_dir
+            default_directory=default_dir,
+            file_manager=self.file_manager
         )
         self.cdm_manager = CDMManager(self.cdm_widget, self.thread_pool, self.step_manager)
         
@@ -223,6 +226,9 @@ class AresTab(QtTabContent):
 
     def update_directory(self, new_dir):
         """Called by MainWindow when Directory changes"""
+        # Update file manager via base class
+        super().update_directory(new_dir)
+        
         self.cdm_manager.update_directory(new_dir)
         # CHANGE: Update telemetry manager directory
         self.telemetry_manager.update_directory(new_dir)
@@ -233,9 +239,30 @@ class AresTab(QtTabContent):
 
     # --- Action Handlers ---
     def _on_snip(self):
-        step_num = self.step_manager.get_step()
-        filename = f"{step_num}. "
-        self.snip_tool.start_capture(self.cdm_manager.directory, filename)
+        # Don't add step manually; FileManager does it if we use empty string or basic name
+        # But snip tool needs a default filename for dialog if not auto-saving
+        # If we pass just extension or empty name, snip tool might complain
+        # Default snip behavior usually is just capture what's there
+        
+        # If we pass "" as filename, SnipTool -> FileManager -> get_safe_filepath
+        # get_safe_filepath(..., "", ".png", ...) -> "{Step} .png"
+        # That's fine.
+        
+        # Wait, existing code was: filename = f"{step_num}. "
+        # The space after dot is significant for the user's naming convention "1. something"
+        
+        # If we pass just " ", FileManager -> "{Step}.  " (double space?)
+        # FileManager logic: f"{step_prefix}{base_filename}"
+        # StepPrefix: "1. "
+        # If base is "", result is "1. " (plus extension) -> "1. .png" or just "1. " depending on how extension is handled.
+        # FileManager.get_safe_filepath adds extension.
+        
+        # Let's use a generic base name like "Capture" or just empty string if we want just the number
+        # If the user wants just "1. .png", passing "" works.
+        # If the user wants to type the name in the dialog, starting with "1. " is helpful.
+        
+        filename = "" # Let FileManager/SnipTool determine default
+        self.snip_tool.start_capture(self.file_manager.default_directory, filename)
 
     def _on_capture_ews(self):
         if not self.ip:
@@ -253,7 +280,10 @@ class AresTab(QtTabContent):
         def _run_capture():
             try:
                 log_info("ews.capture", "started", "Starting EWS Capture", {"ip": self.ip})
-                capturer = EWSScreenshotCapturer(None, self.ip, self.cdm_manager.directory, password=pwd)
+                # We can use file_manager directory
+                directory = self.file_manager.default_directory
+                
+                capturer = EWSScreenshotCapturer(None, self.ip, directory, password=pwd)
                 screenshots = capturer._capture_ews_screenshots()
                 
                 if screenshots is None:
@@ -262,20 +292,25 @@ class AresTab(QtTabContent):
                     return
 
                 saved_count = 0
-                step_num = self.step_manager.get_step()
                 
                 log_info("ews.capture", "processing", f"Processing {len(screenshots)} screenshots")
                 
                 for img_bytes, desc in screenshots:
-                    filename = f"{step_num}. {desc}.png"
-                    path = os.path.join(self.cdm_manager.directory, filename)
-                    try:
-                        with open(path, 'wb') as f:
-                            f.write(img_bytes)
+                    # Use file_manager to save to ensure step prefix and consistency
+                    # desc usually is the page name e.g. "Home Page"
+                    
+                    success, filepath = self.file_manager.save_image_data(
+                        img_bytes, 
+                        desc, 
+                        directory=directory, 
+                        format="PNG"
+                    )
+                    
+                    if success:
                         saved_count += 1
-                        log_info("ews.capture", "saved", f"Saved screenshot: {filename}")
-                    except Exception as save_err:
-                        log_error("ews.capture", "save_failed", f"Failed to save {filename}", {"error": str(save_err)})
+                        log_info("ews.capture", "saved", f"Saved screenshot: {os.path.basename(filepath)}")
+                    else:
+                        log_error("ews.capture", "save_failed", f"Failed to save {desc}")
                 
                 self.status_message.emit(f"Saved {saved_count} EWS screenshots")
             except Exception as e:

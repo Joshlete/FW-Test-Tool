@@ -1,6 +1,6 @@
 import os
 from PySide6.QtWidgets import QWidget, QApplication, QRubberBand, QLabel, QFileDialog
-from PySide6.QtCore import Qt, QRect, Signal, QPoint, QSize, QTimer
+from PySide6.QtCore import Qt, QRect, Signal, QPoint, QSize, QTimer, QBuffer, QIODevice, QByteArray
 from PySide6.QtGui import QPainter, QColor, QPen, QScreen, QPixmap, QGuiApplication, QCursor
 from src.utils.logging.app_logger import log_info, log_error
 
@@ -129,9 +129,10 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
     capture_completed = Signal(str) # Path of saved file
     error_occurred = Signal(str)
 
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, file_manager=None, parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
+        self.file_manager = file_manager
         self.overlay = None
         self.save_directory = "."
         self.current_filename = "screenshot.png"
@@ -216,55 +217,59 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
     def _show_save_dialog(self, pixmap):
         # Save File with Dialog
         try:
-            initial_path = os.path.join(self.save_directory, self.current_filename)
-            
-            # Ensure unique initial filename if it exists
-            # We WANT to start without an extension if none was provided, to allow user to type just the name
-            # However, QFileDialog might need a hint or we need to handle the "default" extension logic better.
-            # User request: "get RID of the .png at the end of the file name" in the dialog box.
-            
-            base, ext = os.path.splitext(initial_path)
-            
-            # If the file exists (e.g. "1. .png" or just "1. "), increment
-            # We check for existence of probable files
-            counter = 1
-            check_path = initial_path
-            # if not ext:
-            #      check_path = initial_path + ".png" # Check against default png
-            
-            while os.path.exists(check_path):
-                # Increment the base part
-                initial_path = f"{base}_{counter}"
-                if ext:
-                    initial_path += ext
-                
-                check_path = initial_path
-                if not ext:
-                     check_path = initial_path + ".png"
-                counter += 1
+            # Convert pixmap to bytes for FileManager
+            buffer = QByteArray()
+            buffer_io = QBuffer(buffer)
+            buffer_io.open(QIODevice.WriteOnly)
+            pixmap.save(buffer_io, "PNG")
+            image_data_bytes = buffer.data().data()
 
-            if self.auto_save:
-                file_path = initial_path
-                # Check if extension is missing, OR if the path looks like it has an extension but it might be part of a directory name with dots
-                # Simple check: if it doesn't end with .png, .jpg, .jpeg, append .png
-                if not file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    file_path += ".png"
-            else:
-                filters = "All Files (*);;PNG Images (*.png);;JPEG Images (*.jpg)"
-                file_path, selected_filter = QFileDialog.getSaveFileName(
-                    None,
-                    "Save Screenshot",
-                    initial_path, # Pass path WITHOUT extension if it didn't have one
-                    filters,
-                    "All Files (*)"
+            if self.auto_save and self.file_manager:
+                # Use FileManager for auto-save
+                success, file_path = self.file_manager.save_image_data(
+                    image_data_bytes, 
+                    self.current_filename.replace(".png", ""), # Base filename
+                    self.save_directory,
+                    format="PNG"
                 )
+                
+                if success:
+                    # Copy to clipboard even on auto-save
+                    QApplication.clipboard().setPixmap(pixmap)
+                    self.capture_completed.emit(file_path)
+                else:
+                    self.error_occurred.emit("Failed to save image via FileManager")
+                return
 
-                if file_path and not os.path.splitext(file_path)[1]:
-                     # Use selected filter to guess or default to png
-                     if "jpg" in selected_filter.lower():
-                         file_path += ".jpg"
-                     else:
-                         file_path += ".png"
+            # --- Manual Save Dialog Logic ---
+            
+            initial_path = ""
+            if self.file_manager:
+                 # Use FileManager to generate the safe default path
+                 initial_path, _ = self.file_manager.get_safe_filepath(
+                     self.save_directory,
+                     self.current_filename.replace(".png", ""),
+                     ".png"
+                 )
+            else:
+                # Fallback (should not happen with new plan)
+                initial_path = os.path.join(self.save_directory, self.current_filename)
+
+            filters = "All Files (*);;PNG Images (*.png);;JPEG Images (*.jpg)"
+            file_path, selected_filter = QFileDialog.getSaveFileName(
+                None,
+                "Save Screenshot",
+                initial_path, # Pass path WITHOUT extension if it didn't have one
+                filters,
+                "All Files (*)"
+            )
+
+            if file_path and not os.path.splitext(file_path)[1]:
+                 # Use selected filter to guess or default to png
+                 if "jpg" in selected_filter.lower():
+                     file_path += ".jpg"
+                 else:
+                     file_path += ".png"
 
             if file_path:
                 pixmap.save(file_path)
@@ -275,10 +280,6 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
                 self.capture_completed.emit(file_path)
             else:
                 # User cancelled
-                # Still copy to clipboard just in case? User said "save as".
-                # Let's respect the cancellation but maybe copy to clipboard is harmless/useful.
-                # I'll assume if they cancel, they might just want to abort save, but maybe snip was for clipboard.
-                # But the prompt is "I want save as".
                 pass
 
         except Exception as e:
@@ -300,4 +301,3 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
         regions = self.config_manager.get("capture_regions", {})
         regions[region_name] = {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
         self.config_manager.set("capture_regions", regions)
-

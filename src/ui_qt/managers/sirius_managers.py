@@ -67,13 +67,14 @@ class SiriusLEDMManager(QObject):
     status_message = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, widget, thread_pool, step_manager=None):
+    def __init__(self, widget, thread_pool, step_manager=None, file_manager=None):
         super().__init__()
         self.widget = widget
         self.thread_pool = thread_pool
         self.step_manager = step_manager
+        self.file_manager = file_manager
         self.ip = None
-        self.directory = os.getcwd()
+        # Directory is managed by file_manager
         
         self.widget.save_requested.connect(self.capture_ledm)
         self.widget.view_requested.connect(self.view_ledm_data)
@@ -81,8 +82,7 @@ class SiriusLEDMManager(QObject):
     def update_ip(self, ip):
         self.ip = ip
 
-    def update_directory(self, directory):
-        self.directory = directory
+    # update_directory removed, handled by file_manager
 
     def capture_ledm(self, selected_endpoints, variant=None):
         if not self.ip:
@@ -111,42 +111,38 @@ class SiriusLEDMManager(QObject):
             # Determine Filename
             endpoint_name = os.path.basename(endpoint).replace('.xml', '')
             
-            # Get step number
-            step_str = ""
-            if self.step_manager:
-                step_str = f"{self.step_manager.get_step()}. "
+            # Helper for base name construction (Step is handled by FileManager if we rely on it,
+            # but here we might want custom formatting "Step. Variant. LEDM Endpoint")
             
-            # Construct filename
+            # FileManager adds "{Step}. " prefix if step_number is passed.
+            # We want: "{Step}. {Variant}. LEDM {Endpoint}"
+            
+            # If we let FileManager handle step, we pass base_filename = "{Variant}. LEDM {Endpoint}"
+            
+            base_parts = []
             if variant:
-                base_name = f"{step_str}{variant}. LEDM {endpoint_name}"
-            else:
-                base_name = f"{step_str}LEDM {endpoint_name}"
+                base_parts.append(variant)
+            base_parts.append(f"LEDM {endpoint_name}")
             
-            # Save file
+            base_filename = ". ".join(base_parts)
+            
+            # Format XML if possible
             try:
-                # Use basic unique naming if exists (simple version)
-                filename = f"{base_name}.xml"
-                full_path = os.path.join(self.directory, filename)
-                
-                # If file exists, append timestamp or counter (simple counter here)
-                counter = 1
-                while os.path.exists(full_path):
-                    full_path = os.path.join(self.directory, f"{base_name}_{counter}.xml")
-                    counter += 1
-
-                # Format XML if possible
-                try:
-                    root = ET.fromstring(content)
-                    ET.indent(root)
-                    content = ET.tostring(root, encoding='unicode')
-                except:
-                    pass
-
-                with open(full_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                saved_count += 1
-            except Exception as e:
-                errors.append(f"Save error {endpoint}: {str(e)}")
+                root = ET.fromstring(content)
+                ET.indent(root)
+                content = ET.tostring(root, encoding='unicode')
+            except:
+                pass
+            
+            # Save via FileManager
+            if self.file_manager:
+                success, _ = self.file_manager.save_text_data(content, base_filename, extension=".xml")
+                if success:
+                    saved_count += 1
+                else:
+                     errors.append(f"Save error {endpoint}")
+            else:
+                 errors.append(f"No FileManager available for {endpoint}")
 
         if saved_count > 0:
             self.status_message.emit(f"Saved {saved_count} LEDM files")
@@ -236,4 +232,3 @@ class SiriusTelemetryManager(QObject):
         self.widget.set_loading(False)
         self.error_occurred.emit("Telemetry fetch failed")
         log_error("sirius_telemetry", "fetch_failed", error_msg)
-

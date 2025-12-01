@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Signal
+from src.ui_qt.managers.step_manager import QtStepManager
+from src.utils.file_manager import FileManager
 
 class QtTabContent(QWidget):
     """
@@ -7,13 +9,15 @@ class QtTabContent(QWidget):
     
     Implements lifecycle hooks (on_show/on_hide) to efficiently manage resources
     like timers, network connections, and animations.
+    
+    Also provides centralized StepManager and FileManager instances.
     """
     
     # Standard signals that every tab can use to communicate with the MainWindow
     status_message = Signal(str)  # e.g. "Connecting..."
     error_occurred = Signal(str)  # e.g. "Connection Failed: Timeout"
 
-    def __init__(self):
+    def __init__(self, tab_name=None):
         super().__init__()
         
         # 1. Standard Layout
@@ -25,6 +29,18 @@ class QtTabContent(QWidget):
         
         # 2. Lifecycle State
         self.is_visible = False
+
+        # 3. Centralized Managers
+        self.tab_name = tab_name
+        self.step_manager = None
+        self.file_manager = None
+
+        if self.tab_name:
+            self.step_manager = QtStepManager(tab_name=self.tab_name)
+            # Initialize FileManager with the step manager
+            self.file_manager = FileManager(step_manager=self.step_manager)
+            # Note: We don't pass a notification_manager here yet. 
+            # Subclasses or a wrapper could be used to pipe file_manager notifications to self.status_message
 
     def showEvent(self, event):
         """
@@ -45,6 +61,14 @@ class QtTabContent(QWidget):
         if self.is_visible:
             self.is_visible = False
             self.on_hide()
+
+    def update_directory(self, new_dir):
+        """
+        Update the default directory for the file manager.
+        Can be overridden, but ensure to call super().update_directory(new_dir) if you want file_manager updated.
+        """
+        if self.file_manager:
+            self.file_manager.set_default_directory(new_dir)
 
     # --- Methods for Subclasses to Override ---
 
@@ -70,4 +94,3 @@ class QtTabContent(QWidget):
         - Disconnect signals to save CPU
         """
         pass
-

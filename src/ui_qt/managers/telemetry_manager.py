@@ -14,7 +14,7 @@ class TelemetryManager(QObject):
     status_message = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, widget, thread_pool, step_manager=None, is_dune=False, default_directory=None):
+    def __init__(self, widget, thread_pool, step_manager=None, is_dune=False, default_directory=None, file_manager=None):
         super().__init__()
         self.widget = widget
         self.thread_pool = thread_pool
@@ -23,11 +23,14 @@ class TelemetryManager(QObject):
         self.step_manager = step_manager
         base_directory = default_directory or os.getcwd()
         
-        # Initialize FileManager for auto-saving
-        self.file_manager = FileManager(
-            default_directory=base_directory,
-            step_manager=step_manager
-        )
+        # Use provided file_manager or create new one
+        if file_manager:
+            self.file_manager = file_manager
+        else:
+            self.file_manager = FileManager(
+                default_directory=base_directory,
+                step_manager=step_manager
+            )
         
         # Connect UI signals to logic
         self.widget.fetch_requested.connect(self.fetch_telemetry)

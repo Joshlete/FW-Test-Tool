@@ -16,7 +16,7 @@ from ..components.modern_button import ModernButton # Assuming this exists or st
 from ..managers.alerts_manager import AlertsManager
 from ..managers.telemetry_manager import TelemetryManager
 from ..managers.cdm_manager import CDMManager
-from ..managers.step_manager import QtStepManager
+# from ..managers.step_manager import QtStepManager # Inherited from QtTabContent
 from ..managers.dune_vnc_manager import DuneVNCManager
 from ..managers.dune_action_manager import DuneActionManager
 
@@ -65,17 +65,22 @@ class DuneTab(QtTabContent):
     Dune Tab Implementation with 3-Column Layout.
     """
     def __init__(self):
-        super().__init__()
+        super().__init__(tab_name="dune") # Initializes step_manager and file_manager
         
         self.config_manager = ConfigManager()
         self.thread_pool = QThreadPool()
         self.ip = None
         
         # --- Managers ---
-        self.step_manager = QtStepManager(tab_name="dune")
-        self.snip_tool = QtSnipTool(self.config_manager)
+        # self.step_manager is already initialized by super().__init__
+        
+        # Pass file_manager to SnipTool
+        self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
+        
         self.vnc_manager = DuneVNCManager(self.thread_pool)
-        self.action_manager = DuneActionManager(self.thread_pool, self.vnc_manager, self.snip_tool, self.step_manager)
+        
+        # Pass file_manager to ActionManager
+        self.action_manager = DuneActionManager(self.thread_pool, self.vnc_manager, self.snip_tool, self.step_manager, self.file_manager)
         
         # --- Toolbar ---
         self._init_toolbar()
@@ -354,13 +359,20 @@ class DuneTab(QtTabContent):
         telemetry_label = QLabel("Telemetry")
         telemetry_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #DDD;")
         self.telemetry_widget = TelemetryWidget()
-        default_dir = self.config_manager.get("output_directory") or os.getcwd()
+        # We now use self.file_manager for telemetry if possible, but TelemetryManager 
+        # might still need explicit directory or we pass file_manager.
+        # TelemetryManager currently takes default_directory.
+        # Let's check TelemetryManager in next steps if we need to update it too. 
+        # For now, pass default_directory from file_manager.
+        default_dir = self.file_manager.default_directory
+        
         self.telemetry_manager = TelemetryManager(
             self.telemetry_widget,
             self.thread_pool,
             step_manager=self.step_manager,
             is_dune=True,
-            default_directory=default_dir
+            default_directory=default_dir,
+            file_manager=self.file_manager
         )
         telemetry_layout.addWidget(telemetry_label)
         telemetry_layout.addWidget(self.telemetry_widget)
@@ -420,8 +432,12 @@ class DuneTab(QtTabContent):
 
     def update_directory(self, new_dir):
         """Called by MainWindow when Directory changes"""
+        # Call super to update file_manager
+        super().update_directory(new_dir)
+        
         self.cdm_manager.update_directory(new_dir)
-        self.action_manager.update_directory(new_dir)
+        # action_manager no longer needs update_directory as it uses file_manager
+        
         # CHANGE: Update telemetry manager directory
         self.telemetry_manager.update_directory(new_dir)
 

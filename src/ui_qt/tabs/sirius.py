@@ -11,7 +11,7 @@ from ..components.ui_stream_widget import UIStreamWidget
 from ..components.slide_panel import SlidePanel
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
-from ..managers.step_manager import QtStepManager
+# from ..managers.step_manager import QtStepManager # Inherited
 from ..managers.sirius_managers import SiriusAlertsManager, SiriusLEDMManager, SiriusTelemetryManager
 from src.utils.config_manager import ConfigManager
 from src.utils.ews_capture import EWSScreenshotCapturer
@@ -22,7 +22,7 @@ class SiriusTab(QtTabContent):
     Combines UI Stream, LEDM controls, Alerts, and Telemetry in a modern layout.
     """
     def __init__(self):
-        super().__init__()
+        super().__init__(tab_name="sirius") # Initializes step_manager and file_manager
         
         self.config_manager = ConfigManager()
         self.thread_pool = QThreadPool()
@@ -31,7 +31,7 @@ class SiriusTab(QtTabContent):
         self.toolbar = ActionToolbar()
         self.layout.addWidget(self.toolbar)
         
-        self.step_manager = QtStepManager(tab_name="sirius")
+        # self.step_manager is initialized in super()
         self.step_control = StepControl(self.step_manager)
         self.toolbar.add_widget_left(self.step_control)
         
@@ -127,7 +127,10 @@ class SiriusTab(QtTabContent):
         
         # --- Initialize Managers ---
         self.alerts_manager = SiriusAlertsManager(self.alerts_widget, self.thread_pool)
-        self.ledm_manager = SiriusLEDMManager(self.ledm_widget, self.thread_pool, self.step_manager)
+        
+        # Pass file_manager to LEDMManager
+        self.ledm_manager = SiriusLEDMManager(self.ledm_widget, self.thread_pool, self.step_manager, self.file_manager)
+        
         self.telemetry_manager = SiriusTelemetryManager(self.telemetry_widget, self.thread_pool)
         
         # Override LEDM display to use slide panel
@@ -153,7 +156,11 @@ class SiriusTab(QtTabContent):
         self.telemetry_manager.update_ip(new_ip)
 
     def update_directory(self, new_dir):
-        self.ledm_manager.update_directory(new_dir)
+        super().update_directory(new_dir)
+        # ledm_manager uses file_manager now, so explicit update not strictly needed if it references file_manager
+        # but for safety if it caches anything (it doesn't in new code), we can leave it or remove.
+        # The new SiriusLEDMManager doesn't have update_directory.
+        pass
 
     def show_data_in_slide_panel(self, endpoint, content):
         # Pretty print XML if possible
@@ -186,29 +193,26 @@ class SiriusTab(QtTabContent):
         
         def _run_capture():
             try:
-                capturer = EWSScreenshotCapturer(None, self.ip, self.ledm_manager.directory, password=pwd)
+                # Use file_manager directory
+                directory = self.file_manager.default_directory
+                capturer = EWSScreenshotCapturer(None, self.ip, directory, password=pwd)
                 screenshots = capturer._capture_ews_screenshots()
                 
                 saved_count = 0
-                step_num = self.step_manager.get_step()
                 
                 for img_bytes, desc in screenshots:
-                    filename = f"{step_num}. {desc}.png"
-                    path = os.path.join(self.ledm_manager.directory, filename)
-                    with open(path, 'wb') as f:
-                        f.write(img_bytes)
-                    saved_count += 1
+                    # Use file_manager
+                    success, _ = self.file_manager.save_image_data(img_bytes, desc)
+                    if success:
+                        saved_count += 1
                     
                 self.status_message.emit(f"Saved {saved_count} EWS screenshots")
             except Exception as e:
                 self.error_occurred.emit(f"EWS capture failed: {str(e)}")
             finally:
-                # Re-enable button (needs safe thread signal technically, but simple callback might work if careful)
-                # Ideally emit signal to enable
                 pass 
                 
         threading.Thread(target=_run_capture).start()
-        # Re-enable button after short delay or on signal (simplified here)
         self.btn_ews.setEnabled(True)
 
     def _capture_ui(self, description=""):
@@ -227,27 +231,17 @@ class SiriusTab(QtTabContent):
                 resp = requests.get(url, verify=False, auth=("admin", pwd), timeout=10)
                 resp.raise_for_status()
                 
-                # Save Dialog
-                step_num = self.step_manager.get_step()
-                default_name = f"{step_num}. UI.png"
-                
-                # Must run dialog on main thread
-                # Simplified: Just save to directory for now to avoid thread blocking issues with dialogs
-                # or use QMetaObject.invokeMethod for the dialog
-                
-                path = os.path.join(self.ledm_manager.directory, default_name)
-                
-                # If file exists, increment
-                counter = 1
-                base, ext = os.path.splitext(path)
-                while os.path.exists(path):
-                    path = f"{base}_{counter}{ext}"
-                    counter += 1
+                # Save via FileManager
+                base_name = "UI"
+                if description:
+                    base_name += f" {description}"
                     
-                with open(path, 'wb') as f:
-                    f.write(resp.content)
-                    
-                self.status_message.emit(f"Saved UI screenshot: {os.path.basename(path)}")
+                success, path = self.file_manager.save_image_data(resp.content, base_name)
+                
+                if success:    
+                    self.status_message.emit(f"Saved UI screenshot: {os.path.basename(path)}")
+                else:
+                    self.error_occurred.emit("Failed to save UI screenshot")
                 
             except Exception as e:
                 self.error_occurred.emit(f"Capture failed: {str(e)}")
@@ -264,16 +258,14 @@ class SiriusTab(QtTabContent):
                 resp = requests.get(url, verify=False, auth=("admin", pwd), timeout=10)
                 resp.raise_for_status()
                 
-                step_num = self.step_manager.get_step()
-                filename = f"{step_num}. UI {description}.png"
-                path = os.path.join(self.ledm_manager.directory, filename)
+                base_name = f"UI {description}"
+                success, path = self.file_manager.save_image_data(resp.content, base_name)
                 
-                with open(path, 'wb') as f:
-                    f.write(resp.content)
-                    
-                self.status_message.emit(f"Saved ECL: {filename}")
+                if success:
+                    self.status_message.emit(f"Saved ECL: {os.path.basename(path)}")
+                else:
+                    self.error_occurred.emit("Failed to save ECL")
             except Exception as e:
                 self.error_occurred.emit(f"ECL capture failed: {str(e)}")
                 
         threading.Thread(target=_run).start()
-
