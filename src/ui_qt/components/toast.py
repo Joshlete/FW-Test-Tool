@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QPushButton, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint, QSize
+from src.logging_utils import log_info, log_error
 
 class ToastWidget(QWidget):
     """
@@ -95,12 +96,15 @@ class ToastWidget(QWidget):
         if style == "error":
             bg_color = "#252526" # Dark Grey Background
             border_color = "#D32F2F" # Red Border
+            log_error("toast", "shown", message)
         elif style == "success":
             bg_color = "#252526"
             border_color = "#388E3C" # Green Border
+            log_info("toast", "shown", message, {"style": style})
         else:
             bg_color = "#252526"
             border_color = "#007ACC" # Blue Border
+            log_info("toast", "shown", message, {"style": style})
             
         self.setStyleSheet(
             f"background-color: {bg_color};"

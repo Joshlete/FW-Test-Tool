@@ -354,7 +354,14 @@ class DuneTab(QtTabContent):
         telemetry_label = QLabel("Telemetry")
         telemetry_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #DDD;")
         self.telemetry_widget = TelemetryWidget()
-        self.telemetry_manager = TelemetryManager(self.telemetry_widget, self.thread_pool, is_dune=True)
+        default_dir = self.config_manager.get("output_directory") or os.getcwd()
+        self.telemetry_manager = TelemetryManager(
+            self.telemetry_widget,
+            self.thread_pool,
+            step_manager=self.step_manager,
+            is_dune=True,
+            default_directory=default_dir
+        )
         telemetry_layout.addWidget(telemetry_label)
         telemetry_layout.addWidget(self.telemetry_widget)
         
@@ -415,6 +422,8 @@ class DuneTab(QtTabContent):
         """Called by MainWindow when Directory changes"""
         self.cdm_manager.update_directory(new_dir)
         self.action_manager.update_directory(new_dir)
+        # CHANGE: Update telemetry manager directory
+        self.telemetry_manager.update_directory(new_dir)
 
     def _toggle_connection(self):
         if self.vnc_manager.vnc and self.vnc_manager.vnc.connected:

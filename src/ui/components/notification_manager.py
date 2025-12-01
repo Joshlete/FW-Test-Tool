@@ -25,6 +25,7 @@ Updates:
 
 import tkinter as tk
 from tkinter import ttk
+from src.logging_utils import log_info, log_error
 
 
 class NotificationManager:
@@ -103,8 +104,13 @@ class NotificationManager:
         # Use default duration if none specified
         if duration is None:
             duration = self.DEFAULT_INFO_DURATION
-        # Log to terminal for debugging
-        print(f"[Notification] {color.upper()}: {message}")
+            
+        # Log to system logger instead of just print
+        # Map colors to log levels
+        if color == "red":
+            log_error("notification", "shown", message)
+        else:
+            log_info("notification", "shown", message, {"color": color})
         
         # Update UI elements
         self.notification_label.config(text=message, foreground=color)

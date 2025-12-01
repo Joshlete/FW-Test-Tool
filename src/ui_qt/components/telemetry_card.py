@@ -1,10 +1,14 @@
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 
 class TelemetryCard(QFrame):
     """
     A compact single-line card widget representing a single telemetry event.
     """
+    # Signals for context menu actions
+    view_details_requested = Signal(dict)
+    save_requested = Signal(dict)
+
     def __init__(self, event_data, is_dune_format=False, parent=None):
         super().__init__(parent)
         self.event_data = event_data
@@ -115,10 +119,10 @@ class TelemetryCard(QFrame):
     def _show_context_menu(self, position):
         menu = QMenu()
         view_action = menu.addAction("View Details")
-        view_action.triggered.connect(lambda: print(f"TODO: View details for #{self.event_data.get('sequenceNumber')}"))
+        view_action.triggered.connect(lambda: self.view_details_requested.emit(self.event_data))
         
         save_action = menu.addAction("Save to File")
-        save_action.triggered.connect(lambda: print(f"TODO: Save details for #{self.event_data.get('sequenceNumber')}"))
+        save_action.triggered.connect(lambda: self.save_requested.emit(self.event_data))
         
         menu.exec(self.mapToGlobal(position))
 

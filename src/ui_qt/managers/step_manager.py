@@ -32,6 +32,10 @@ class QtStepManager(QObject):
     def get_step(self):
         return self._current_step
 
+    def get_current_step(self):
+        """Alias for compatibility with classic StepManager."""
+        return self._current_step
+
     def set_step(self, val):
         """Set the step directly (e.g. from manual input)."""
         try:
@@ -54,4 +58,18 @@ class QtStepManager(QObject):
             self._current_step -= 1
             self._save_step()
             self.step_changed.emit(self._current_step)
+
+    def get_step_prefix(self, step_number=None):
+        """
+        Match classic behavior: return 'N. ' prefix for filenames.
+        """
+        if step_number is not None:
+            try:
+                step_val = int(step_number)
+                return f"{step_val}. " if step_val >= 1 else ""
+            except (TypeError, ValueError):
+                pass
+
+        current = self.get_step()
+        return f"{current}. " if current >= 1 else ""
 

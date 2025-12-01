@@ -10,6 +10,10 @@ class TelemetryWidget(QWidget):
     
     # Signal to let the parent know fetch was requested
     fetch_requested = Signal()
+    
+    # Signals propagated from cards
+    view_details_requested = Signal(dict)
+    save_requested = Signal(dict)
 
     def __init__(self):
         super().__init__()
@@ -91,4 +95,9 @@ class TelemetryWidget(QWidget):
         # 3. Create Cards
         for event in sorted_events:
             card = TelemetryCard(event, is_dune_format)
+            
+            # Connect card signals to widget signals
+            card.view_details_requested.connect(self.view_details_requested.emit)
+            card.save_requested.connect(self.save_requested.emit)
+            
             self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)

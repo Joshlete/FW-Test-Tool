@@ -19,7 +19,7 @@ class AlertCard(QFrame):
         COLOR_MAP = {
             101: "#000000", # Black
             102: "#FFD700", # Yellow
-            103: "#00FFFF", # Cyan
+            103: "#87CEEB", # Sky Blue
             104: "#FF00FF", # Magenta
         }
 

@@ -159,7 +159,13 @@ class AresTab(QtTabContent):
 
         # --- Initialize Managers (Logic) ---
         self.alerts_manager = AlertsManager(self.alerts_widget, self.thread_pool)
-        self.telemetry_manager = TelemetryManager(self.telemetry_widget, self.thread_pool)
+        default_dir = self.config_manager.get("output_directory") or os.getcwd()
+        self.telemetry_manager = TelemetryManager(
+            self.telemetry_widget,
+            self.thread_pool,
+            step_manager=self.step_manager,
+            default_directory=default_dir
+        )
         self.cdm_manager = CDMManager(self.cdm_widget, self.thread_pool, self.step_manager)
         
         # Override the CDM widget's data display handler so the slide panel is used
@@ -218,6 +224,8 @@ class AresTab(QtTabContent):
     def update_directory(self, new_dir):
         """Called by MainWindow when Directory changes"""
         self.cdm_manager.update_directory(new_dir)
+        # CHANGE: Update telemetry manager directory
+        self.telemetry_manager.update_directory(new_dir)
         
     def _on_password_changed(self, text):
         """Save password to config when changed"""

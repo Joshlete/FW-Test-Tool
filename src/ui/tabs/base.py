@@ -26,8 +26,8 @@ HIGHLIGHT_CONFIG = {
     },
     'blue': {
         'words': ['UI', 'FPUI', 'EWS', 'CDM', 'Telemetry', 'alerts', 'suppliesPublic', 'suppliesPrivate', 'report', 'reports', 'supplyAssessment', 'RTP', 'DeviceStatus', '43 tap'],
-        'color': '#4DABF7',  # Blue color
-        'bg_color': '#E7F5FF'  # Light blue background
+        'color': '#87CEEB',  # Sky Blue
+        'bg_color': '#E0F7FA'  # Light Sky Blue background
     },
     'green': {
         'words': ['used', 'trade', 'pen', 'pens', 'counterfeit', 'genuine'],
