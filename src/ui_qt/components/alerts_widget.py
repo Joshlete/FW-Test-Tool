@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                               QScrollArea, QLabel, QMessageBox, QFrame)
+                               QScrollArea, QLabel, QMessageBox, QFrame, QMenu)
+from PySide6.QtGui import QAction, QCursor
 from PySide6.QtCore import Qt, Signal
 from .alert_card import AlertCard  # Import the new component
 
@@ -10,6 +11,8 @@ class AlertsWidget(QWidget):
     fetch_requested = Signal()
     # Emits alert ID and action value
     action_requested = Signal(str, str)
+    # Emits dictionary of alert data when capture is requested via context menu
+    capture_requested = Signal(dict)
 
     def __init__(self):
         super().__init__()
@@ -96,7 +99,35 @@ class AlertsWidget(QWidget):
             card = AlertCard(alert)
             # Connect the card's signal to the widget's signal (via verification)
             card.action_requested.connect(self._verify_and_send_action)
+            # Connect context menu signal
+            card.context_menu_requested.connect(self._show_context_menu)
             self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
+
+    def _show_context_menu(self, alert_data):
+        """Display context menu for alert card."""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D2D;
+                border: 1px solid #3D3D3D;
+                color: #FFFFFF;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #007ACC;
+                color: #FFFFFF;
+            }
+        """)
+        
+        capture_action = QAction("Capture Alert UI", self)
+        capture_action.triggered.connect(lambda: self.capture_requested.emit(alert_data))
+        menu.addAction(capture_action)
+        
+        menu.exec(QCursor.pos())
 
     def _verify_and_send_action(self, alert_id, action_value):
         """Show verification dialog."""

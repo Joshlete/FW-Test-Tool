@@ -6,6 +6,7 @@ from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
 from ..components.cdm_widget import CDMWidget
+from ..components.slide_panel import SlidePanel
 from ..components.dune_ui_stream_widget import DuneUIStreamWidget
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
@@ -91,6 +92,13 @@ class DuneTab(QtTabContent):
         
         # 3. Right Column: Monitoring (Alerts + Telemetry)
         self._init_right_column()
+
+        # --- Setup Slide Panel Integration ---
+        # Override the CDM widget's data display handler so the slide panel is used
+        self.cdm_widget.display_data = self.show_data_in_slide_panel
+        
+        # Connect refresh signal from SlidePanel to CDMManager logic
+        self.slide_panel.refresh_requested.connect(self.cdm_manager.view_cdm_data)
         
         # Set Initial Stretch Factors (30%, 25%, 45%)
         self.main_splitter.setStretchFactor(0, 30)
@@ -127,6 +135,8 @@ class DuneTab(QtTabContent):
         
         # EWS Snips
         self.btn_ews = ModernButton("EWS Snips")
+        # Ensure we don't double-apply stylesheets that might conflict or be missing the menu part
+        # The ModernButton class now handles its own styling including the menu.
         self.btn_ews.setMenu(self._create_ews_menu())
         self.toolbar.add_widget_left(self.btn_ews)
         
@@ -163,6 +173,24 @@ class DuneTab(QtTabContent):
 
     def _create_ews_menu(self):
         menu = QMenu(self)
+        # Styling is now handled by the ModernButton stylesheet which targets QMenu
+        # But we can also set it on the menu directly to be safe
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D2D;
+                border: 1px solid #3D3D3D;
+                color: #FFFFFF;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #007ACC;
+                color: #FFFFFF;
+            }
+        """)
         pages = [
             "Home Page", "Supplies Page Cyan", "Supplies Page Magenta", 
             "Supplies Page Yellow", "Supplies Page Black", "Supplies Page Color",
@@ -176,6 +204,22 @@ class DuneTab(QtTabContent):
 
     def _create_commands_menu(self):
         menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D2D;
+                border: 1px solid #3D3D3D;
+                color: #FFFFFF;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #007ACC;
+                color: #FFFFFF;
+            }
+        """)
         cmds = ["AUTH", "Clear Telemetry", "Print 10-Tap", "Print PSR"]
         for cmd in cmds:
             action = QAction(cmd, self)
@@ -228,6 +272,25 @@ class DuneTab(QtTabContent):
             action.triggered.connect(lambda checked=False, var=v: self.action_manager.capture_ecl(var))
             menu.addAction(action)
         return menu
+
+    def show_data_in_slide_panel(self, endpoint, content):
+        """Custom handler to show data in the slide panel instead of a dialog."""
+        # Format JSON if possible
+        try:
+            import json
+            parsed = json.loads(content)
+            content = json.dumps(parsed, indent=4)
+        except:
+            pass
+            
+        self.slide_panel.open_panel(endpoint, content)
+
+    def resizeEvent(self, event):
+        """Ensure slide panel resizes with the window."""
+        super().resizeEvent(event)
+        if hasattr(self, 'slide_panel') and self.slide_panel.isVisible():
+             # Trigger resize of panel
+             self.slide_panel.resizeEvent(None)
 
     def _init_center_column(self):
         center_container = QFrame()
@@ -302,6 +365,9 @@ class DuneTab(QtTabContent):
         
         right_layout.addWidget(right_splitter)
         self.main_splitter.addWidget(right_container)
+        
+        # Slide Panel (Overlay on Right Column)
+        self.slide_panel = SlidePanel(right_container)
 
     def _connect_signals(self):
         # VNC -> Stream Widget
@@ -329,6 +395,9 @@ class DuneTab(QtTabContent):
         self.cdm_manager.error_occurred.connect(self.error_occurred.emit)
         self.alerts_manager.status_message.connect(self.status_message.emit)
         self.telemetry_manager.status_message.connect(self.status_message.emit)
+        
+        # Connect Alert Capture signal
+        self.alerts_widget.capture_requested.connect(self.action_manager.capture_alert_ui)
 
     def update_ip(self, new_ip):
         self.ip = new_ip

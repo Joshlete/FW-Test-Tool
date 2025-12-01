@@ -229,6 +229,23 @@ class DuneUIStreamWidget(QWidget):
                 background-color: #3D3D3D;
                 color: white;
             }
+            QToolButton::menu-button {
+                border-left: 1px solid #444;
+            }
+            QMenu {
+                background-color: #2D2D2D;
+                border: 1px solid #3D3D3D;
+                color: #FFFFFF;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #007ACC;
+                color: #FFFFFF;
+            }
         """)
         
         # Force menu to show immediately on click if InstantPopup is weird (redundant but safe)

@@ -7,6 +7,34 @@ class AlertCard(QFrame):
     """
     # Emits alert ID and the action value (e.g., "acknowledge", "continue")
     action_requested = Signal(str, str)
+    # Emits full alert data dictionary when right-clicked
+    context_menu_requested = Signal(dict)
+
+    def _get_supply_color(self, alert_data):
+        """
+        Extracts supply color from iValue in alert data.
+        Returns hex color string or None if not found/applicable.
+        """
+        # Map iValues to Colors (CMYK)
+        COLOR_MAP = {
+            101: "#000000", # Black
+            102: "#FFD700", # Yellow
+            103: "#00FFFF", # Cyan
+            104: "#FF00FF", # Magenta
+        }
+
+        try:
+            data_list = alert_data.get('data', [])
+            for item in data_list:
+                # Check if this data item relates to supplies
+                if 'suppliesPublic' in item.get('resourceGun', ''):
+                    val = item.get('value', {}).get('iValue')
+                    if val in COLOR_MAP:
+                        return COLOR_MAP[val]
+        except:
+            pass
+        
+        return None
 
     def __init__(self, alert_data, parent=None):
         super().__init__(parent)
@@ -16,6 +44,12 @@ class AlertCard(QFrame):
         self.setObjectName("AlertCard")
         # Severity determines the border color
         severity = str(alert_data.get('severity', 'info')).lower()
+        
+        # Determine Indicator Color (Supply vs Severity)
+        severity_color = self._get_color(severity)
+        supply_color = self._get_supply_color(alert_data)
+        indicator_color = supply_color if supply_color else severity_color
+        
         self._set_severity_style(severity)
         self.setFixedHeight(46) # Force single line height
 
@@ -27,7 +61,7 @@ class AlertCard(QFrame):
         # --- Icon / Severity Indicator (Left) ---
         self.indicator = QLabel()
         self.indicator.setFixedWidth(4)
-        self.indicator.setStyleSheet(f"background-color: {self._get_color(severity)}; border-radius: 2px;")
+        self.indicator.setStyleSheet(f"background-color: {indicator_color}; border-radius: 2px;")
         layout.addWidget(self.indicator)
 
         # --- Title (String ID) ---
@@ -85,6 +119,11 @@ class AlertCard(QFrame):
 
     def _on_action_clicked(self, action_value):
         self.action_requested.emit(self.alert_id, action_value)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            self.context_menu_requested.emit(self.alert_data)
+        super().mousePressEvent(event)
 
     def _get_color(self, severity):
         """Return hex color for severity."""

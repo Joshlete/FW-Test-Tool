@@ -2,6 +2,7 @@ import os
 from PySide6.QtWidgets import QWidget, QApplication, QRubberBand, QLabel, QFileDialog
 from PySide6.QtCore import Qt, QRect, Signal, QPoint, QSize, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QScreen, QPixmap, QGuiApplication, QCursor
+from src.logging_utils import log_info, log_error
 
 class SnipOverlay(QWidget):
     captured = Signal(QPixmap, QRect) # Emits captured pixmap and rect
@@ -135,9 +136,10 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
         self.save_directory = "."
         self.current_filename = "screenshot.png"
 
-    def start_capture(self, directory, filename):
+    def start_capture(self, directory, filename, auto_save=False):
         self.save_directory = directory
         self.current_filename = filename
+        self.auto_save = auto_save
         
         # Capture full screen
         # Handle multi-monitor: grab virtual desktop
@@ -241,26 +243,30 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
                      check_path = initial_path + ".png"
                 counter += 1
 
-            filters = "All Files (*);;PNG Images (*.png);;JPEG Images (*.jpg)"
-            file_path, selected_filter = QFileDialog.getSaveFileName(
-                None,
-                "Save Screenshot",
-                initial_path, # Pass path WITHOUT extension if it didn't have one
-                filters,
-                "All Files (*)"
-            )
+            if self.auto_save:
+                file_path = initial_path
+                # Check if extension is missing, OR if the path looks like it has an extension but it might be part of a directory name with dots
+                # Simple check: if it doesn't end with .png, .jpg, .jpeg, append .png
+                if not file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    file_path += ".png"
+            else:
+                filters = "All Files (*);;PNG Images (*.png);;JPEG Images (*.jpg)"
+                file_path, selected_filter = QFileDialog.getSaveFileName(
+                    None,
+                    "Save Screenshot",
+                    initial_path, # Pass path WITHOUT extension if it didn't have one
+                    filters,
+                    "All Files (*)"
+                )
 
-            if file_path:
-                # Ensure extension if user didn't type one
-                if not os.path.splitext(file_path)[1]:
+                if file_path and not os.path.splitext(file_path)[1]:
                      # Use selected filter to guess or default to png
                      if "jpg" in selected_filter.lower():
                          file_path += ".jpg"
-                     elif "png" in selected_filter.lower():
-                         file_path += ".png"
                      else:
                          file_path += ".png"
 
+            if file_path:
                 pixmap.save(file_path)
                 
                 # Copy to clipboard

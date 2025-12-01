@@ -1,5 +1,6 @@
 import sys
 import os
+import signal
 
 # Ensure the project root is in sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +18,9 @@ def main():
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
 
     app = QApplication(sys.argv)
+    
+    # Allow Ctrl+C to close the application from the terminal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     
     # Apply the dark theme stylesheet
     app.setStyleSheet(load_stylesheet())

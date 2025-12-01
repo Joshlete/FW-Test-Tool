@@ -113,7 +113,7 @@ class DuneActionManager(QObject):
         filename = f"{step}. {page_name}" # Extension added by snip tool
         
         # QtSnipTool handles the region logic internally based on filename
-        self.snip_tool.start_capture(self.directory, filename)
+        self.snip_tool.start_capture(self.directory, filename, auto_save=True)
 
     def capture_ecl(self, variant="Estimated Cartridge Levels"):
         """
@@ -149,6 +149,46 @@ class DuneActionManager(QObject):
                     self.error_occurred.emit("Failed to save ECL screenshot")
             except Exception as e:
                 self.error_occurred.emit(f"ECL Capture Error: {str(e)}")
+
+        threading.Thread(target=_save_task).start()
+
+    def capture_alert_ui(self, alert_data):
+        """
+        Capture current VNC frame for a specific alert.
+        Format: "{Step}. UI {StringID} {Category}.png"
+        """
+        if not self.vnc_manager or not self.vnc_manager.vnc or not self.vnc_manager.vnc.connected:
+            self.error_occurred.emit("VNC not connected. Cannot capture Alert UI.")
+            return
+
+        string_id = alert_data.get('stringId', 'unknown')
+        category = alert_data.get('category', 'unknown')
+        
+        self.status_message.emit(f"Capturing UI for Alert: {string_id}...")
+        
+        step = self.step_manager.get_step()
+        # Clean filename components if needed
+        filename = f"{step}. UI {string_id} {category}.png"
+        full_path = os.path.join(self.directory, filename)
+        
+        # Ensure unique
+        counter = 1
+        base, ext = os.path.splitext(full_path)
+        while os.path.exists(full_path):
+            full_path = f"{base}_{counter}{ext}"
+            counter += 1
+            
+        # Run in thread to avoid blocking (reuse logic if possible, but simple enough to duplicate for now)
+        def _save_task():
+            try:
+                success = self.vnc_manager.vnc.save_ui(os.path.dirname(full_path), os.path.basename(full_path))
+                
+                if success:
+                    self.status_message.emit(f"Saved Alert UI: {os.path.basename(full_path)}")
+                else:
+                    self.error_occurred.emit("Failed to save Alert UI screenshot")
+            except Exception as e:
+                self.error_occurred.emit(f"Alert UI Capture Error: {str(e)}")
 
         threading.Thread(target=_save_task).start()
 
