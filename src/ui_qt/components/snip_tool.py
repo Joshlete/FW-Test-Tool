@@ -138,6 +138,7 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
         self.current_filename = "screenshot.png"
 
     def start_capture(self, directory, filename, auto_save=False):
+        log_info("snip_tool", "start_capture", f"Directory={directory}, File={filename}, AutoSave={auto_save}")
         self.save_directory = directory
         self.current_filename = filename
         self.auto_save = auto_save
@@ -146,7 +147,9 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
         # Handle multi-monitor: grab virtual desktop
         screens = QGuiApplication.screens()
         if not screens:
-            self.error_occurred.emit("No screens detected")
+            msg = "No screens detected"
+            log_error("snip_tool", "no_screens", msg)
+            self.error_occurred.emit(msg)
             return
 
         # Calculate virtual geometry
@@ -160,45 +163,52 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
         # PySide6 QScreen.grabWindow grabs the specific screen. 
         
         # We need to construct a combined pixmap
-        full_pixmap = QPixmap(virtual_geometry.size())
-        full_pixmap.fill(Qt.GlobalColor.black)
-        
-        painter = QPainter(full_pixmap)
-        for screen in screens:
-            screen_pixmap = screen.grabWindow(0)
-            # Position relative to virtual geometry
-            x = screen.geometry().x() - virtual_geometry.x()
-            y = screen.geometry().y() - virtual_geometry.y()
-            painter.drawPixmap(x, y, screen_pixmap)
-        painter.end()
-
-        # Load remembered region
-        remembered_rect = None
-        regions = self.config_manager.get("capture_regions", {})
-        # Use 'default' region or determine based on filename like in snip_tool.py?
-        # User said "remember last snip size". 
-        # The original tool saves by region name derived from filename.
-        region_name = self._get_region_name_from_filename(filename)
-        
-        if region_name in regions:
-            r = regions[region_name]
-            # Coordinates need to be mapped to our virtual geometry
-            # stored as x1, y1, x2, y2
-            # We need to shift them if they are absolute screen coords
+        try:
+            full_pixmap = QPixmap(virtual_geometry.size())
+            full_pixmap.fill(Qt.GlobalColor.black)
             
-            # Assuming stored coords are absolute screen coords
-            rect = QRect(QPoint(r['x1'], r['y1']), QPoint(r['x2'], r['y2']))
+            painter = QPainter(full_pixmap)
+            for screen in screens:
+                screen_pixmap = screen.grabWindow(0)
+                # Position relative to virtual geometry
+                x = screen.geometry().x() - virtual_geometry.x()
+                y = screen.geometry().y() - virtual_geometry.y()
+                painter.drawPixmap(x, y, screen_pixmap)
+            painter.end()
             
-            # Adjust to overlay coordinates (relative to virtual_geometry top-left)
-            rect.translate(-virtual_geometry.x(), -virtual_geometry.y())
-            remembered_rect = rect
+            # Load remembered region
+            remembered_rect = None
+            regions = self.config_manager.get("capture_regions", {})
+            # Use 'default' region or determine based on filename like in snip_tool.py?
+            # User said "remember last snip size". 
+            # The original tool saves by region name derived from filename.
+            region_name = self._get_region_name_from_filename(filename)
+            
+            if region_name in regions:
+                r = regions[region_name]
+                # Coordinates need to be mapped to our virtual geometry
+                # stored as x1, y1, x2, y2
+                # We need to shift them if they are absolute screen coords
+                
+                # Assuming stored coords are absolute screen coords
+                rect = QRect(QPoint(r['x1'], r['y1']), QPoint(r['x2'], r['y2']))
+                
+                # Adjust to overlay coordinates (relative to virtual_geometry top-left)
+                rect.translate(-virtual_geometry.x(), -virtual_geometry.y())
+                remembered_rect = rect
+                log_info("snip_tool", "remembered_region", f"Using stored region '{region_name}'")
 
-        self.overlay = SnipOverlay(full_pixmap, virtual_geometry, remembered_rect)
-        self.overlay.captured.connect(self._on_captured)
-        self.overlay.cancelled.connect(lambda: print("Capture cancelled"))
-        self.overlay.show()
+            self.overlay = SnipOverlay(full_pixmap, virtual_geometry, remembered_rect)
+            self.overlay.captured.connect(self._on_captured)
+            self.overlay.cancelled.connect(lambda: self.error_occurred.emit("Capture cancelled"))
+            self.overlay.show()
+
+        except Exception as e:
+            log_error("snip_tool", "start_capture_error", f"Error in start_capture: {str(e)}")
+            self.error_occurred.emit(f"Error initializing capture: {str(e)}")
 
     def _on_captured(self, pixmap, rect):
+        log_info("snip_tool", "captured", f"Capture completed. Rect: {rect}, Pixmap: {pixmap.width()}x{pixmap.height()}")
         # Save region
         region_name = self._get_region_name_from_filename(self.current_filename)
         
@@ -215,6 +225,7 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
         QTimer.singleShot(100, lambda: self._show_save_dialog(pixmap))
 
     def _show_save_dialog(self, pixmap):
+        log_info("snip_tool", "show_save_dialog", "Preparing to save image")
         # Save File with Dialog
         try:
             # Convert pixmap to bytes for FileManager
@@ -222,9 +233,9 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
             buffer_io = QBuffer(buffer)
             buffer_io.open(QIODevice.WriteOnly)
             pixmap.save(buffer_io, "PNG")
-            image_data_bytes = buffer.data().data()
-
+            image_data_bytes = bytes(buffer.data())
             if self.auto_save and self.file_manager:
+                log_info("snip_tool", "auto_save", "Saving via FileManager")
                 # Use FileManager for auto-save
                 success, file_path = self.file_manager.save_image_data(
                     image_data_bytes, 
@@ -234,15 +245,16 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
                 )
                 
                 if success:
+                    log_info("snip_tool", "save_success", f"Saved to {file_path}")
                     # Copy to clipboard even on auto-save
                     QApplication.clipboard().setPixmap(pixmap)
                     self.capture_completed.emit(file_path)
                 else:
+                    log_error("snip_tool", "save_failed", "FileManager returned failure")
                     self.error_occurred.emit("Failed to save image via FileManager")
                 return
 
             # --- Manual Save Dialog Logic ---
-            
             initial_path = ""
             if self.file_manager:
                  # Use FileManager to generate the safe default path
@@ -278,11 +290,10 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
                 QApplication.clipboard().setPixmap(pixmap)
                 
                 self.capture_completed.emit(file_path)
-            else:
-                # User cancelled
-                pass
+                log_info("snip_tool", "manual_save", f"Saved to {file_path}")
 
         except Exception as e:
+            log_error("snip_tool", "show_save_error", str(e))
             self.error_occurred.emit(str(e))
 
     def _get_region_name_from_filename(self, filename):

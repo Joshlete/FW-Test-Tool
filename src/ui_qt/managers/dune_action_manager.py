@@ -135,6 +135,8 @@ class DuneActionManager(QObject):
         Start an EWS capture for a specific page.
         Filename format: "{Step}. EWS {PageName}"
         """
+        log_info("dune.action", "capture_ews_start", f"Starting EWS Capture for: {page_name}")
+
         # Use raw page name? No, we want step prefix.
         # SnipTool will use FileManager, which handles prefixes.
         # BUT snip tool might double prefix if we pass "{Step}. EWS..." AND FileManager adds it again.
