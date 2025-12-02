@@ -1,8 +1,9 @@
 import os
 import threading
 import requests
-from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QFileDialog)
-from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QFileDialog, QSplitterHandle)
+from PySide6.QtCore import Qt, QThreadPool, QByteArray
+from PySide6.QtGui import QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
@@ -15,6 +16,41 @@ from ..components.step_control import StepControl
 from ..managers.sirius_managers import SiriusAlertsManager, SiriusLEDMManager, SiriusTelemetryManager
 from src.utils.config_manager import ConfigManager
 from src.utils.ews_capture import EWSScreenshotCapturer
+
+class SiriusSplitterHandle(QSplitterHandle):
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.CursorShape.SplitHCursor if orientation == Qt.Orientation.Horizontal else Qt.CursorShape.SplitVCursor)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Fill background to match main bg
+        painter.fillRect(self.rect(), QColor(30, 30, 30))
+
+        line_color = QColor(100, 100, 100)
+        pen = QPen(line_color, 1, Qt.PenStyle.DotLine)
+        painter.setPen(pen)
+
+        if self.orientation() == Qt.Orientation.Horizontal:
+            # Vertical line in center of handle (for horizontal splitter)
+            center_x = self.width() // 2
+            painter.drawLine(center_x, 10, center_x, self.height() - 10)
+        else:
+            # Horizontal line in center of handle (for vertical splitter)
+            center_y = self.height() // 2
+            painter.drawLine(10, center_y, self.width() - 10, center_y)
+
+
+class SiriusSplitter(QSplitter):
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setHandleWidth(9)
+
+    def createHandle(self):
+        return SiriusSplitterHandle(self.orientation(), self)
 
 class SiriusTab(QtTabContent):
     """
@@ -39,15 +75,17 @@ class SiriusTab(QtTabContent):
         
         self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
         
+        from PySide6.QtCore import QByteArray
+
         # --- Main Splitter ---
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter = SiriusSplitter(Qt.Orientation.Horizontal)
         
         # --- Left Panel: UI Stream + LEDM ---
         left_panel = QFrame()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 10, 0)
         
-        left_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.left_splitter = SiriusSplitter(Qt.Orientation.Vertical)
         
         # 1. UI Stream (Top Left)
         stream_container = QFrame()
@@ -71,19 +109,19 @@ class SiriusTab(QtTabContent):
         ledm_layout.addWidget(ledm_label)
         ledm_layout.addWidget(self.ledm_widget)
         
-        left_splitter.addWidget(stream_container)
-        left_splitter.addWidget(ledm_container)
-        left_splitter.setStretchFactor(0, 1) # UI Stream gets more space
-        left_splitter.setStretchFactor(1, 1)
+        self.left_splitter.addWidget(stream_container)
+        self.left_splitter.addWidget(ledm_container)
+        self.left_splitter.setStretchFactor(0, 1) # UI Stream gets more space
+        self.left_splitter.setStretchFactor(1, 1)
         
-        left_layout.addWidget(left_splitter)
+        left_layout.addWidget(self.left_splitter)
         
         # --- Right Panel: Alerts + Telemetry ---
         right_panel_container = QFrame()
         right_panel_layout = QVBoxLayout(right_panel_container)
         right_panel_layout.setContentsMargins(0, 0, 0, 0)
         
-        right_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.right_splitter = SiriusSplitter(Qt.Orientation.Vertical)
         
         # 3. Alerts (Top Right)
         alerts_container = QFrame()
@@ -107,23 +145,41 @@ class SiriusTab(QtTabContent):
         telemetry_layout.addWidget(telemetry_label)
         telemetry_layout.addWidget(self.telemetry_widget)
         
-        right_splitter.addWidget(alerts_container)
-        right_splitter.addWidget(telemetry_container)
-        right_splitter.setStretchFactor(0, 1)
-        right_splitter.setStretchFactor(1, 1)
+        self.right_splitter.addWidget(alerts_container)
+        self.right_splitter.addWidget(telemetry_container)
+        self.right_splitter.setStretchFactor(0, 1)
+        self.right_splitter.setStretchFactor(1, 1)
         
-        right_panel_layout.addWidget(right_splitter)
+        right_panel_layout.addWidget(self.right_splitter)
         
         # --- Slide Panel ---
         self.slide_panel = SlidePanel(right_panel_container)
         
         # Assemble Main Splitter
-        main_splitter.addWidget(left_panel)
-        main_splitter.addWidget(right_panel_container)
-        main_splitter.setStretchFactor(0, 1)
-        main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.addWidget(left_panel)
+        self.main_splitter.addWidget(right_panel_container)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 1)
         
-        self.layout.addWidget(main_splitter)
+        self.layout.addWidget(self.main_splitter)
+
+        # --- Restore Splitter States ---
+        saved_main = self.config_manager.get("sirius_main_splitter")
+        if saved_main:
+            self.main_splitter.restoreState(QByteArray.fromBase64(saved_main.encode()))
+
+        saved_left = self.config_manager.get("sirius_left_splitter")
+        if saved_left:
+            self.left_splitter.restoreState(QByteArray.fromBase64(saved_left.encode()))
+
+        saved_right = self.config_manager.get("sirius_right_splitter")
+        if saved_right:
+            self.right_splitter.restoreState(QByteArray.fromBase64(saved_right.encode()))
+
+        # Connect save handlers
+        self.main_splitter.splitterMoved.connect(self._save_splitter_states)
+        self.left_splitter.splitterMoved.connect(self._save_splitter_states)
+        self.right_splitter.splitterMoved.connect(self._save_splitter_states)
         
         # --- Initialize Managers ---
         self.alerts_manager = SiriusAlertsManager(self.alerts_widget, self.thread_pool)
@@ -177,6 +233,12 @@ class SiriusTab(QtTabContent):
         super().resizeEvent(event)
         if self.slide_panel.isVisible():
             self.slide_panel.resizeEvent(None)
+
+    def _save_splitter_states(self):
+        """Save the current state of all splitters to config."""
+        self.config_manager.set("sirius_main_splitter", self.main_splitter.saveState().toBase64().data().decode())
+        self.config_manager.set("sirius_left_splitter", self.left_splitter.saveState().toBase64().data().decode())
+        self.config_manager.set("sirius_right_splitter", self.right_splitter.saveState().toBase64().data().decode())
             
     def _on_capture_ews(self):
         if not self.ip:

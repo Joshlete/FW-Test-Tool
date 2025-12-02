@@ -52,15 +52,29 @@ class FetchSiriusAlertsWorker(QRunnable):
                 if color == "CyanMagentaYellow":
                     color = "Tri-Color"
                 
+                # Extract details for display
+                product_status_id = alert.findtext('ad:ProductStatusAlertID', namespaces=ns, default='')
+                original_string_id = alert.findtext('locid:StringId', namespaces=ns, default='')
+                error_code = details.findtext('ad:AlertDetailsErrorCode', namespaces=ns, default='') if details is not None else ''
+                
+                # Prepare badges (bubbles)
+                badges = []
+                if product_status_id:
+                    badges.append(product_status_id)
+                if error_code:
+                    badges.append(error_code)
+
                 # Map to common alert structure used by AlertsWidget/AlertCard
                 alerts.append({
-                    'id': alert.findtext('ad:ProductStatusAlertID', namespaces=ns, default=''),
-                    'stringId': alert.findtext('locid:StringId', namespaces=ns, default=''),
+                    'id': product_status_id,
+                    'stringId': original_string_id, # Main Title
+                    'badges': badges,               # Extra info as bubbles
                     'category': color if color else 'General', # Use color as category/consumable type
                     'severity': alert.findtext('ad:Severity', namespaces=ns, default='info'),
                     'priority': alert.findtext('ad:AlertPriority', namespaces=ns, default=''),
                     # Store extra fields if needed for context
-                    'raw_color': color
+                    'raw_color': color,
+                    'original_stringId': original_string_id
                 })
             
             self.signals.finished.emit(alerts)

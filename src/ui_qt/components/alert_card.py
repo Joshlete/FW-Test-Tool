@@ -10,11 +10,26 @@ class AlertCard(QFrame):
     # Emits full alert data dictionary when right-clicked
     context_menu_requested = Signal(dict)
 
+    # Map raw color names to Hex for Sirius compatibility
+    RAW_COLOR_MAP = {
+        "black": "#000000",
+        "yellow": "#FFD700",
+        "cyan": "#87CEEB",
+        "magenta": "#FF00FF",
+        "tri-color": "#CD5C5C", # IndianRed as a placeholder for tri-color
+    }
+
     def _get_supply_color(self, alert_data):
         """
-        Extracts supply color from iValue in alert data.
+        Extracts supply color from iValue in alert data or raw_color field.
         Returns hex color string or None if not found/applicable.
         """
+        # 1. Check Sirius 'raw_color' first
+        raw_color = alert_data.get('raw_color', '')
+        if raw_color:
+            return self.RAW_COLOR_MAP.get(str(raw_color).lower(), None)
+
+        # 2. Check Ares/Dune 'data' list for iValue
         # Map iValues to Colors (CMYK)
         COLOR_MAP = {
             101: "#000000", # Black
@@ -61,7 +76,7 @@ class AlertCard(QFrame):
         # --- Icon / Severity Indicator (Left) ---
         self.indicator = QLabel()
         self.indicator.setFixedWidth(4)
-        self.indicator.setStyleSheet(f"background-color: {indicator_color}; border-radius: 2px;")
+        self.indicator.setStyleSheet(f"background-color: {indicator_color}; border-radius: 2px; border: 1px solid rgba(255, 255, 255, 0.3);")
         layout.addWidget(self.indicator)
 
         # --- Title (String ID) ---
@@ -69,12 +84,24 @@ class AlertCard(QFrame):
         self.title = QLabel(title_text)
         self.title.setStyleSheet("font-weight: bold; font-size: 13px; color: #E0E0E0;")
         layout.addWidget(self.title)
-
-        # --- Separator ---
-        # sep = QLabel("•")
-        # sep.setStyleSheet("color: #666;")
-        # layout.addWidget(sep)
         
+        # --- Badges (Extra Bubbles) ---
+        # Support a list of 'badges' in alert_data to display as bubbles next to title
+        badges = alert_data.get('badges', [])
+        for badge_text in badges:
+            if badge_text:
+                badge = QLabel(str(badge_text))
+                badge.setStyleSheet("""
+                    QLabel {
+                        background-color: rgba(255, 255, 255, 0.1);
+                        color: #CCC;
+                        border-radius: 8px;
+                        padding: 2px 8px;
+                        font-size: 11px;
+                    }
+                """)
+                layout.addWidget(badge)
+
         # --- Info (Category) ---
         cat = alert_data.get('category', 'General')
         self.info = QLabel(cat)

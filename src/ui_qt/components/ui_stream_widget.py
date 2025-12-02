@@ -68,7 +68,7 @@ class UIStreamWidget(QWidget):
         # Password Field
         controls_layout.addWidget(QLabel("Password:"))
         self.pwd_input = QLineEdit()
-        self.pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pwd_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.pwd_input.setFixedWidth(100)
         # Load saved password
         saved_pwd = self.config_manager.get("password", "")

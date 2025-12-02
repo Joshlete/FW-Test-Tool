@@ -3,6 +3,10 @@ import os
 import sys
 import shutil
 import glob
+
+# Add project root to python path to allow importing src
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.version import VERSION
 
 def build():
