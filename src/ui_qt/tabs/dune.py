@@ -218,7 +218,7 @@ class DuneTab(QtTabContent):
                 color: #FFFFFF;
             }
         """)
-        cmds = ["AUTH", "Clear Telemetry", "Print 10-Tap", "Print PSR"]
+        cmds = ["AUTH", "Print 10-Tap", "Print PSR"]
         for cmd in cmds:
             action = QAction(cmd, self)
             action.triggered.connect(lambda checked=False, c=cmd: self.action_manager.execute_command(c))

@@ -60,10 +60,14 @@ class TelemetryWidget(QWidget):
         self.scroll_area.setWidget(self.cards_container)
         layout.addWidget(self.scroll_area)
         
-        # Empty State Label (Hidden by default)
+        # Empty State Label (Shown by default)
         self.empty_lbl = QLabel("No telemetry data")
         self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_lbl.setStyleSheet("color: #666; font-size: 14px; font-style: italic;")
+        
+        # Show empty state by default
+        self.cards_layout.insertWidget(0, self.empty_lbl)
+        self.empty_lbl.show()
         
     def set_loading(self, is_loading):
         """Updates button state based on loading status."""

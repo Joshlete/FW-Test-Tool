@@ -1,10 +1,48 @@
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QRunnable, Slot
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
 import json
 import os
+import paramiko
 from ..workers import FetchTelemetryWorker
 from src.utils.logging.app_logger import log_error, log_info
 from src.utils.file_manager import FileManager
+
+class WorkerSignals(QObject):
+    """Signals for worker threads"""
+    finished = Signal(object)
+    error = Signal(str)
+    start = Signal()
+
+class EraseTelemetryWorker(QRunnable):
+    """Worker to erase all telemetry via SSH command"""
+    def __init__(self, ip):
+        super().__init__()
+        self.ip = ip
+        self.signals = WorkerSignals()
+    
+    @Slot()
+    def run(self):
+        self.signals.start.emit()
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.ip, username="root", password="myroot", timeout=10)
+            
+            # Execute the erase command
+            command = '/core/bin/runUw mainApp "EventingAdapter PUB_deleteAllEvents"'
+            stdin, stdout, stderr = client.exec_command(command)
+            exit_status = stdout.channel.recv_exit_status()
+            
+            client.close()
+            
+            if exit_status == 0:
+                self.signals.finished.emit([])
+            else:
+                error = stderr.read().decode().strip()
+                self.signals.error.emit(f"Command failed (Exit {exit_status}): {error}")
+                
+        except Exception as e:
+            self.signals.error.emit(f"SSH Error: {str(e)}")
 
 class TelemetryManager(QObject):
     """
@@ -34,6 +72,7 @@ class TelemetryManager(QObject):
         
         # Connect UI signals to logic
         self.widget.fetch_requested.connect(self.fetch_telemetry)
+        self.widget.erase_requested.connect(self.erase_telemetry)
         self.widget.view_details_requested.connect(self.view_details)
         self.widget.save_requested.connect(self.save_telemetry)
 
@@ -79,6 +118,36 @@ class TelemetryManager(QObject):
             {"ip": self.ip},
         )
         self.error_occurred.emit("Telemetry failed to update")
+
+    def erase_telemetry(self):
+        """Erase all telemetry from printer, then refresh UI"""
+        if not self.ip:
+            self.error_occurred.emit("No IP Address configured")
+            return
+
+        self.widget.set_erasing(True)
+        self.status_message.emit("Erasing all telemetry...")
+        log_info("telemetry.erase", "started", "Erasing all telemetry", {"ip": self.ip})
+        
+        worker = EraseTelemetryWorker(self.ip)
+        worker.signals.finished.connect(self._on_erase_success)
+        worker.signals.error.connect(self._on_erase_error)
+        
+        self.thread_pool.start(worker)
+
+    def _on_erase_success(self, _):
+        """After successful erase, update UI by fetching (which will show empty)"""
+        self.widget.set_erasing(False)
+        self.status_message.emit("All telemetry files erased")
+        log_info("telemetry.erase", "success", "Erased all telemetry files")
+        
+        # Automatically refresh to show empty list
+        self.fetch_telemetry()
+
+    def _on_erase_error(self, error_msg):
+        self.widget.set_erasing(False)
+        self.error_occurred.emit("Failed to erase telemetry")
+        log_error("telemetry.erase", "failed", error_msg, {"ip": self.ip})
 
     def view_details(self, event_data):
         """Show dialog with JSON details"""
