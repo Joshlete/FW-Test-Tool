@@ -187,7 +187,12 @@ class SiriusTab(QtTabContent):
         # Pass file_manager to LEDMManager
         self.ledm_manager = SiriusLEDMManager(self.ledm_widget, self.thread_pool, self.step_manager, self.file_manager)
         
-        self.telemetry_manager = SiriusTelemetryManager(self.telemetry_widget, self.thread_pool)
+        self.telemetry_manager = SiriusTelemetryManager(
+            self.telemetry_widget,
+            self.thread_pool,
+            step_manager=self.step_manager,
+            file_manager=self.file_manager
+        )
         
         # Override LEDM display to use slide panel
         self.ledm_widget.display_data = self.show_data_in_slide_panel

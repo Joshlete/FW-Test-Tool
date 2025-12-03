@@ -71,7 +71,12 @@ class TelemetryWidget(QWidget):
         while self.cards_layout.count() > 1: # Keep stretch
             item = self.cards_layout.takeAt(0)
             widget = item.widget()
-            if widget:
+            if not widget:
+                continue
+            if widget is self.empty_lbl:
+                widget.hide()
+                widget.setParent(None)
+            else:
                 widget.deleteLater()
         
         if not events_data:

@@ -2,9 +2,12 @@ import os
 import json
 import xml.etree.ElementTree as ET
 from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
+
 from ..workers_sirius import FetchSiriusAlertsWorker, FetchSiriusLEDMWorker, FetchSiriusTelemetryWorker
 from src.utils.logging.app_logger import log_error, log_info
 from src.utils.ssh_telemetry import TelemetryManager as UniversalTelemetryManager
+from src.utils.file_manager import FileManager
 
 class SiriusAlertsManager(QObject):
     """
@@ -81,8 +84,6 @@ class SiriusLEDMManager(QObject):
 
     def update_ip(self, ip):
         self.ip = ip
-
-    # update_directory removed, handled by file_manager
 
     def capture_ledm(self, selected_endpoints, variant=None):
         if not self.ip:
@@ -178,15 +179,25 @@ class SiriusTelemetryManager(QObject):
     status_message = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, widget, thread_pool):
+    def __init__(self, widget, thread_pool, step_manager=None, file_manager=None, default_directory=None):
         super().__init__()
         self.widget = widget
         self.thread_pool = thread_pool
         self.ip = None
+        self.step_manager = step_manager
+
+        base_directory = default_directory or os.getcwd()
+        self.file_manager = file_manager or FileManager(
+            default_directory=base_directory,
+            step_manager=step_manager
+        )
+
         # Initialize backend manager
         self.backend_mgr = UniversalTelemetryManager("0.0.0.0") # Placeholder IP
         
         self.widget.fetch_requested.connect(self.fetch_telemetry)
+        self.widget.view_details_requested.connect(self.view_details)
+        self.widget.save_requested.connect(self.save_telemetry)
 
     def update_ip(self, ip):
         self.ip = ip
@@ -208,22 +219,27 @@ class SiriusTelemetryManager(QObject):
 
     def _on_success(self, file_data):
         self.widget.set_loading(False)
-        
-        # Transform backend data to widget format
-        # Universal TelemetryManager returns list of dicts with 'sequenceNumber', 'color', etc.
-        # TelemetryWidget expects these keys.
-        
-        # Filter out any raw data that might break the UI or format it
+
+        # TelemetryWidget expects the native CDM event structure (eventDetail/eventDetailConsumable/etc.).
+        # The SSH TelemetryManager already stores the raw JSON in each item, so pass those objects through.
         formatted_events = []
         for item in file_data:
-            # Ensure required keys exist
-            formatted_events.append({
-                'sequenceNumber': item.get('sequenceNumber', 'N/A'),
-                'color': item.get('color', 'Unknown'),
+            raw_event = item.get('raw_data')
+
+            # Some entries might only contain an error message. Skip those so the UI stays clean.
+            if not isinstance(raw_event, dict):
+                continue
+
+            # Ensure the high-level helpers from the worker are still accessible
+            raw_event.setdefault('sequenceNumber', item.get('sequenceNumber', 'N/A'))
+            raw_event['_siriusMeta'] = {
+                'color': item.get('color'),
                 'reasons': item.get('reasons', []),
-                'trigger': item.get('trigger', ''),
-                'raw_data': item.get('raw_data', {}) # Keep raw data if needed
-            })
+                'trigger': item.get('trigger'),
+                'filename': item.get('filename'),
+            }
+
+            formatted_events.append(raw_event)
 
         self.widget.populate_telemetry(formatted_events, is_dune_format=False)
         self.status_message.emit(f"Fetched {len(formatted_events)} telemetry events")
@@ -232,3 +248,97 @@ class SiriusTelemetryManager(QObject):
         self.widget.set_loading(False)
         self.error_occurred.emit("Telemetry fetch failed")
         log_error("sirius_telemetry", "fetch_failed", error_msg)
+
+    def view_details(self, event_data):
+        """Mirror the Qt telemetry manager dialog for Sirius data."""
+        dialog = QDialog(self.widget)
+        dialog.setWindowTitle(f"Telemetry Details - #{event_data.get('sequenceNumber', 'N/A')}")
+        dialog.resize(600, 400)
+
+        layout = QVBoxLayout(dialog)
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setFontFamily("Consolas")
+
+        try:
+            json_str = json.dumps(event_data, indent=4)
+            text_edit.setText(json_str)
+        except Exception as e:
+            text_edit.setText(f"Error parsing JSON: {e}\n\nRaw Data:\n{str(event_data)}")
+
+        layout.addWidget(text_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+
+        dialog.exec()
+
+    def save_telemetry(self, event_data):
+        """Save telemetry to disk and log the operation."""
+        try:
+            meta = event_data.get('_siriusMeta', {})
+
+            details = event_data.get('eventDetail', {})
+            consumable = details.get('eventDetailConsumable', {})
+            identity = consumable.get('identityInfo', details.get('identityInfo', {}))
+            state_info = consumable.get('stateInfo', details.get('stateInfo', {}))
+
+            trigger = (
+                consumable.get('notificationTrigger') or
+                details.get('notificationTrigger') or
+                meta.get('trigger') or
+                'Unknown'
+            )
+            color_code = identity.get('supplyColorCode') or meta.get('color') or 'Unknown'
+            state_reasons = (
+                state_info.get('stateReasons') or
+                details.get('stateInfo', {}).get('stateReasons') or
+                meta.get('reasons') or
+                []
+            )
+
+            color_map = {'C': 'Cyan', 'M': 'Magenta', 'Y': 'Yellow', 'K': 'Black', 'CMY': 'Tri-Color'}
+            color = color_map.get(color_code, color_code if color_code else 'Unknown')
+
+            color_part = self._normalize_filename_piece(color)
+            if state_reasons:
+                normalized_reasons = [self._normalize_filename_piece(reason) for reason in state_reasons]
+                reasons_part = '_'.join(filter(None, normalized_reasons)) or "None"
+            else:
+                reasons_part = "None"
+            trigger_part = self._normalize_filename_piece(trigger or 'Unknown')
+
+            base_filename = f"Telemetry_{color_part}_{reasons_part}_{trigger_part}"
+            log_info("sirius.telemetry", "save_start", "Saving telemetry event", {
+                "base_filename": base_filename,
+                "ip": self.ip,
+                "sequence": event_data.get('sequenceNumber')
+            })
+
+            success, filepath = self.file_manager.save_json_data(event_data, base_filename)
+
+            if success:
+                self.status_message.emit(f"Saved: {os.path.basename(filepath)}")
+                log_info("sirius.telemetry", "save_success", f"Saved telemetry to {filepath}", {
+                    "path": filepath,
+                    "sequence": event_data.get('sequenceNumber')
+                })
+            else:
+                self.error_occurred.emit("Failed to save telemetry file")
+                log_error("sirius.telemetry", "save_failed", "FileManager returned failure", {
+                    "base_filename": base_filename
+                })
+
+        except Exception as e:
+            self.error_occurred.emit(f"Failed to save telemetry: {str(e)}")
+            log_error("sirius.telemetry", "save_exception", str(e))
+
+    @staticmethod
+    def _normalize_filename_piece(value):
+        if value is None:
+            return "Unknown"
+        safe = str(value).strip()
+        if not safe:
+            safe = "Unknown"
+        return safe.replace(" ", "_").replace("/", "_")

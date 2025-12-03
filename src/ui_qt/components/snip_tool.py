@@ -225,7 +225,6 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
         QTimer.singleShot(100, lambda: self._show_save_dialog(pixmap))
 
     def _show_save_dialog(self, pixmap):
-        log_info("snip_tool", "show_save_dialog", "Preparing to save image")
         # Save File with Dialog
         try:
             # Convert pixmap to bytes for FileManager
@@ -235,7 +234,6 @@ class QtSnipTool(QWidget): # Inherit from QWidget to use signals
             pixmap.save(buffer_io, "PNG")
             image_data_bytes = bytes(buffer.data())
             if self.auto_save and self.file_manager:
-                log_info("snip_tool", "auto_save", "Saving via FileManager")
                 # Use FileManager for auto-save
                 success, file_path = self.file_manager.save_image_data(
                     image_data_bytes, 

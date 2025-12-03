@@ -22,6 +22,8 @@ class TelemetryCard(QFrame):
         # --- Extract Data ---
         seq_num = str(event_data.get('sequenceNumber', 'N/A'))
         
+        meta = event_data.get('_siriusMeta', {})
+
         # Extract details based on format
         if is_dune_format:
             details = event_data.get('eventDetail', {})
@@ -41,14 +43,20 @@ class TelemetryCard(QFrame):
         # Fallback if direct access fails
         if not color_code and 'identityInfo' in details:
              color_code = details['identityInfo'].get('supplyColorCode', '?')
+        if (not color_code or color_code == '?') and meta.get('color'):
+            color_code = meta['color']
 
         trigger = consumable.get('notificationTrigger', 'N/A')
         if trigger == 'N/A' and 'notificationTrigger' in details:
             trigger = details['notificationTrigger']
+        if (not trigger or trigger == 'N/A') and meta.get('trigger'):
+            trigger = meta['trigger']
 
         reasons = state_info.get('stateReasons', [])
         if not reasons and 'stateInfo' in details:
              reasons = details['stateInfo'].get('stateReasons', [])
+        if (not reasons or len(reasons) == 0) and meta.get('reasons'):
+             reasons = meta.get('reasons')
              
         reasons_str = ', '.join(reasons) if reasons else 'None'
 
@@ -60,7 +68,20 @@ class TelemetryCard(QFrame):
             'K': ('Black', '#FFFFFF'),
             'CMY': ('Tri-Color', '#CDDC39') 
         }
-        color_name, hex_color = color_map.get(color_code, (color_code, '#AAAAAA'))
+        # Support verbose color names from Sirius meta data
+        verbose_color_map = {
+            'Cyan': '#00FFFF',
+            'Magenta': '#FF00FF',
+            'Yellow': '#FFFF00',
+            'Black': '#FFFFFF',
+            'Tri-Color': '#CDDC39',
+            'TriColor': '#CDDC39'
+        }
+        if color_code in color_map:
+            color_name, hex_color = color_map[color_code]
+        else:
+            hex_color = verbose_color_map.get(color_code, '#AAAAAA')
+            color_name = color_code or '?'
 
         # --- Layout ---
         layout = QHBoxLayout(self)
