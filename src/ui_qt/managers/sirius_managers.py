@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
 
-from ..workers_sirius import FetchSiriusAlertsWorker, FetchSiriusLEDMWorker, FetchSiriusTelemetryWorker
+from ..workers_sirius import FetchSiriusAlertsWorker, FetchSiriusLEDMWorker, FetchSiriusTelemetryWorker, EraseSiriusTelemetryWorker
 from src.utils.logging.app_logger import log_error, log_info
 from src.utils.ssh_telemetry import TelemetryManager as UniversalTelemetryManager
 from src.utils.file_manager import FileManager
@@ -196,6 +196,7 @@ class SiriusTelemetryManager(QObject):
         self.backend_mgr = UniversalTelemetryManager("0.0.0.0") # Placeholder IP
         
         self.widget.fetch_requested.connect(self.fetch_telemetry)
+        self.widget.erase_requested.connect(self.erase_telemetry)
         self.widget.view_details_requested.connect(self.view_details)
         self.widget.save_requested.connect(self.save_telemetry)
 
@@ -212,12 +213,27 @@ class SiriusTelemetryManager(QObject):
         self.status_message.emit("Fetching telemetry (SSH)...")
         
         worker = FetchSiriusTelemetryWorker(self.ip, self.backend_mgr)
-        worker.signals.finished.connect(self._on_success)
-        worker.signals.error.connect(self._on_error)
+        worker.signals.finished.connect(self._on_fetch_success)
+        worker.signals.error.connect(self._on_fetch_error)
         
         self.thread_pool.start(worker)
 
-    def _on_success(self, file_data):
+    def erase_telemetry(self):
+        """Erase all telemetry files from printer, then update UI"""
+        if not self.ip:
+            self.error_occurred.emit("No IP Address configured")
+            return
+
+        self.widget.set_erasing(True)
+        self.status_message.emit("Erasing all telemetry (SSH)...")
+        
+        worker = EraseSiriusTelemetryWorker(self.ip, self.backend_mgr)
+        worker.signals.finished.connect(self._on_erase_success)
+        worker.signals.error.connect(self._on_erase_error)
+        
+        self.thread_pool.start(worker)
+
+    def _on_fetch_success(self, file_data):
         self.widget.set_loading(False)
 
         # TelemetryWidget expects the native CDM event structure (eventDetail/eventDetailConsumable/etc.).
@@ -244,10 +260,24 @@ class SiriusTelemetryManager(QObject):
         self.widget.populate_telemetry(formatted_events, is_dune_format=False)
         self.status_message.emit(f"Fetched {len(formatted_events)} telemetry events")
 
-    def _on_error(self, error_msg):
+    def _on_fetch_error(self, error_msg):
         self.widget.set_loading(False)
         self.error_occurred.emit("Telemetry fetch failed")
         log_error("sirius_telemetry", "fetch_failed", error_msg)
+
+    def _on_erase_success(self, _):
+        """After successful erase, update UI by fetching (which will show empty)"""
+        self.widget.set_erasing(False)
+        self.status_message.emit("All telemetry files erased")
+        log_info("sirius_telemetry", "erase_success", "Erased all telemetry files")
+        
+        # Automatically refresh to show empty list
+        self.fetch_telemetry()
+
+    def _on_erase_error(self, error_msg):
+        self.widget.set_erasing(False)
+        self.error_occurred.emit("Failed to erase telemetry")
+        log_error("sirius_telemetry", "erase_failed", error_msg)
 
     def view_details(self, event_data):
         """Mirror the Qt telemetry manager dialog for Sirius data."""

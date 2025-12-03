@@ -107,6 +107,45 @@ QPushButton#PrimaryButton:hover {
     background-color: #1E90FF;
 }
 
+/* Danger Button (Red) - for destructive actions */
+QPushButton#DangerButton {
+    background-color: #C42B1C;
+    color: #FFFFFF;
+}
+
+QPushButton#DangerButton:hover {
+    background-color: #E81123;
+}
+
+QPushButton#DangerButton:pressed {
+    background-color: #A22215;
+}
+
+QPushButton#DangerButton:disabled {
+    background-color: #3C3C3C;
+    color: #666666;
+}
+
+/* Danger Button Hover Only - normal appearance until hover */
+QPushButton#DangerButtonHover {
+    background-color: #3C3C3C;
+    color: #FFFFFF;
+}
+
+QPushButton#DangerButtonHover:hover {
+    background-color: #E81123;
+    color: #FFFFFF;
+}
+
+QPushButton#DangerButtonHover:pressed {
+    background-color: #A22215;
+}
+
+QPushButton#DangerButtonHover:disabled {
+    background-color: #3C3C3C;
+    color: #666666;
+}
+
 /* Navigation Bar (Connected Tabs) */
 QWidget#NavBar {
     background-color: transparent;

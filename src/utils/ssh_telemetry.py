@@ -127,3 +127,21 @@ class TelemetryManager:
         )
         if stderr.channel.recv_exit_status() != 0:
             raise RuntimeError(stderr.read().decode())
+
+    def erase_all_telemetry(self) -> None:
+        """Erase all telemetry files from device"""
+        if not self.ssh_client:
+            raise ConnectionError("Not connected to device")
+        
+        # Command to delete all telemetry files
+        erase_command = "rm -f /mnt/encfs/cdm_eventing/supply/event_*"
+        
+        stdin, stdout, stderr = self.ssh_client.exec_command(erase_command)
+        exit_status = stderr.channel.recv_exit_status()
+        
+        if exit_status != 0:
+            error_msg = stderr.read().decode()
+            raise RuntimeError(f"Failed to erase telemetry: {error_msg}")
+        
+        # Clear local cache after successful deletion
+        self.file_data = []

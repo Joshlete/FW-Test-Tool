@@ -146,3 +146,35 @@ class FetchSiriusTelemetryWorker(QRunnable):
         except Exception as e:
             self.signals.error.emit(f"Error fetching Sirius telemetry: {str(e)}")
 
+class EraseSiriusTelemetryWorker(QRunnable):
+    """
+    Worker thread to erase all telemetry files from the Sirius printer.
+    """
+    def __init__(self, ip_address, telemetry_manager):
+        super().__init__()
+        self.ip = ip_address
+        self.mgr = telemetry_manager
+        self.signals = WorkerSignals()
+
+    @Slot()
+    def run(self):
+        self.signals.start.emit()
+        try:
+            # Update IP if changed
+            if self.mgr.ip != self.ip:
+                self.mgr.ip = self.ip
+                self.mgr.disconnect()
+            
+            # Ensure connected
+            if not self.mgr.ssh_client:
+                self.mgr.connect()
+                
+            # Erase all telemetry
+            self.mgr.erase_all_telemetry()
+            
+            # Return empty list to indicate success
+            self.signals.finished.emit([])
+            
+        except Exception as e:
+            self.signals.error.emit(f"Error erasing Sirius telemetry: {str(e)}")
+
