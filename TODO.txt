@@ -1,24 +1,13 @@
-TODO:
+TODO
+
 Dune:
-* highlight multiple telemetry and save them all using a test step number.
-* make step number more user friendly, potentially add sub steps. could just do the _1, _2, _3, etc. So only one button is needed.
-* when UI has multiple segments, combine them all into one file, so there isn't A, B, C. Could be same as above.
-* make sure saves aren't overriding other files.
-* when viewing ui, implement a way to move the screen from GUI.
-* add feature with file list that shows all jsons, and copy to clipboard specific color/colors.
-* see if it is possible to load up the app fast as a base, then slowly load in the background. It takes a while to start up.
-* figure out why the program freezes when viewing ui and printer turns off or connection is lost.
-* add CMY ews button, possibly supply setting too? and to UI capture
 
 Trillium
 
 Both:
-* add a .log file that logs all messages to the console or message box.
-* put back the screen capture saves to file.
-* add a message to disconnect from tab printer when trying to change IP.
-* figure out why directory goes back to last test when program is force closed.
-* for cdm, update yellow color for partial files saved.
-
 
 V2 program:
 * viewing a cdm, then full screen, the view doesn't fullscreen either. It stays the same size. make it adjust as well.
+* Add DSR saving functionality to dune, probably ares also.
+* add feature with file list that shows all jsons, and copy to clipboard specific color/colors.
+* see if it is possible to load up the app fast as a base, then slowly load in the background. It takes a while to start up.

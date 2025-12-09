@@ -78,7 +78,6 @@ class DuneActionManager(QObject):
         # Command Registry
         self.commands = {
             "AUTH": '/core/bin/runUw mainApp "OAuth2Standard PUB_testEnableTokenAuth false"',
-            "Clear Telemetry": '/core/bin/runUw mainApp "EventingAdapter PUB_deleteAllEvents"',
             "Print 10-Tap": "curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data '{\"reportId\":\"diagnosticsReport\",\"state\":\"processing\"}'",
             "Print PSR": "curl -X PATCH -k -i https://127.0.0.1/cdm/report/v1/print --data '{\"reportId\":\"printerStatusReport\",\"state\":\"processing\"}'"
         }

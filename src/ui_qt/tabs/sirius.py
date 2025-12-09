@@ -2,7 +2,7 @@ import os
 import threading
 import requests
 from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QFileDialog, QSplitterHandle)
-from PySide6.QtCore import Qt, QThreadPool, QByteArray
+from PySide6.QtCore import Qt, QThreadPool, QByteArray, QTimer
 from PySide6.QtGui import QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
@@ -57,10 +57,10 @@ class SiriusTab(QtTabContent):
     Sirius Tab Implementation.
     Combines UI Stream, LEDM controls, Alerts, and Telemetry in a modern layout.
     """
-    def __init__(self):
-        super().__init__(tab_name="sirius") # Initializes step_manager and file_manager
+    def __init__(self, config_manager):
+        super().__init__(tab_name="sirius", config_manager=config_manager) # Initializes step_manager and file_manager
         
-        self.config_manager = ConfigManager()
+        self.config_manager = config_manager
         self.thread_pool = QThreadPool()
         
         # --- Toolbar & Steps ---
@@ -256,20 +256,26 @@ class SiriusTab(QtTabContent):
             return
 
         self.status_message.emit("Capturing EWS...")
-        self.btn_ews.setEnabled(False)
+        self._set_busy(self.btn_ews, True, idle_text="Capture EWS")
+        snap_step = self.step_manager.get_step()
+        snap_ip = self.ip
         
         def _run_capture():
             try:
                 # Use file_manager directory
                 directory = self.file_manager.default_directory
-                capturer = EWSScreenshotCapturer(None, self.ip, directory, password=pwd)
+                capturer = EWSScreenshotCapturer(None, snap_ip, directory, password=pwd)
                 screenshots = capturer._capture_ews_screenshots()
                 
                 saved_count = 0
                 
                 for img_bytes, desc in screenshots:
                     # Use file_manager
-                    success, _ = self.file_manager.save_image_data(img_bytes, desc)
+                    success, _ = self.file_manager.save_image_data(
+                        img_bytes,
+                        desc,
+                        step_number=snap_step
+                    )
                     if success:
                         saved_count += 1
                     
@@ -277,10 +283,20 @@ class SiriusTab(QtTabContent):
             except Exception as e:
                 self.error_occurred.emit(f"EWS capture failed: {str(e)}")
             finally:
-                pass 
+                self._set_busy(self.btn_ews, False, idle_text="Capture EWS")
                 
         threading.Thread(target=_run_capture).start()
-        self.btn_ews.setEnabled(True)
+
+    def _set_busy(self, button, busy, idle_text):
+        """Toggle a busy state with text/icon and disable clicks."""
+        def apply_state():
+            button.setEnabled(not busy)
+            button.setText("⏳ Capturing..." if busy else idle_text)
+            button.setProperty("busy", busy)
+            button.setCursor(Qt.CursorShape.BusyCursor if busy else Qt.CursorShape.PointingHandCursor)
+            button.style().unpolish(button)
+            button.style().polish(button)
+        QTimer.singleShot(0, apply_state)
 
     def _capture_ui(self, description=""):
         # Logic similar to old SiriusTab capture_ui

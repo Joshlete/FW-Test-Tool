@@ -1,7 +1,7 @@
 import os
 import threading
 from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QLineEdit)
-from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtCore import Qt, QThreadPool, QTimer
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
@@ -25,10 +25,10 @@ class AresTab(QtTabContent):
     Ares Tab Implementation (formerly Trillium).
     Uses separate managers for logic (composition pattern).
     """
-    def __init__(self):
-        super().__init__(tab_name="ares") # Initializes step_manager and file_manager
+    def __init__(self, config_manager):
+        super().__init__(tab_name="ares", config_manager=config_manager) # Initializes step_manager and file_manager
         
-        self.config_manager = ConfigManager()
+        self.config_manager = config_manager
         self.thread_pool = QThreadPool()
         self.ip = None
         
@@ -275,15 +275,17 @@ class AresTab(QtTabContent):
             return
 
         self.status_message.emit("Capturing EWS...")
-        self.btn_ews.setEnabled(False)
+        self._set_busy(self.btn_ews, True, idle_text="Capture EWS")
+        snap_step = self.step_manager.get_step()
+        snap_ip = self.ip
         
         def _run_capture():
             try:
-                log_info("ews.capture", "started", "Starting EWS Capture", {"ip": self.ip})
+                log_info("ews.capture", "started", "Starting EWS Capture", {"ip": snap_ip})
                 # We can use file_manager directory
                 directory = self.file_manager.default_directory
                 
-                capturer = EWSScreenshotCapturer(None, self.ip, directory, password=pwd)
+                capturer = EWSScreenshotCapturer(None, snap_ip, directory, password=pwd)
                 screenshots = capturer._capture_ews_screenshots()
                 
                 if screenshots is None:
@@ -303,7 +305,8 @@ class AresTab(QtTabContent):
                         img_bytes, 
                         desc, 
                         directory=directory, 
-                        format="PNG"
+                        format="PNG",
+                        step_number=snap_step
                     )
                     
                     if success:
@@ -317,13 +320,20 @@ class AresTab(QtTabContent):
                 log_error("ews.capture", "exception", "EWS capture failed with exception", {"error": str(e)})
                 self.error_occurred.emit(f"EWS capture failed: {str(e)}")
             finally:
-                # Re-enable button (needs safe thread signal technically, but simple callback might work if careful)
-                # Ideally emit signal to enable
-                pass 
+                self._set_busy(self.btn_ews, False, idle_text="Capture EWS")
                 
         threading.Thread(target=_run_capture).start()
-        # Re-enable button after short delay or on signal (simplified here)
-        self.btn_ews.setEnabled(True)
+
+    def _set_busy(self, button, busy, idle_text):
+        """Toggle a busy state with text/icon and disable clicks."""
+        def apply_state():
+            button.setEnabled(not busy)
+            button.setText("⏳ Capturing..." if busy else idle_text)
+            button.setProperty("busy", busy)
+            button.setCursor(Qt.CursorShape.BusyCursor if busy else Qt.CursorShape.PointingHandCursor)
+            button.style().unpolish(button)
+            button.style().polish(button)
+        QTimer.singleShot(0, apply_state)
 
     def _on_telemetry_input(self):
         self.status_message.emit("Telemetry Input clicked (Not implemented)")

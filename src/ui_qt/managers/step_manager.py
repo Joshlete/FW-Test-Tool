@@ -7,10 +7,10 @@ class QtStepManager(QObject):
     """
     step_changed = Signal(int)
 
-    def __init__(self, tab_name="ares"):
+    def __init__(self, tab_name="ares", config_manager=None):
         super().__init__()
         self.tab_name = tab_name
-        self.config_manager = ConfigManager()
+        self.config_manager = config_manager or ConfigManager()
         self._current_step = 1
         
         # Load initial state

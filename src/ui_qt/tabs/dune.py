@@ -60,10 +60,10 @@ class DuneTab(QtTabContent):
     """
     Dune Tab Implementation with 3-Column Layout.
     """
-    def __init__(self):
-        super().__init__(tab_name="dune") # Initializes step_manager and file_manager
+    def __init__(self, config_manager):
+        super().__init__(tab_name="dune", config_manager=config_manager) # Initializes step_manager and file_manager
         
-        self.config_manager = ConfigManager()
+        self.config_manager = config_manager
         self.thread_pool = QThreadPool()
         self.ip = None
 

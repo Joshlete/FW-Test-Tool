@@ -17,7 +17,7 @@ class QtTabContent(QWidget):
     status_message = Signal(str)  # e.g. "Connecting..."
     error_occurred = Signal(str)  # e.g. "Connection Failed: Timeout"
 
-    def __init__(self, tab_name=None):
+    def __init__(self, tab_name=None, config_manager=None):
         super().__init__()
         
         # 1. Standard Layout
@@ -32,11 +32,12 @@ class QtTabContent(QWidget):
 
         # 3. Centralized Managers
         self.tab_name = tab_name
+        self.config_manager = config_manager
         self.step_manager = None
         self.file_manager = None
 
         if self.tab_name:
-            self.step_manager = QtStepManager(tab_name=self.tab_name)
+            self.step_manager = QtStepManager(tab_name=self.tab_name, config_manager=self.config_manager)
             # Initialize FileManager with the step manager
             self.file_manager = FileManager(step_manager=self.step_manager)
             # Note: We don't pass a notification_manager here yet. 

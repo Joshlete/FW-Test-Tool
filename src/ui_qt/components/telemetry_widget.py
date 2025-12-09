@@ -145,16 +145,14 @@ class TelemetryWidget(QWidget):
         self.empty_lbl.hide()
         self.cards_layout.removeWidget(self.empty_lbl)
 
-        # 2. Sort Data (Newest First)
-        if is_dune_format:
-            sorted_events = sorted(
-                events_data,
-                key=lambda x: x.get('sequenceNumber', 0),
-                reverse=True
-            )
-        else:
-            # Data is already sorted newest first from ssh_telemetry.py
-            sorted_events = events_data
+        # 2. Sort Data (Newest First) for all formats
+        def _seq_num(event):
+            try:
+                return int(event.get('sequenceNumber', 0) or 0)
+            except Exception:
+                return 0
+
+        sorted_events = sorted(events_data, key=_seq_num, reverse=True)
 
         # 3. Create Cards
         for event in sorted_events:

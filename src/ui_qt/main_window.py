@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
         """Create real tabs where implemented, placeholders otherwise."""
         
         # 1. Dune
-        self.dune_tab = DuneTab()
+        self.dune_tab = DuneTab(config_manager=self.config_manager)
         self.content_stack.addWidget(self.dune_tab)
         
         # Connect Dune Signals to Toast
@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
         self.dune_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
         # 2. Sirius
-        self.sirius_tab = SiriusTab()
+        self.sirius_tab = SiriusTab(config_manager=self.config_manager)
         self.content_stack.addWidget(self.sirius_tab)
         
         # Connect Sirius Signals to Toast
@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         self.sirius_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
         # 3. Ares
-        self.ares_tab = AresTab()
+        self.ares_tab = AresTab(config_manager=self.config_manager)
         self.content_stack.addWidget(self.ares_tab)
         
         # Connect Ares Signals to Toast
