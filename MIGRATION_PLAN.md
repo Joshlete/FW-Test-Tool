@@ -40,6 +40,7 @@ This plan outlines the steps to convert the application to PySide6 while maintai
 3.  **Dune Tab**: Assemble the VNC widget into the Dune tab.
 
 ## 5. Final Cleanup
-- [ ] Delete `src/ui` and `main.py`.
+- [x] Remove legacy `main.py` entry (Qt app only).
+- [x] Delete `src/ui` package.
 - [ ] Rename `main_qt.py` to `main.py`.
 

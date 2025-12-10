@@ -12,6 +12,7 @@ from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
 from ..components.modern_button import ModernButton
+from ..components.report_builder_window import ReportBuilderWindow
 from ..managers.alerts_manager import AlertsManager
 from ..managers.telemetry_manager import TelemetryManager
 from ..managers.cdm_manager import CDMManager
@@ -66,6 +67,7 @@ class DuneTab(QtTabContent):
         self.config_manager = config_manager
         self.thread_pool = QThreadPool()
         self.ip = None
+        self.report_window = None
 
         # Pass file_manager to SnipTool
         self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
@@ -143,6 +145,10 @@ class DuneTab(QtTabContent):
         self.btn_cmds.setMenu(self._create_commands_menu())
         self.toolbar.add_widget_left(self.btn_cmds)
         
+        self.btn_report = ModernButton("Report")
+        self.btn_report.clicked.connect(self.open_report_builder)
+        self.toolbar.add_widget_left(self.btn_report)
+        
         self.toolbar.add_spacer()
         
         # Password Field (Center)
@@ -168,6 +174,20 @@ class DuneTab(QtTabContent):
             }
         """)
         self.toolbar.layout.addWidget(self.pwd_input)
+
+    def open_report_builder(self):
+        current_dir = self.file_manager.default_directory
+        
+        if self.report_window is None:
+             self.report_window = ReportBuilderWindow(initial_directory=current_dir)
+             self.report_window.show()
+        else:
+            # Update directory if window already exists
+            if current_dir:
+                self.report_window.set_directory(current_dir)
+            self.report_window.show()
+            self.report_window.raise_()
+            self.report_window.activateWindow()
 
     def _create_ews_menu(self):
         menu = QMenu(self)
