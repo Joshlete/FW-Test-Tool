@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                             QTextEdit, QFileDialog, QMessageBox, QCheckBox, QFrame, QGroupBox, QScrollArea, QLayout, QApplication)
-from PySide6.QtCore import Qt, QTimer, QSize, QRect, QPoint
-from PySide6.QtGui import QPixmap, QPainter, QColor, QIcon
+                             QTextEdit, QPlainTextEdit, QFileDialog, QMessageBox, QCheckBox, QFrame, QGroupBox, QScrollArea, QLayout, QApplication, QTreeView, QFileSystemModel, QMenu, QDialog, QComboBox)
+from PySide6.QtCore import Qt, QTimer, QSize, QRect, QPoint, QDir
+from PySide6.QtGui import QPixmap, QPainter, QColor, QIcon, QAction, QTextFormat
 from PySide6.QtWidgets import QSizePolicy
 import os
 from src.utils.config_manager import ConfigManager
@@ -87,11 +87,99 @@ class FlowLayout(QLayout):
 
         return y + lineHeight - rect.y()
 
+# --- Code Editor with Line Numbers ---
+class LineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.codeEditor = editor
+
+    def sizeHint(self):
+        return QSize(self.codeEditor.lineNumberAreaWidth(), 0)
+
+    def paintEvent(self, event):
+        self.codeEditor.lineNumberAreaPaintEvent(event)
+
+class CodeEditor(QPlainTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.lineNumberArea = LineNumberArea(self)
+        
+        self.blockCountChanged.connect(self.updateLineNumberAreaWidth)
+        self.updateRequest.connect(self.updateLineNumberArea)
+        self.cursorPositionChanged.connect(self.highlightCurrentLine)
+        
+        self.updateLineNumberAreaWidth(0)
+        self.highlightCurrentLine()
+
+    def lineNumberAreaWidth(self):
+        digits = 1
+        max_num = max(1, self.blockCount())
+        while max_num >= 10:
+            max_num //= 10
+            digits += 1
+        
+        space = 10 + self.fontMetrics().horizontalAdvance('9') * digits + 10
+        return space
+
+    def updateLineNumberAreaWidth(self, _):
+        self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+    def updateLineNumberArea(self, rect, dy):
+        if dy:
+            self.lineNumberArea.scroll(0, dy)
+        else:
+            self.lineNumberArea.update(0, rect.y(), self.lineNumberArea.width(), rect.height())
+        
+        if rect.contains(self.viewport().rect()):
+            self.updateLineNumberAreaWidth(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self.lineNumberArea.setGeometry(QRect(cr.left(), cr.top(), self.lineNumberAreaWidth(), cr.height()))
+
+    def lineNumberAreaPaintEvent(self, event):
+        painter = QPainter(self.lineNumberArea)
+        painter.fillRect(event.rect(), QColor("#252526")) # Match Sidebar/Tree BG
+        
+        # Draw Border
+        painter.setPen(QColor("#333"))
+        painter.drawLine(event.rect().topRight(), event.rect().bottomRight())
+
+        block = self.firstVisibleBlock()
+        blockNumber = block.blockNumber()
+        top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
+        bottom = top + self.blockBoundingRect(block).height()
+
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(blockNumber + 1)
+                painter.setPen(QColor("#666"))
+                painter.drawText(0, int(top), self.lineNumberArea.width() - 10, self.fontMetrics().height(),
+                               Qt.AlignmentFlag.AlignRight, number)
+            
+            block = block.next()
+            top = bottom
+            bottom = top + self.blockBoundingRect(block).height()
+            blockNumber += 1
+
+    def highlightCurrentLine(self):
+        extraSelections = []
+        if not self.isReadOnly():
+            selection = QTextEdit.ExtraSelection()
+            lineColor = QColor("#2A2A2A")
+            selection.format.setBackground(lineColor)
+            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            extraSelections.append(selection)
+        self.setExtraSelections(extraSelections)
+
 class ReportBuilderWindow(QMainWindow):
     def __init__(self, parent=None, initial_directory=None):
         super().__init__(parent)
         self.setWindowTitle("Report Builder")
-        self.resize(1000, 800)
+        self.resize(1200, 800)
         
         # Load Config
         self.config_manager = ConfigManager()
@@ -111,6 +199,7 @@ class ReportBuilderWindow(QMainWindow):
         
         # UI Elements Storage
         self.category_checks = {}
+        self.category_combos = {} # For duplicate file selection
         self.color_checks = {}
         # alert_checkboxes removed as manual selection is gone
         
@@ -134,25 +223,35 @@ class ReportBuilderWindow(QMainWindow):
         # Sidebar (Left)
         self.sidebar = QFrame()
         self.sidebar.setObjectName("Sidebar")
-        self.sidebar.setFixedWidth(350)
+        self.sidebar.setFixedWidth(250) # Reduced from 350
         self.sidebar_layout = QVBoxLayout(self.sidebar)
         self.sidebar_layout.setContentsMargins(0, 0, 0, 0) # Zero margins for scroll area fit
         self.sidebar_layout.setSpacing(0)
 
-        # Preview (Right)
+        # Preview (Center)
         self.preview_frame = QFrame()
         self.preview_frame.setObjectName("PreviewFrame")
         self.preview_layout = QVBoxLayout(self.preview_frame)
         self.preview_layout.setContentsMargins(20, 20, 20, 20)
         self.preview_layout.setSpacing(15)
 
+        # File Explorer (Right)
+        self.files_frame = QFrame()
+        self.files_frame.setObjectName("FilesFrame")
+        self.files_frame.setFixedWidth(300)
+        self.files_layout = QVBoxLayout(self.files_frame)
+        self.files_layout.setContentsMargins(0, 0, 0, 0)
+        self.files_layout.setSpacing(0)
+
         content_layout.addWidget(self.sidebar)
         content_layout.addWidget(self.preview_frame)
+        content_layout.addWidget(self.files_frame)
         
         self.layout.addWidget(content_widget)
         
         self._init_controls() # Only adds to sidebar now
         self._init_preview()
+        self._init_file_explorer()
         
         # Add stretch to sidebar to push content up - NO, scroll area handles this now
         # self.sidebar_layout.addStretch()
@@ -198,6 +297,31 @@ class ReportBuilderWindow(QMainWindow):
             QWidget#ScrollContents {
                 background-color: #252526; 
             }
+            /* File Tree Styles */
+            QTreeView {
+                background-color: #252526;
+                border: none;
+                border-left: 1px solid #333;
+                color: #DDD;
+                font-size: 10px; /* Smaller text */
+            }
+            QTreeView::item {
+                padding: 2px; /* Tighter padding */
+            }
+            QTreeView::item:hover {
+                background-color: #3C3C3C;
+            }
+            QTreeView::item:selected {
+                background-color: #007ACC;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #2D2D2D;
+                color: #AAA;
+                border: none;
+                border-bottom: 1px solid #333;
+                padding: 4px;
+            }
         """)
 
     def set_directory(self, directory):
@@ -207,6 +331,71 @@ class ReportBuilderWindow(QMainWindow):
             self.default_dir = directory
             self.config_manager.set("capture_path", directory)
             self.generate_report()
+            
+            # Update File Explorer
+            if hasattr(self, 'file_model'):
+                self.file_model.setRootPath(directory)
+                self.tree_view.setRootIndex(self.file_model.index(directory))
+
+    def _init_file_explorer(self):
+        # File System Model
+        self.file_model = QFileSystemModel()
+        self.file_model.setRootPath(self.default_dir)
+        self.file_model.setFilter(QDir.NoDotAndDotDot | QDir.AllEntries)
+        
+        # Tree View
+        self.tree_view = QTreeView()
+        self.tree_view.setModel(self.file_model)
+        self.tree_view.setRootIndex(self.file_model.index(self.default_dir))
+        
+        # Hide extra columns (Size, Type, Date) - Keep only Name
+        self.tree_view.hideColumn(1)
+        self.tree_view.hideColumn(2)
+        self.tree_view.hideColumn(3)
+        self.tree_view.setHeaderHidden(True) # Optional: Hide header completely for cleaner look
+        
+        # Enable Context Menu
+        self.tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree_view.customContextMenuRequested.connect(self._show_file_context_menu)
+        
+        self.files_layout.addWidget(self.tree_view)
+
+    def _show_file_context_menu(self, position):
+        index = self.tree_view.indexAt(position)
+        if not index.isValid():
+            return
+            
+        file_path = self.file_model.filePath(index)
+        if not os.path.isfile(file_path):
+            return
+            
+        menu = QMenu()
+        preview_action = QAction("Preview File", self)
+        preview_action.triggered.connect(lambda: self._preview_file_dialog(file_path))
+        menu.addAction(preview_action)
+        
+        menu.exec_(self.tree_view.viewport().mapToGlobal(position))
+
+    def _preview_file_dialog(self, file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Simple Dialog to show content
+            dialog = QDialog(self)
+            dialog.setWindowTitle(os.path.basename(file_path))
+            dialog.resize(600, 400)
+            layout = QVBoxLayout(dialog)
+            
+            text_edit = QTextEdit()
+            text_edit.setPlainText(content)
+            text_edit.setReadOnly(True)
+            text_edit.setStyleSheet("background-color: #1E1E1E; color: #DDD; font-family: Consolas, monospace;")
+            
+            layout.addWidget(text_edit)
+            dialog.exec_()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not read file:\n{str(e)}")
 
     def _init_header(self):
         # Top Header Bar spanning full width
@@ -313,7 +502,7 @@ class ReportBuilderWindow(QMainWindow):
             "Telemetry": "Telemetry", 
             "Reports": "Reports", 
             "Supply Assessment": "supplyAssessment", 
-            "DSR Packet": "DSR"
+            "DSR Packet": "DSR Packet"
         }
         
         for display_name, internal_key in self.cat_map.items():
@@ -323,10 +512,39 @@ class ReportBuilderWindow(QMainWindow):
             btn.setObjectName("SidebarRow")
             
             # Connect handlers
-            # Alerts is now just a regular toggle, no expand logic needed in UI
             btn.toggled.connect(self.generate_report)
+            
+            # Create Dropdown (Hidden initially)
+            combo = QComboBox()
+            combo.setObjectName("FileSelector")
+            combo.setVisible(False)
+            combo.setStyleSheet("""
+                QComboBox {
+                    background-color: #2D2D30;
+                    border: 1px solid #3E3E42;
+                    border-radius: 4px;
+                    color: #DDD;
+                    padding: 4px;
+                    margin-left: 20px; /* Indent */
+                    font-size: 11px;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                }
+            """)
+            combo.currentIndexChanged.connect(self.generate_report)
+            
+            # Container for row (Button + Combo)
+            row_widget = QWidget()
+            row_layout = QVBoxLayout(row_widget)
+            row_layout.setContentsMargins(0,0,0,0)
+            row_layout.setSpacing(4)
+            row_layout.addWidget(btn)
+            row_layout.addWidget(combo)
+            
             self.category_checks[internal_key] = btn
-            controls_layout.addWidget(btn)
+            self.category_combos[internal_key] = combo
+            controls_layout.addWidget(row_widget)
         
         # 2. Colors Header
         lbl_colors = QLabel("Filter Colors")
@@ -421,7 +639,17 @@ class ReportBuilderWindow(QMainWindow):
         
         self.preview_layout.addWidget(header_widget)
         
-        self.result_viewer = QTextEdit()
+        # Replace QTextEdit with CodeEditor
+        self.result_viewer = CodeEditor()
+        self.result_viewer.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1E1E1E;
+                color: #D4D4D4;
+                border: none;
+                font-family: Consolas, "Courier New", monospace;
+                font-size: 13px;
+            }
+        """)
         self.preview_layout.addWidget(self.result_viewer)
 
     def copy_to_clipboard(self):
@@ -470,10 +698,7 @@ class ReportBuilderWindow(QMainWindow):
     def browse_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory", self.dir_input.text())
         if directory:
-            self.dir_input.setText(directory)
-            self.default_dir = directory
-            self.config_manager.set("capture_path", directory)
-            self.generate_report()
+            self.set_directory(directory) # Use the main setter to update everything
 
     def _save_current_state(self):
         """Save checkboxes to memory"""
@@ -531,24 +756,73 @@ class ReportBuilderWindow(QMainWindow):
         
         for display_name, internal_key in self.cat_map.items():
             cb = self.category_checks.get(internal_key)
+            combo = self.category_combos.get(internal_key)
+            
+            # --- Resolve Files for this Category ---
+            category_files = []
+            
+            if internal_key in ["UI", "EWS", "Reports"]: # DSR moved to standard handling
+                 other_files = found_items.get("Other", [])
+                 matched_files = [f for f in other_files if internal_key.lower() in os.path.basename(f).lower()]
+                 if matched_files:
+                     category_files = matched_files
+            else:
+                # Standard lookup (alerts, supplies, SA, DSR Packet)
+                category_files = found_items.get(internal_key, [])
+
+            # --- Update Dropdown UI ---
+            # Skip dropdown for UI, EWS, Reports as they don't need specific file selection
+            if combo and internal_key not in ["UI", "EWS", "Reports"]:
+                # Store current selection
+                current_text = combo.currentText()
+                
+                # Check if we need to update items (only if count changed or different files)
+                # Optimization: Re-populating every time is safer for consistency if files change
+                # but we must try to preserve selection.
+                
+                # If > 1 file, show combo and populate
+                if len(category_files) > 1:
+                    combo.blockSignals(True)
+                    combo.clear()
+                    # Add basenames
+                    for f in category_files:
+                        combo.addItem(os.path.basename(f), f) # User sees name, data is full path
+                    
+                    # Restore selection if possible
+                    index = combo.findText(current_text)
+                    if index >= 0:
+                        combo.setCurrentIndex(index)
+                    else:
+                        combo.setCurrentIndex(0)
+                        
+                    combo.setVisible(True)
+                    combo.blockSignals(False)
+                else:
+                    combo.setVisible(False)
+                    combo.clear() # Clear so it doesn't hold old state
+
+            # --- Add to Selected Categories if Checked ---
             if cb and cb.isChecked():
                 active_cats_display_names.append(display_name)
                 
-                builder_key = internal_key
+                # Determine which file(s) to use
+                final_files = []
                 
-                if internal_key in ["UI", "EWS", "Reports", "DSR"]:
-                     other_files = found_items.get("Other", [])
-                     matched_files = [f for f in other_files if internal_key.lower() in os.path.basename(f).lower()]
-                     if matched_files:
-                         selected_categories[internal_key] = matched_files 
+                if combo and combo.isVisible() and combo.count() > 0:
+                    # Use specific selected file
+                    selected_path = combo.currentData()
+                    if selected_path:
+                        final_files = [selected_path]
                 else:
-                    files = found_items.get(builder_key, [])
-                    if files:
-                        selected_categories[builder_key] = files
-                    # Special Case: Alerts. Even if no files found yet (maybe mismatch), pass the key if checked
-                    # so generate_report can try to find them based on logic.
-                    if internal_key == "alerts":
-                         selected_categories[builder_key] = files # Might be empty, that's fine
+                    # Use all found (default behavior) or whatever was found
+                    final_files = category_files
+                
+                if final_files:
+                    selected_categories[internal_key] = final_files
+                
+                # Special Case: Alerts. Even if no files found yet (maybe mismatch), pass the key if checked
+                if internal_key == "alerts":
+                     selected_categories[internal_key] = final_files # Might be empty
 
         # 2. Get Selected Colors
         colors = [k for k, cb in self.color_checks.items() if cb.isChecked()]
@@ -575,7 +849,8 @@ class ReportBuilderWindow(QMainWindow):
         
         # --- Notification Logic ---
         # Check if color-dependent categories are selected but NO colors are selected
-        color_dependent_cats = ["alerts", "suppliesPublic", "suppliesPrivate", "supplyAssessment", "Telemetry"]
+        # Added DSR and supplyAssessment to list
+        color_dependent_cats = ["alerts", "suppliesPublic", "suppliesPrivate", "supplyAssessment", "Telemetry", "DSR Packet"]
         has_dependent_cat = any(cat in selected_categories for cat in color_dependent_cats)
         
         if has_dependent_cat and not colors:
@@ -598,7 +873,13 @@ class ReportBuilderWindow(QMainWindow):
         if "UI" in selected_categories or "EWS" in selected_categories:
             final_text += "\n\n"
             
+        # Save scroll position
+        v_scroll = self.result_viewer.verticalScrollBar().value()
+        
         self.result_viewer.setPlainText(final_text)
+        
+        # Restore scroll position
+        self.result_viewer.verticalScrollBar().setValue(v_scroll)
         
         # Disable copy button if nothing selected
         if header_str == "Nothing selected." and not body:

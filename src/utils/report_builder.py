@@ -25,6 +25,7 @@ class ReportBuilder:
             "suppliesPrivate": [],
             "suppliesPublic": [],
             "supplyAssessment": [],
+            "DSR Packet": [],
             "Telemetry": [],
             "Other": []
         }
@@ -53,6 +54,8 @@ class ReportBuilder:
                     found_items["suppliesPublic"].append(full_path)
                 elif "supplyassessment" in lower_name:
                     found_items["supplyAssessment"].append(full_path)
+                elif "dsr" in lower_name:
+                    found_items["DSR Packet"].append(full_path)
                 elif "telemetry" in lower_name:
                     found_items["Telemetry"].append(full_path)
                 else:
@@ -120,7 +123,7 @@ class ReportBuilder:
         # Actually, "alerts" is still passed as a category if the toggle is ON.
         # We should process it using the new logic.
         
-        sections = ["suppliesPrivate", "suppliesPublic", "supplyAssessment"]
+        sections = ["suppliesPrivate", "suppliesPublic", "supplyAssessment", "DSR Packet"]
         
         # We will process alerts differently: Only if 'alerts' is selected, we look for them.
         # But where do we put them? Usually they are separate blocks.
@@ -143,6 +146,8 @@ class ReportBuilder:
                     processor = lambda c: self._process_alerts_json(c, target_alert_ids)
                 elif "supplies" in section:
                     processor = lambda c: self._process_supplies_json(c, colors)
+                elif section in ["supplyAssessment", "DSR Packet"]:
+                     processor = lambda c: self._process_color_coded_json(c, colors)
                 else:
                     processor = self._process_generic_json
 
@@ -220,6 +225,105 @@ class ReportBuilder:
             return tab_prefixed
         except:
             return content.strip()
+
+    def _process_color_coded_json(self, content, colors):
+        """
+        Generic processor for JSON files that need color filtering (Supply Assessment, DSR).
+        Checks for 'colorCode' or 'supplyColorCode' matching selected colors.
+        """
+        try:
+            data = json.loads(content)
+            if not data: return content.strip()
+            
+            if not colors:
+                return "" # consistent with other color-filtered sections
+            
+            # Helper to check if an object matches selected colors
+            def match_color(obj):
+                # Check directly in obj
+                code = obj.get("colorCode") or obj.get("supplyColorCode")
+                
+                # Check nested in publicInformation (like suppliesPrivate)
+                if not code and "publicInformation" in obj:
+                     code = obj["publicInformation"].get("colorCode") or obj["publicInformation"].get("supplyColorCode")
+
+                # If still not found, check if 'colors' array exists
+                if not code:
+                     obj_colors = obj.get("colors")
+                     if not obj_colors and "publicInformation" in obj:
+                         obj_colors = obj["publicInformation"].get("colors")
+                     
+                     if obj_colors and isinstance(obj_colors, list) and len(obj_colors) == 1:
+                         code = obj_colors[0]
+
+                if not code: return False
+                
+                code = str(code).lower()
+                for c in colors:
+                    c_lower = c.lower()
+                    # Simple match logic
+                    if c_lower == "cyan" and ("c" == code or "cyan" in code): return True
+                    if c_lower == "magenta" and ("m" == code or "magenta" in code): return True
+                    if c_lower == "yellow" and ("y" == code or "yellow" in code): return True
+                    if c_lower == "black" and ("k" == code or "black" in code): return True
+                return False
+
+            # Filter Logic (Handle Lists vs Dicts)
+            if isinstance(data, list):
+                filtered = [item for item in data if match_color(item)]
+                if not filtered: return ""
+                # Unwrap list items just like supplies
+                output_parts = [json.dumps(item, indent=4) for item in filtered]
+                result = "\n\n".join(output_parts)
+                return '\t' + result.replace('\n', '\n\t')
+            
+            elif isinstance(data, dict):
+                # 1. Check for 'supplyStates' wrapper (Supply Assessment)
+                target_dict = None
+                if "supplyStates" in data and isinstance(data["supplyStates"], dict):
+                    target_dict = data["supplyStates"]
+                # 2. Check for 'supplyStatus' -> 'supplyStates' (DSR Packet)
+                elif "supplyStatus" in data and isinstance(data["supplyStatus"], dict):
+                    if "supplyStates" in data["supplyStatus"] and isinstance(data["supplyStatus"]["supplyStates"], dict):
+                        target_dict = data["supplyStatus"]["supplyStates"]
+                
+                # If we found a target container, use it. Otherwise use root data.
+                source_to_iterate = target_dict if target_dict else data
+                
+                # If it's a dict, check if it's a wrapper like suppliesList
+                if "suppliesList" in source_to_iterate and isinstance(source_to_iterate["suppliesList"], list):
+                     filtered = [item for item in source_to_iterate["suppliesList"] if match_color(item)]
+                     if not filtered: return ""
+                     output_parts = [json.dumps(item, indent=4) for item in filtered]
+                     result = ",\n\n".join(output_parts)
+                     return '\t' + result.replace('\n', '\n\t')
+
+                # Or just keyed objects (inkCartridge0, K, C, etc)
+                output_parts = []
+                sorted_keys = sorted(source_to_iterate.keys())
+                
+                for key in sorted_keys:
+                    val = source_to_iterate[key]
+                    if isinstance(val, dict):
+                         if match_color(val):
+                             # Unwrap: Key + Value
+                             wrapper = {key: val}
+                             dumped = json.dumps(wrapper, indent=4)
+                             # Strip braces
+                             lines = dumped.split('\n')
+                             if len(lines) >= 2:
+                                inner = '\n'.join(lines[1:-1])
+                                output_parts.append(inner.strip(","))
+
+                if output_parts:
+                    # Join with comma and newlines to mimic original object structure but unwrapped
+                    result = ",\n\n".join(output_parts)
+                    return '\t' + result.replace('\n', '\n\t')
+                
+                return ""
+                
+        except:
+             return content.strip()
 
     def _process_alerts_json(self, content, target_ids=None):
         """
