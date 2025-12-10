@@ -137,6 +137,7 @@ PRINTER_TYPES = {
         "cartridges": ["CYAN", "MAGENTA", "YELLOW", "BLACK"],
         "description": "Industrial Inkjet Cartridge printer with 4 individual color cartridges",
         "pcl_base_path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL",
+        "pcl_base_path_iso": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\PythonScripts\\drivenFiles\\pcl3",
         "color_file_mapping": {
             "CYAN": "C_out_6x6_pn.pcl",
             "MAGENTA": "M_out_6x6_pn.pcl", 
@@ -219,6 +220,7 @@ class testRunner:
         self.stop_drain = threading.Event()
         self.selected_color = ttk.StringVar(value=self.current_cartridges[0])
         self.delay_var = ttk.StringVar(value="5")
+        self.print_type_var = ttk.StringVar(value="Full") # Options: Full, 50%, 25%, ISO
         self._initializeTargets()
         
         # Printer interfaces
@@ -242,6 +244,14 @@ class testRunner:
             return
         
         self.printer_type.set(new_type)
+        
+        # Toggle visibility of Print Type controls
+        if hasattr(self, 'type_frame'):
+            if new_type == "IIC":
+                self.type_frame.pack(side="left", padx=(0, 12), after=self.color_dropdown)
+            else:
+                self.type_frame.pack_forget()
+
         self.current_cartridges = PRINTER_TYPES[new_type]["cartridges"]
         self._initializeInkLevels()
         self._initializeTargets()
@@ -407,6 +417,26 @@ class testRunner:
         )
         self.color_dropdown.pack(side="left", padx=(0, 12))
         self.color_dropdown.bind('<<ComboboxSelected>>', self._onColorChange)
+        
+        # --- NEW: Print Type Selection (Visible only for IIC) ---
+        self.type_frame = ttk.Frame(controls_frame)
+        self.type_frame.pack(side="left", padx=(0, 12))
+        
+        type_label = ttk.Label(self.type_frame, text="Type:")
+        type_label.pack(side="left", padx=(0, 5))
+        
+        # Segmented button style (Radiobuttons with Toolbutton style)
+        # for mode in ["Full", "50%", "25%", "ISO"]:
+        for mode in ["Full", "ISO"]:
+            rb = ttk.Radiobutton(
+                self.type_frame, 
+                text=mode, 
+                variable=self.print_type_var, 
+                value=mode,
+                bootstyle="toolbutton-outline" # Gives the modern toggle look
+            )
+            rb.pack(side="left", padx=0)
+        # --------------------------------------------------------
         
         # Delay selection
         delay_label = ttk.Label(controls_frame, text="Delay (s):")
@@ -1129,33 +1159,48 @@ class testRunner:
         # Send print job in separate thread
         threading.Thread(target=self._performSinglePrint, args=(color,), daemon=True).start()
     
+    def _getPCLFile(self, printer_type, cartridge):
+        """Construct the PCL file path based on printer type and selection."""
+        config = PRINTER_TYPES[printer_type]
+        
+        # 1. Handle IIC Logic (with transparency/ISO options)
+        if printer_type == "IIC":
+            mode = self.print_type_var.get()
+            color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
+            code = color_codes.get(cartridge, "K")
+            
+            if mode == "ISO":
+                # Use ISO path: G:\...\pcl3\ISO_C.pcl
+                return f"{config['pcl_base_path_iso']}\\ISO_{code}.pcl"
+            else:
+                # Determine suffix for AmpereXL files
+                suffix = ""
+                if mode == "50%": suffix = "_50"
+                elif mode == "25%": suffix = "_25"
+                # Full = ""
+                
+                # Path: G:\...\AmpereXL\C_out_6x6_50_pn.pcl
+                return f"{config['pcl_base_path']}\\{code}_out_6x6{suffix}_pn.pcl"
+
+        # 2. Handle IPH Logic (Keep existing logic)
+        elif printer_type in ["IPH_DUNE", "IPH_ARES"]:
+            if cartridge == "K":
+                return f'{config["pcl_base_path_iso"]}\\{config["color_file_mapping"][cartridge]}'
+            else:
+                return f'{config["pcl_base_path"]}\\{config["color_file_mapping"][cartridge]}'
+        
+        return None
+
     def _performSinglePrint(self, cartridge):
         """Perform single print job (runs in separate thread)"""        
         try:
             printer_type = self.printer_type.get()
-            printer_config = PRINTER_TYPES[printer_type]
             
-            # Get the appropriate PCL file based on printer type
-            if cartridge in printer_config["color_file_mapping"]:
-                # For IPH printers, use different base paths for different cartridges
-                if printer_type in ["IPH_DUNE", "IPH_ARES"]:
-                    if cartridge == "K":
-                        # Use iso base path for K cartridge
-                        pcl_file = f'{printer_config["pcl_base_path_iso"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                    else:
-                        # Use regular base path for CMY cartridge
-                        pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                else:
-                    # For other printer types, use regular base path
-                    pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
-            else:
-                # Fallback for IIC legacy naming
-                color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
-                if cartridge in color_codes:
-                    color_code = color_codes[cartridge]
-                    pcl_file = f'{printer_config["pcl_base_path"]}\\{color_code}_out_6x6_pn.pcl'
-                else:
-                    raise ValueError(f"Unknown cartridge type: {cartridge}")
+            # Use the helper to get the file
+            pcl_file = self._getPCLFile(printer_type, cartridge)
+            
+            if not pcl_file:
+                 raise ValueError(f"Could not determine PCL file for {cartridge}")
             
             # Debug: Log the PCL file path being used
             self.root.after(0, lambda path=pcl_file: self._logMessage(f"DEBUG: Single print using PCL file: {path}"))
@@ -1324,27 +1369,11 @@ class testRunner:
             
             # Keep sending print jobs indefinitely until manually stopped
             while not self.stop_drain.is_set():
-                # Get the appropriate PCL file based on printer type
-                if cartridge in printer_config["color_file_mapping"]:
-                    # For IPH printers, use different base paths for different cartridges
-                    if printer_type in ["IPH_DUNE", "IPH_ARES"]:
-                        if cartridge == "K":
-                            # Use iso base path for K cartridge
-                            pcl_file = f'{printer_config["pcl_base_path_iso"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                        else:
-                            # Use regular base path for CMY cartridge
-                            pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                    else:
-                        # For other printer types, use regular base path
-                        pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                else:
-                    # Fallback for IIC legacy naming
-                    color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
-                    if cartridge in color_codes:
-                        color_code = color_codes[cartridge]
-                        pcl_file = f'{printer_config["pcl_base_path"]}\\{color_code}_out_6x6_pn.pcl'
-                    else:
-                        raise ValueError(f"Unknown cartridge type: {cartridge}")
+                # Use the helper to get the file
+                pcl_file = self._getPCLFile(printer_type, cartridge)
+                
+                if not pcl_file:
+                     raise ValueError(f"Could not determine PCL file for {cartridge}")
                 
                 # Debug: Log the PCL file path being used
                 self.root.after(0, lambda path=pcl_file: self._logMessage(f"DEBUG: Using PCL file: {path}"))
@@ -1381,27 +1410,11 @@ class testRunner:
                     self.root.after(0, lambda: self._onDrainComplete(cancelled=False))
                     break
                 
-                # Get the appropriate PCL file based on printer type
-                if cartridge in printer_config["color_file_mapping"]:
-                    # For IPH printers, use different base paths for different cartridges
-                    if printer_type in ["IPH_DUNE", "IPH_ARES"]:
-                        if cartridge == "K":
-                            # Use iso base path for K cartridge
-                            pcl_file = f'{printer_config["pcl_base_path_iso"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                        else:
-                            # Use regular base path for CMY cartridge
-                            pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                    else:
-                        # For other printer types, use regular base path
-                        pcl_file = f'{printer_config["pcl_base_path"]}\\{printer_config["color_file_mapping"][cartridge]}'
-                else:
-                    # Fallback for IIC legacy naming
-                    color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
-                    if cartridge in color_codes:
-                        color_code = color_codes[cartridge]
-                        pcl_file = f'{printer_config["pcl_base_path"]}\\{color_code}_out_6x6_pn.pcl'
-                    else:
-                        raise ValueError(f"Unknown cartridge type: {cartridge}")
+                # Use the helper to get the file
+                pcl_file = self._getPCLFile(printer_type, cartridge)
+                
+                if not pcl_file:
+                     raise ValueError(f"Could not determine PCL file for {cartridge}")
                 
                 # Debug: Log the PCL file path being used
                 self.root.after(0, lambda path=pcl_file: self._logMessage(f"DEBUG: Using PCL file: {path}"))
