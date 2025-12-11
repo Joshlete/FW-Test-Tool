@@ -25,7 +25,7 @@ class NavBar(QWidget):
         self.button_group.idClicked.connect(self._on_button_clicked)
         
         # Define the tabs we want
-        self.tabs = ["Dune", "Sirius", "Ares", "Tools", "Settings", "Log"]
+        self.tabs = ["Dune IIC", "Dune IPH", "Sirius", "Ares", "Tools", "Settings", "Log"]
         
         # Create a button for each tab
         for i, name in enumerate(self.tabs):

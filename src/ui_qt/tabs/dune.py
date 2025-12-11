@@ -60,11 +60,13 @@ class DuneSplitter(QSplitter):
 class DuneTab(QtTabContent):
     """
     Dune Tab Implementation with 3-Column Layout.
+    Now Strategy-Driven (IIC vs IPH).
     """
-    def __init__(self, config_manager):
+    def __init__(self, config_manager, strategy):
         super().__init__(tab_name="dune", config_manager=config_manager) # Initializes step_manager and file_manager
         
         self.config_manager = config_manager
+        self.strategy = strategy
         self.thread_pool = QThreadPool()
         self.ip = None
         self.report_window = None
@@ -134,7 +136,7 @@ class DuneTab(QtTabContent):
         self.toolbar.add_spacer()
         
         # EWS Snips
-        self.btn_ews = ModernButton("EWS Snips")
+        self.btn_ews = ModernButton("Capture EWS")
         # Ensure we don't double-apply stylesheets that might conflict or be missing the menu part
         # The ModernButton class now handles its own styling including the menu.
         self.btn_ews.setMenu(self._create_ews_menu())
@@ -179,17 +181,75 @@ class DuneTab(QtTabContent):
         current_dir = self.file_manager.default_directory
         
         if self.report_window is None:
-             self.report_window = ReportBuilderWindow(initial_directory=current_dir)
+             self.report_window = ReportBuilderWindow(initial_directory=current_dir, strategy=self.strategy)
              self.report_window.show()
         else:
             # Update directory if window already exists
             if current_dir:
                 self.report_window.set_directory(current_dir)
+            
+            # Update strategy in case we are reusing window from another tab
+            self.report_window.set_strategy(self.strategy)
+            
             self.report_window.show()
             self.report_window.raise_()
             self.report_window.activateWindow()
 
+    def _create_capture_menu(self):
+        """
+        Creates the menu for UI/VNC Captures (Home Screen, ECLs).
+        Used by the Stream Widget context menu.
+        """
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D2D;
+                border: 1px solid #3D3D3D;
+                color: #FFFFFF;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #007ACC;
+                color: #FFFFFF;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #3D3D3D;
+                margin: 5px 10px;
+            }
+        """)
+        
+        options = self.strategy.get_capture_options()
+        for opt in options:
+            if opt.get("separator"):
+                menu.addSeparator()
+                continue
+            
+            label = opt.get("label", "Unknown")
+            action_type = opt.get("type")
+            param = opt.get("param")
+            
+            q_action = QAction(label, self)
+            
+            # Use default args in lambda to capture loop variables correctly
+            if action_type == "ui":
+                q_action.triggered.connect(lambda checked=False, p=param: self.action_manager.capture_alert_ui(p))
+            elif action_type == "ecl":
+                q_action.triggered.connect(lambda checked=False, p=param: self.action_manager.capture_ecl(p))
+                
+            menu.addAction(q_action)
+
+        return menu
+
     def _create_ews_menu(self):
+        """
+        Creates the menu for EWS Manual Snips.
+        Used by the Toolbar button.
+        """
         menu = QMenu(self)
         # Styling is now handled by the ModernButton stylesheet which targets QMenu
         # But we can also set it on the menu directly to be safe
@@ -209,11 +269,7 @@ class DuneTab(QtTabContent):
                 color: #FFFFFF;
             }
         """)
-        pages = [
-            "Home Page", "Supplies Page Cyan", "Supplies Page Magenta", 
-            "Supplies Page Yellow", "Supplies Page Black", "Supplies Page Color",
-            "Previous Cartridge Information", "Printer Region Reset"
-        ]
+        pages = self.strategy.get_ews_pages()
         for page in pages:
             action = QAction(page, self)
             action.triggered.connect(lambda checked=False, p=page: self.action_manager.capture_ews(f"EWS {p}"))
@@ -255,7 +311,9 @@ class DuneTab(QtTabContent):
         self.stream_widget.setContentsMargins(0, 0, 0, 0)
         
         # Configure ECL Menu
-        self.stream_widget.set_ecl_menu(self._create_ecl_menu(self.stream_widget))
+        # ECL menu logic moved to main "Capture" button, but stream widget has its own menu setter.
+        # For context menu compatibility, we generate a simple menu from capture options.
+        self.stream_widget.set_ecl_menu(self._create_capture_menu())
         
         # Card wrapper for consistent boundary
         stream_card = QFrame()
@@ -275,21 +333,8 @@ class DuneTab(QtTabContent):
         self.main_splitter.addWidget(left_container)
 
     def _create_ecl_menu(self, parent=None):
-        menu = QMenu(parent or self)
-        variants = [
-            "Estimated Cartridge Levels", 
-            "Estimated Cartridge Levels Black", 
-            "Estimated Cartridge Levels Tri-Color", 
-            "Estimated Cartridge Levels Cyan", 
-            "Estimated Cartridge Levels Magenta", 
-            "Estimated Cartridge Levels Yellow"
-        ]
-        for v in variants:
-            action = QAction(v.replace("Estimated Cartridge Levels", "").strip() or "All", menu)
-            # Use default lambda argument to capture loop variable
-            action.triggered.connect(lambda checked=False, var=v: self.action_manager.capture_ecl(var))
-            menu.addAction(action)
-        return menu
+        # Legacy method removed in favor of _create_capture_menu
+        return self._create_capture_menu()
 
     def show_data_in_slide_panel(self, endpoint, content):
         """Custom handler to show data in the slide panel instead of a dialog."""
@@ -413,7 +458,6 @@ class DuneTab(QtTabContent):
         self.stream_widget.display.scroll_event.connect(lambda d: self.vnc_manager.scroll(d))
         self.stream_widget.rotation_changed.connect(self._on_rotation_changed)
         self.stream_widget.view_toggled.connect(self._toggle_connection)
-        # Capture ECL signal removed as we use direct menu action now
         
         # Managers -> Status
         self.action_manager.status_message.connect(self.status_message.emit)

@@ -2,18 +2,11 @@ import os
 import json
 
 class ReportBuilder:
-    # --- Hardcoded Color to Alert ID Mapping ---
-    COLOR_TO_ALERT_ID = {
-        "Cyan": 103,
-        "Magenta": 104,
-        "Yellow": 101,
-        "Black": 102
-    }
-
-    def __init__(self, directory, step_number):
+    def __init__(self, directory, step_number, strategy=None):
         self.directory = directory
         self.step_number = str(step_number)
         self.step_prefix = f"{self.step_number}. "
+        self.strategy = strategy
     
     def scan_files(self):
         """
@@ -108,8 +101,16 @@ class ReportBuilder:
         
         if include_alerts and colors:
             for c in colors:
-                if c in self.COLOR_TO_ALERT_ID:
-                    target_alert_ids.append(self.COLOR_TO_ALERT_ID[c])
+                if self.strategy:
+                    # Strategy-driven ID lookup
+                    aid = self.strategy.get_alert_id(c)
+                    if aid:
+                        target_alert_ids.append(aid)
+                # Fallback to hardcoded if no strategy (Legacy/Backup)
+                elif c == "Cyan": target_alert_ids.append(103)
+                elif c == "Magenta": target_alert_ids.append(104)
+                elif c == "Yellow": target_alert_ids.append(101)
+                elif c == "Black": target_alert_ids.append(102)
 
         output = []
         
@@ -155,7 +156,13 @@ class ReportBuilder:
                 if section_text:
                     output.append(section_text)
 
-        # 3. Process Telemetry
+        # 3. Process 63-Tap (Manual Input)
+        if "63-Tap" in selected_categories:
+             output.append(self._format_section_header("63-Tap"))
+             output.append("\n\n\n") # Blank space for manual input
+             # Note: No content generation needed
+
+        # 4. Process Telemetry
         telemetry_files = selected_categories.get("Telemetry", [])
         if telemetry_files:
             processed_telemetry = self._process_telemetry(telemetry_files, colors)
@@ -165,7 +172,7 @@ class ReportBuilder:
                 output.extend(processed_telemetry)
                 output.append("")  # Blank line after content
 
-        # 4. Process "Other"
+        # 5. Process "Other"
         other_files = selected_categories.get("Other", [])
         if other_files:
             output.append(self._format_section_header("Other"))
@@ -174,7 +181,7 @@ class ReportBuilder:
                 output.append(f"Included: {os.path.basename(f)}")
             output.append("")  # Blank line after content
 
-        # 5. Add single footer at the end if we have content
+        # 6. Add single footer at the end if we have content
         if len(output) > 2:  # More than just the default header
             output.append("==================================================")
 
@@ -434,9 +441,13 @@ class ReportBuilder:
     def _filter_supplies_data(self, data, colors):
         """
         Filters supplies data. 
-        Rule: Supply must match one of the selected colors AND NOT have multiple colors (like CMYK).
+        Uses Strategy if available, else falls back to legacy logic.
         """
         def is_valid_supply(supply_obj):
+            if self.strategy:
+                return self.strategy.is_valid_supply(supply_obj, colors)
+
+            # --- Legacy Logic (IIC Only) ---
             # 1. Check colors list length
             obj_colors = []
             if "publicInformation" in supply_obj and "colors" in supply_obj["publicInformation"]:

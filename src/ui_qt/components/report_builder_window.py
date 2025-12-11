@@ -176,10 +176,11 @@ class CodeEditor(QPlainTextEdit):
         self.setExtraSelections(extraSelections)
 
 class ReportBuilderWindow(QMainWindow):
-    def __init__(self, parent=None, initial_directory=None):
+    def __init__(self, parent=None, initial_directory=None, strategy=None):
         super().__init__(parent)
         self.setWindowTitle("Report Builder")
         self.resize(1200, 800)
+        self.strategy = strategy
         
         # Load Config
         self.config_manager = ConfigManager()
@@ -336,6 +337,19 @@ class ReportBuilderWindow(QMainWindow):
             if hasattr(self, 'file_model'):
                 self.file_model.setRootPath(directory)
                 self.tree_view.setRootIndex(self.file_model.index(directory))
+
+    def set_strategy(self, strategy):
+        """Update the printer strategy dynamically."""
+        self.strategy = strategy
+        # Re-init controls to update color checkboxes
+        # Clear existing color controls
+        for cb in self.color_checks.values():
+            cb.setParent(None)
+            cb.deleteLater()
+        self.color_checks.clear()
+        
+        self._populate_color_controls()
+        self.generate_report()
 
     def _init_file_explorer(self):
         # File System Model
@@ -502,7 +516,8 @@ class ReportBuilderWindow(QMainWindow):
             "Telemetry": "Telemetry", 
             "Reports": "Reports", 
             "Supply Assessment": "supplyAssessment", 
-            "DSR Packet": "DSR Packet"
+            "DSR Packet": "DSR Packet",
+            "63-Tap": "63-Tap"
         }
         
         for display_name, internal_key in self.cat_map.items():
@@ -547,33 +562,18 @@ class ReportBuilderWindow(QMainWindow):
             controls_layout.addWidget(row_widget)
         
         # 2. Colors Header
-        lbl_colors = QLabel("Filter Colors")
-        lbl_colors.setObjectName("SectionHeader")
-        controls_layout.addWidget(lbl_colors)
+        self.lbl_colors = QLabel("Filter Colors")
+        self.lbl_colors.setObjectName("SectionHeader")
+        controls_layout.addWidget(self.lbl_colors)
         
-        for color_name in ["Cyan", "Magenta", "Yellow", "Black"]:
-            btn = QPushButton(f"  {color_name}")
-            btn.setCheckable(True)
-            btn.setObjectName("SidebarRow")
-            
-            # Create icon
-            pixmap = QPixmap(16, 16)
-            pixmap.fill(Qt.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.Antialiasing)
-            
-            c = QColor(color_name)
-            if color_name == "Black": c = QColor("#888") # Lighter gray for visibility on dark bg
-            
-            painter.setBrush(c)
-            painter.setPen(Qt.NoPen)
-            painter.drawEllipse(2, 2, 12, 12)
-            painter.end()
-            
-            btn.setIcon(QIcon(pixmap))
-            btn.toggled.connect(self.generate_report)
-            self.color_checks[color_name] = btn
-            controls_layout.addWidget(btn)
+        # Container for colors to easily clear later
+        self.colors_container = QWidget()
+        self.colors_layout = QVBoxLayout(self.colors_container)
+        self.colors_layout.setContentsMargins(0,0,0,0)
+        self.colors_layout.setSpacing(5)
+        controls_layout.addWidget(self.colors_container)
+        
+        self._populate_color_controls()
             
         # Status Label (Hidden by default)
         self.lbl_status = QLabel("")
@@ -591,6 +591,49 @@ class ReportBuilderWindow(QMainWindow):
         
         # Add scroll area to sidebar layout
         self.sidebar_layout.addWidget(scroll_area)
+
+    def _populate_color_controls(self):
+        # Clear existing
+        while self.colors_layout.count():
+            item = self.colors_layout.takeAt(0)
+            widget = item.widget()
+            if widget: widget.deleteLater()
+        self.color_checks.clear()
+
+        # Determine colors from strategy or default
+        colors = ["Cyan", "Magenta", "Yellow", "Black"]
+        if self.strategy:
+            colors = self.strategy.get_cartridges()
+            
+        for color_name in colors:
+            btn = QPushButton(f"  {color_name}")
+            btn.setCheckable(True)
+            btn.setObjectName("SidebarRow")
+            
+            # Create icon
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # Attempt to map name to Qt Color
+            # For "Tri-Color", maybe use a gradient or just a generic color?
+            c = QColor(Qt.white)
+            if "cyan" in color_name.lower(): c = QColor("Cyan")
+            elif "magenta" in color_name.lower(): c = QColor("Magenta")
+            elif "yellow" in color_name.lower(): c = QColor("Yellow")
+            elif "black" in color_name.lower(): c = QColor("#888")
+            elif "tri" in color_name.lower(): c = QColor("Violet") # Placeholder for Tri-Color
+            
+            painter.setBrush(c)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(2, 2, 12, 12)
+            painter.end()
+            
+            btn.setIcon(QIcon(pixmap))
+            btn.toggled.connect(self.generate_report)
+            self.color_checks[color_name] = btn
+            self.colors_layout.addWidget(btn)
 
     def _init_preview(self):
         # Preview Header Layout
@@ -747,7 +790,7 @@ class ReportBuilderWindow(QMainWindow):
         if not os.path.exists(directory):
             return
 
-        builder = ReportBuilder(directory, step)
+        builder = ReportBuilder(directory, step, self.strategy)
         
         # 1. Get Selected Categories
         found_items = builder.scan_files()
@@ -761,7 +804,7 @@ class ReportBuilderWindow(QMainWindow):
             # --- Resolve Files for this Category ---
             category_files = []
             
-            if internal_key in ["UI", "EWS", "Reports"]: # DSR moved to standard handling
+            if internal_key in ["UI", "EWS", "Reports", "63-Tap"]: # DSR moved to standard handling
                  other_files = found_items.get("Other", [])
                  matched_files = [f for f in other_files if internal_key.lower() in os.path.basename(f).lower()]
                  if matched_files:
@@ -771,8 +814,8 @@ class ReportBuilderWindow(QMainWindow):
                 category_files = found_items.get(internal_key, [])
 
             # --- Update Dropdown UI ---
-            # Skip dropdown for UI, EWS, Reports as they don't need specific file selection
-            if combo and internal_key not in ["UI", "EWS", "Reports"]:
+            # Skip dropdown for UI, EWS, Reports, 63-Tap as they don't need specific file selection
+            if combo and internal_key not in ["UI", "EWS", "Reports", "63-Tap"]:
                 # Store current selection
                 current_text = combo.currentText()
                 
@@ -824,6 +867,10 @@ class ReportBuilderWindow(QMainWindow):
                 if internal_key == "alerts":
                      selected_categories[internal_key] = final_files # Might be empty
 
+                # Special Case: 63-Tap. Always include if checked, even if no files found (it's manual)
+                if internal_key == "63-Tap":
+                     selected_categories[internal_key] = [] # Empty list as placeholder
+
         # 2. Get Selected Colors
         colors = [k for k, cb in self.color_checks.items() if cb.isChecked()]
         
@@ -868,11 +915,19 @@ class ReportBuilderWindow(QMainWindow):
                 body = ""
             
         final_text = f"{header_str}\n\n{body}"
-        
-        # Add extra newlines if UI or EWS is selected
+
+        # Add exactly 2 newlines at the end ONLY if UI or EWS is selected
         if "UI" in selected_categories or "EWS" in selected_categories:
-            final_text += "\n\n"
+            final_text = final_text.rstrip() + "\n\n" 
+            # Note: rstrip() ensures we start from known end, then add 3 \n to get 2 blank lines (Line + Blank + Blank)
+            # Actually standard is usually text + \n\n for 2 empty lines.
+            # Let's stick to appending to whatever is there, but ensuring 2 blank lines at visual end.
             
+            # Reset to clean end
+            final_text = final_text.rstrip()
+            # Add 2 blank lines (requires 3 newlines: one to end current line, two for blanks)
+            final_text += "\n\n"
+        
         # Save scroll position
         v_scroll = self.result_viewer.verticalScrollBar().value()
         
@@ -886,3 +941,4 @@ class ReportBuilderWindow(QMainWindow):
             self.btn_copy.setEnabled(False)
         else:
             self.btn_copy.setEnabled(True)
+

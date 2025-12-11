@@ -88,8 +88,8 @@ class UIStreamWidget(QWidget):
         self.capture_btn.clicked.connect(lambda: self.capture_ui_requested.emit(""))
         controls_layout.addWidget(self.capture_btn)
         
-        # Capture ECL Menu Button
-        self.ecl_btn = QPushButton("Capture ECL")
+        # Capture Menu Button
+        self.ecl_btn = QPushButton("Capture")
         self.ecl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         
         ecl_menu = QMenu(self)

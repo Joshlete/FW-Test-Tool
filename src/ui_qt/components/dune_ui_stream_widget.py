@@ -209,11 +209,11 @@ class DuneUIStreamWidget(QWidget):
         
         # Right: Capture & Status
         self.btn_ecl = QToolButton()
-        self.btn_ecl.setText("Capture ECL")
+        self.btn_ecl.setText("Capture")
         self.btn_ecl.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.btn_ecl.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.btn_ecl.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_ecl.setToolTip("Capture Estimated Cartridge Levels")
+        self.btn_ecl.setToolTip("Capture UI images")
         self.btn_ecl.setMinimumHeight(32)
         self.btn_ecl.setStyleSheet("""
             QToolButton {

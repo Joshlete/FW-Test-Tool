@@ -158,7 +158,7 @@ class DuneActionManager(QObject):
         Capture current VNC frame as ECL.
         """
         if not self.vnc_manager or not self.vnc_manager.vnc or not self.vnc_manager.vnc.connected:
-            self.error_occurred.emit("VNC not connected. Cannot capture ECL.")
+            self.error_occurred.emit("VNC not connected. Cannot capture image.")
             return
 
         self.status_message.emit(f"Capturing ECL: {variant}...")
