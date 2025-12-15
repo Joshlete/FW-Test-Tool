@@ -117,12 +117,6 @@ class ReportBuilder:
         # 1. Header (Dynamic in main app, but we keep this as fallback)
         output.append(f"UI, EWS, CDM, and Telemetry were correct and to spec.")
         output.append("")
-
-        # 2. Process Standard CDM Sections
-        # Order: Supplies first, then Alerts integrated? 
-        # The user requested automating the match.
-        # Actually, "alerts" is still passed as a category if the toggle is ON.
-        # We should process it using the new logic.
         
         sections = ["suppliesPrivate", "suppliesPublic", "supplyAssessment", "DSR Packet"]
         
@@ -156,11 +150,23 @@ class ReportBuilder:
                 if section_text:
                     output.append(section_text)
 
-        # 3. Process 63-Tap (Manual Input)
-        if "63-Tap" in selected_categories:
-             output.append(self._format_section_header("63-Tap"))
-             output.append("\n\n\n") # Blank space for manual input
-             # Note: No content generation needed
+        # 3. Process Tap (Manual Input)
+        # UI stores this as selected_categories["Tap"] = ["43-Tap"] or ["63-Tap"] (display label).
+        tap_label = None
+        tap_value = selected_categories.get("Tap")
+        if isinstance(tap_value, list) and tap_value:
+            tap_label = tap_value[0]
+        elif "Tap" in selected_categories:
+            # Fallback: infer from strategy when UI didn't provide a label
+            if self.strategy and self.strategy.get_name() == "Dune IPH":
+                tap_label = "43-Tap"
+            else:
+                tap_label = "63-Tap"
+
+        if tap_label:
+            output.append(self._format_section_header(tap_label))
+            output.append("\n\n")  # Blank space for manual input
+            # Note: No content generation needed
 
         # 4. Process Telemetry
         telemetry_files = selected_categories.get("Telemetry", [])

@@ -513,12 +513,18 @@ class ReportBuilderWindow(QMainWindow):
             "Alerts": "alerts", 
             "Supplies Public": "suppliesPublic", 
             "Supplies Private": "suppliesPrivate", 
+            "Supply Assessment": "supplyAssessment", 
             "Telemetry": "Telemetry", 
             "Reports": "Reports", 
-            "Supply Assessment": "supplyAssessment", 
             "DSR Packet": "DSR Packet",
-            "63-Tap": "63-Tap"
         }
+        
+        # Add dynamic Tap category based on strategy
+        tap_label = "63-Tap" # Default
+        if self.strategy and self.strategy.get_name() == "Dune IPH":
+            tap_label = "43-Tap"
+            
+        self.cat_map[tap_label] = "Tap" # Map display name to internal key "Tap"
         
         for display_name, internal_key in self.cat_map.items():
             # Create Full Width Row Button
@@ -804,18 +810,22 @@ class ReportBuilderWindow(QMainWindow):
             # --- Resolve Files for this Category ---
             category_files = []
             
-            if internal_key in ["UI", "EWS", "Reports", "63-Tap"]: # DSR moved to standard handling
+            # Treat "Tap" as a manual category like UI/EWS
+            if internal_key in ["UI", "EWS", "Reports", "Tap"]: 
                  other_files = found_items.get("Other", [])
-                 matched_files = [f for f in other_files if internal_key.lower() in os.path.basename(f).lower()]
-                 if matched_files:
-                     category_files = matched_files
+                 # For Tap, we don't scan files, it's manual.
+                 # For UI/EWS/Reports, we look for matches.
+                 if internal_key != "Tap":
+                     matched_files = [f for f in other_files if internal_key.lower() in os.path.basename(f).lower()]
+                     if matched_files:
+                         category_files = matched_files
             else:
                 # Standard lookup (alerts, supplies, SA, DSR Packet)
                 category_files = found_items.get(internal_key, [])
 
             # --- Update Dropdown UI ---
-            # Skip dropdown for UI, EWS, Reports, 63-Tap as they don't need specific file selection
-            if combo and internal_key not in ["UI", "EWS", "Reports", "63-Tap"]:
+            # Skip dropdown for UI, EWS, Reports, Tap as they don't need specific file selection
+            if combo and internal_key not in ["UI", "EWS", "Reports", "Tap"]:
                 # Store current selection
                 current_text = combo.currentText()
                 
@@ -867,9 +877,10 @@ class ReportBuilderWindow(QMainWindow):
                 if internal_key == "alerts":
                      selected_categories[internal_key] = final_files # Might be empty
 
-                # Special Case: 63-Tap. Always include if checked, even if no files found (it's manual)
-                if internal_key == "63-Tap":
-                     selected_categories[internal_key] = [] # Empty list as placeholder
+                # Special Case: Tap (43/63). Always include if checked, even if no files found (it's manual)
+                if internal_key == "Tap":
+                     # Pass the DISPLAY NAME so builder knows which header to use (43-Tap vs 63-Tap)
+                     selected_categories[internal_key] = [display_name] 
 
         # 2. Get Selected Colors
         colors = [k for k, cb in self.color_checks.items() if cb.isChecked()]

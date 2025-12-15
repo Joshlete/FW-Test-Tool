@@ -172,7 +172,8 @@ class DuneActionManager(QObject):
              
         image = frame.copy() # Copy to be safe
         
-        base_filename = f"UI {variant}"
+        # Add "ECL" to the filename for clarity
+        base_filename = f"UI Estimated Cartridge Levels {variant}"
         
         # Save via FileManager
         success, filepath = self.file_manager.save_image_data(image, base_filename)
