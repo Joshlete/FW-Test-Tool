@@ -87,3 +87,29 @@ class DuneIICStrategy(BaseDuneStrategy):
                 if target == "yellow" and ("y" == field_str or "yellow" in field_str): return True
                 if target == "black" and ("k" == field_str or "black" in field_str): return True
         return False
+
+    def matches_color_code(self, code, selected_colors):
+        """
+        IIC: selected colors are individual cartridges (C/M/Y/K).
+        Only match single-cartridge codes; do NOT treat composite codes (e.g. CMY/CMYK) as a match.
+        """
+        if not code or not selected_colors:
+            return False
+
+        code_str = str(code).strip().upper()
+        # Composite codes should not match any single cartridge selection
+        if len(code_str) > 1:
+            return False
+
+        for c in selected_colors:
+            target = str(c).strip().lower()
+            if target == "cyan" and code_str == "C":
+                return True
+            if target == "magenta" and code_str == "M":
+                return True
+            if target == "yellow" and code_str == "Y":
+                return True
+            if target == "black" and code_str == "K":
+                return True
+
+        return False

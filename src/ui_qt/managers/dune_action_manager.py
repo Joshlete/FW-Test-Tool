@@ -172,8 +172,12 @@ class DuneActionManager(QObject):
              
         image = frame.copy() # Copy to be safe
         
-        # Add "ECL" to the filename for clarity
-        base_filename = f"UI Estimated Cartridge Levels {variant}"
+        # Add "ECL" to the filename for clarity.
+        # If variant is "All", don't append it to the filename.
+        if str(variant).strip().lower() == "all":
+            base_filename = "UI Estimated Cartridge Levels"
+        else:
+            base_filename = f"UI Estimated Cartridge Levels {variant}"
         
         # Save via FileManager
         success, filepath = self.file_manager.save_image_data(image, base_filename)
@@ -182,6 +186,38 @@ class DuneActionManager(QObject):
             self.status_message.emit(f"Saved ECL: {os.path.basename(filepath)}")
         else:
             self.error_occurred.emit("Failed to save ECL screenshot")
+
+    def capture_ui_screen(self, screen_key):
+        """
+        Capture current VNC frame for common UI screens (e.g., Home Screen, Notification Center).
+        screen_key comes from strategy.get_capture_options() param, e.g. 'home' or 'notifications'.
+        """
+        if not self.vnc_manager or not self.vnc_manager.vnc or not self.vnc_manager.vnc.connected:
+            self.error_occurred.emit("VNC not connected. Cannot capture UI screen.")
+            return
+
+        # Map keys to user-friendly names
+        screen_name_map = {
+            "home": "Home Screen",
+            "notifications": "Notification Center",
+        }
+        screen_name = screen_name_map.get(screen_key, str(screen_key))
+
+        self.status_message.emit(f"Capturing UI: {screen_name}...")
+
+        frame = self.vnc_manager.vnc.get_current_frame()
+        if not frame:
+            self.error_occurred.emit("No video frame available")
+            return
+
+        image = frame.copy()
+        base_filename = f"UI {screen_name}"
+
+        success, filepath = self.file_manager.save_image_data(image, base_filename)
+        if success:
+            self.status_message.emit(f"Saved UI: {os.path.basename(filepath)}")
+        else:
+            self.error_occurred.emit("Failed to save UI screenshot")
 
     def capture_alert_ui(self, alert_data):
         """

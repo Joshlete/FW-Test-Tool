@@ -51,3 +51,20 @@ class BaseDuneStrategy(ABC):
             bool: True if the supply should be included in the report.
         """
         pass
+
+    @abstractmethod
+    def matches_color_code(self, code, selected_colors):
+        """
+        Determines if a color code (e.g. 'K', 'CMY') matches the selected cartridges/colors.
+
+        Used for non-supplies JSON structures like Supply Assessment / DSR Packet where the
+        object has 'colorCode'/'supplyColorCode' and strategy-specific interpretation is required.
+
+        Args:
+            code (str|None): Color code from JSON ('K', 'C', 'CMY', etc.)
+            selected_colors (list): Selected cartridge/color names from UI.
+
+        Returns:
+            bool: True if this object should be included for the selected colors.
+        """
+        pass

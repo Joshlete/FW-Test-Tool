@@ -196,12 +196,20 @@ class ReportBuilderWindow(QMainWindow):
         
         # State Management
         self.current_step = 1
-        self.step_data = {} # Map step_num (int) -> {report_text, selected_cats, colors, etc.}
+        # step_data is step-scoped; colors are intentionally GLOBAL (shared across steps)
+        self.step_data = {} # Map step_num (int) -> {categories}
+        self.global_colors_state = {} # Map color_name -> bool (global filter)
         
         # UI Elements Storage
         self.category_checks = {}
         self.category_combos = {} # For duplicate file selection
         self.color_checks = {}
+        # Telemetry per-color selection (per-step)
+        self.telemetry_combos = {}  # Map telemetry_label -> QComboBox
+        self.telemetry_container = None
+        self.telemetry_layout = None
+        self._pending_telemetry_restore = {}
+        self._in_generate_report = False
         # alert_checkboxes removed as manual selection is gone
         
         # Central Widget
@@ -349,6 +357,7 @@ class ReportBuilderWindow(QMainWindow):
         self.color_checks.clear()
         
         self._populate_color_controls()
+        self._rebuild_telemetry_controls()
         self.generate_report()
 
     def _init_file_explorer(self):
@@ -536,24 +545,27 @@ class ReportBuilderWindow(QMainWindow):
             btn.toggled.connect(self.generate_report)
             
             # Create Dropdown (Hidden initially)
-            combo = QComboBox()
-            combo.setObjectName("FileSelector")
-            combo.setVisible(False)
-            combo.setStyleSheet("""
-                QComboBox {
-                    background-color: #2D2D30;
-                    border: 1px solid #3E3E42;
-                    border-radius: 4px;
-                    color: #DDD;
-                    padding: 4px;
-                    margin-left: 20px; /* Indent */
-                    font-size: 11px;
-                }
-                QComboBox::drop-down {
-                    border: none;
-                }
-            """)
-            combo.currentIndexChanged.connect(self.generate_report)
+            # NOTE: Telemetry no longer uses the legacy single-file dropdown; it uses per-color dropdowns instead.
+            combo = None
+            if internal_key != "Telemetry":
+                combo = QComboBox()
+                combo.setObjectName("FileSelector")
+                combo.setVisible(False)
+                combo.setStyleSheet("""
+                    QComboBox {
+                        background-color: #2D2D30;
+                        border: 1px solid #3E3E42;
+                        border-radius: 4px;
+                        color: #DDD;
+                        padding: 4px;
+                        margin-left: 20px; /* Indent */
+                        font-size: 11px;
+                    }
+                    QComboBox::drop-down {
+                        border: none;
+                    }
+                """)
+                combo.currentIndexChanged.connect(self.generate_report)
             
             # Container for row (Button + Combo)
             row_widget = QWidget()
@@ -561,10 +573,22 @@ class ReportBuilderWindow(QMainWindow):
             row_layout.setContentsMargins(0,0,0,0)
             row_layout.setSpacing(4)
             row_layout.addWidget(btn)
-            row_layout.addWidget(combo)
+            if combo is not None:
+                row_layout.addWidget(combo)
+
+            # Telemetry gets a dedicated per-color picker panel (Option A)
+            if internal_key == "Telemetry":
+                self.telemetry_container = QWidget()
+                self.telemetry_container.setObjectName("TelemetryPicker")
+                self.telemetry_layout = QVBoxLayout(self.telemetry_container)
+                self.telemetry_layout.setContentsMargins(20, 0, 0, 0)  # Indent under the Telemetry row
+                self.telemetry_layout.setSpacing(6)
+                self.telemetry_container.setVisible(False)
+                row_layout.addWidget(self.telemetry_container)
             
             self.category_checks[internal_key] = btn
-            self.category_combos[internal_key] = combo
+            if combo is not None:
+                self.category_combos[internal_key] = combo
             controls_layout.addWidget(row_widget)
         
         # 2. Colors Header
@@ -580,6 +604,7 @@ class ReportBuilderWindow(QMainWindow):
         controls_layout.addWidget(self.colors_container)
         
         self._populate_color_controls()
+        self._rebuild_telemetry_controls()
             
         # Status Label (Hidden by default)
         self.lbl_status = QLabel("")
@@ -640,6 +665,62 @@ class ReportBuilderWindow(QMainWindow):
             btn.toggled.connect(self.generate_report)
             self.color_checks[color_name] = btn
             self.colors_layout.addWidget(btn)
+        
+        # Apply persisted global color state to newly created buttons
+        # (e.g., after strategy switches or first init)
+        self._block_signals(True)
+        try:
+            for color_name, btn in self.color_checks.items():
+                if color_name in self.global_colors_state:
+                    btn.setChecked(bool(self.global_colors_state[color_name]))
+                else:
+                    # Initialize unseen colors to False (global default)
+                    self.global_colors_state[color_name] = False
+        finally:
+            self._block_signals(False)
+
+    def _rebuild_telemetry_controls(self):
+        """
+        Rebuild Telemetry per-color dropdowns based on current strategy.
+        Selections are stored per-step in step_data and reapplied during generate_report.
+        """
+        if not self.telemetry_layout:
+            return
+
+        # Clear existing widgets
+        while self.telemetry_layout.count():
+            item = self.telemetry_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        self.telemetry_combos.clear()
+
+        # Determine labels from strategy (defaults to IIC-like CMYK)
+        labels = ["Cyan", "Magenta", "Yellow", "Black"]
+        if self.strategy:
+            labels = self.strategy.get_cartridges()
+
+        for label in labels:
+            combo = QComboBox()
+            combo.setObjectName("TelemetrySelector")
+            combo.setStyleSheet("""
+                QComboBox {
+                    background-color: #2D2D30;
+                    border: 1px solid #3E3E42;
+                    border-radius: 4px;
+                    color: #DDD;
+                    padding: 4px;
+                    font-size: 11px;
+                }
+                QComboBox::drop-down { border: none; }
+            """)
+
+            # Placeholder; options are populated per-step in generate_report()
+            combo.addItem(f"{label}: None", None)
+            combo.currentIndexChanged.connect(self.generate_report)
+            self.telemetry_layout.addWidget(combo)
+            self.telemetry_combos[label] = combo
 
     def _init_preview(self):
         # Preview Header Layout
@@ -750,12 +831,16 @@ class ReportBuilderWindow(QMainWindow):
             self.set_directory(directory) # Use the main setter to update everything
 
     def _save_current_state(self):
-        """Save checkboxes to memory"""
+        """Save step-scoped state (categories). Colors are global and not stored per-step."""
         state = {
             "categories": {k: cb.isChecked() for k, cb in self.category_checks.items()},
-            "colors": {k: cb.isChecked() for k, cb in self.color_checks.items()},
             # Alert selection is no longer tracked per-alert, only if 'alerts' cat is checked
         }
+        # Persist per-step telemetry selections (one file per telemetry color label)
+        telemetry_state = {}
+        for label, combo in self.telemetry_combos.items():
+            telemetry_state[label] = combo.currentData()
+        state["telemetry"] = telemetry_state
         self.step_data[self.current_step] = state
 
     def _load_step_data(self, step):
@@ -771,15 +856,16 @@ class ReportBuilderWindow(QMainWindow):
             for k, checked in state.get("categories", {}).items():
                 if k in self.category_checks:
                     self.category_checks[k].setChecked(checked)
-            
-            # Restore Colors
-            for k, checked in state.get("colors", {}).items():
-                if k in self.color_checks:
-                    self.color_checks[k].setChecked(checked)
         else:
             # Reset to defaults (All OFF)
             for cb in self.category_checks.values(): cb.setChecked(False)
-            for cb in self.color_checks.values(): cb.setChecked(False)
+        
+        # Always restore GLOBAL colors (shared across steps)
+        for color_name, btn in self.color_checks.items():
+            btn.setChecked(bool(self.global_colors_state.get(color_name, False)))
+
+        # Restore per-step telemetry selections (options are populated during generate_report)
+        self._pending_telemetry_restore = state.get("telemetry", {}) if state else {}
             
         self._block_signals(False)
         self.generate_report()
@@ -787,169 +873,227 @@ class ReportBuilderWindow(QMainWindow):
     def _block_signals(self, block):
         for cb in self.category_checks.values(): cb.blockSignals(block)
         for cb in self.color_checks.values(): cb.blockSignals(block)
+        for combo in self.telemetry_combos.values(): combo.blockSignals(block)
 
     def generate_report(self):
         """Main logic to build the string"""
-        step = str(self.current_step)
-        directory = self.dir_input.text()
-        
-        if not os.path.exists(directory):
+        # Guard against re-entrancy (e.g., combobox updates emitting signals that call generate_report again)
+        if self._in_generate_report:
             return
+        self._in_generate_report = True
+        try:
+            step = str(self.current_step)
+            directory = self.dir_input.text()
 
-        builder = ReportBuilder(directory, step, self.strategy)
-        
-        # 1. Get Selected Categories
-        found_items = builder.scan_files()
-        selected_categories = {}
-        active_cats_display_names = [] 
-        
-        for display_name, internal_key in self.cat_map.items():
-            cb = self.category_checks.get(internal_key)
-            combo = self.category_combos.get(internal_key)
-            
-            # --- Resolve Files for this Category ---
-            category_files = []
-            
-            # Treat "Tap" as a manual category like UI/EWS
-            if internal_key in ["UI", "EWS", "Reports", "Tap"]: 
-                 other_files = found_items.get("Other", [])
-                 # For Tap, we don't scan files, it's manual.
-                 # For UI/EWS/Reports, we look for matches.
-                 if internal_key != "Tap":
-                     matched_files = [f for f in other_files if internal_key.lower() in os.path.basename(f).lower()]
-                     if matched_files:
-                         category_files = matched_files
-            else:
-                # Standard lookup (alerts, supplies, SA, DSR Packet)
-                category_files = found_items.get(internal_key, [])
+            if not os.path.exists(directory):
+                return
 
-            # --- Update Dropdown UI ---
-            # Skip dropdown for UI, EWS, Reports, Tap as they don't need specific file selection
-            if combo and internal_key not in ["UI", "EWS", "Reports", "Tap"]:
-                # Store current selection
-                current_text = combo.currentText()
-                
-                # Check if we need to update items (only if count changed or different files)
-                # Optimization: Re-populating every time is safer for consistency if files change
-                # but we must try to preserve selection.
-                
-                # If > 1 file, show combo and populate
-                if len(category_files) > 1:
-                    combo.blockSignals(True)
-                    combo.clear()
-                    # Add basenames
-                    for f in category_files:
-                        combo.addItem(os.path.basename(f), f) # User sees name, data is full path
-                    
-                    # Restore selection if possible
-                    index = combo.findText(current_text)
-                    if index >= 0:
-                        combo.setCurrentIndex(index)
+            builder = ReportBuilder(directory, step, self.strategy)
+
+            # 1. Get Selected Categories
+            found_items = builder.scan_files()
+            selected_categories = {}
+            active_cats_display_names = []
+
+            for display_name, internal_key in self.cat_map.items():
+                cb = self.category_checks.get(internal_key)
+                combo = self.category_combos.get(internal_key)
+
+                # --- Resolve Files for this Category ---
+                category_files = []
+
+                # Treat "Tap" as a manual category like UI/EWS
+                if internal_key in ["UI", "EWS", "Reports", "Tap"]:
+                    other_files = found_items.get("Other", [])
+                    # For Tap, we don't scan files, it's manual.
+                    # For UI/EWS/Reports, we look for matches.
+                    if internal_key != "Tap":
+                        matched_files = [f for f in other_files if internal_key.lower() in os.path.basename(f).lower()]
+                        if matched_files:
+                            category_files = matched_files
+                else:
+                    # Standard lookup (alerts, supplies, SA, DSR Packet)
+                    category_files = found_items.get(internal_key, [])
+
+                # --- Update Dropdown UI ---
+                # Skip dropdown for UI, EWS, Reports, Tap as they don't need specific file selection
+                if combo and internal_key not in ["UI", "EWS", "Reports", "Tap"]:
+                    # Store current selection
+                    current_text = combo.currentText()
+
+                    # If > 1 file, show combo and populate
+                    if len(category_files) > 1:
+                        combo.blockSignals(True)
+                        combo.clear()
+                        for f in category_files:
+                            combo.addItem(os.path.basename(f), f)  # User sees name, data is full path
+
+                        # Restore selection if possible
+                        index = combo.findText(current_text)
+                        if index >= 0:
+                            combo.setCurrentIndex(index)
+                        else:
+                            combo.setCurrentIndex(0)
+
+                        combo.setVisible(True)
+                        combo.blockSignals(False)
                     else:
-                        combo.setCurrentIndex(0)
-                        
-                    combo.setVisible(True)
-                    combo.blockSignals(False)
+                        combo.setVisible(False)
+                        combo.clear()  # Clear so it doesn't hold old state
+
+                # --- Add to Selected Categories if Checked ---
+                if cb and cb.isChecked():
+                    # Telemetry is controlled by the per-color pickers; do not auto-include all telemetry files.
+                    if internal_key == "Telemetry":
+                        continue
+
+                    active_cats_display_names.append(display_name)
+
+                    # Determine which file(s) to use
+                    final_files = []
+
+                    if combo and combo.isVisible() and combo.count() > 0:
+                        # Use specific selected file
+                        selected_path = combo.currentData()
+                        if selected_path:
+                            final_files = [selected_path]
+                    else:
+                        # Use all found (default behavior) or whatever was found
+                        final_files = category_files
+
+                    # For CDM-like categories, include the key even if no file exists yet.
+                    if internal_key in ["alerts", "suppliesPublic", "suppliesPrivate", "supplyAssessment", "DSR Packet"]:
+                        selected_categories[internal_key] = final_files
+                    elif final_files:
+                        selected_categories[internal_key] = final_files
+
+                    # Special Case: Alerts. Even if no files found yet (maybe mismatch), pass the key if checked
+                    if internal_key == "alerts":
+                        selected_categories[internal_key] = final_files  # Might be empty
+
+                    # Special Case: Tap (43/63). Always include if checked, even if no files found (it's manual)
+                    if internal_key == "Tap":
+                        # Pass the DISPLAY NAME so builder knows which header to use (43-Tap vs 63-Tap)
+                        selected_categories[internal_key] = [display_name]
+
+            # --- Telemetry per-color picker (Option A1) ---
+            telemetry_files = found_items.get("Telemetry", [])
+            telemetry_selected = []
+
+            telemetry_enabled = bool(
+                self.category_checks.get("Telemetry") and self.category_checks["Telemetry"].isChecked()
+            )
+            if self.telemetry_container:
+                self.telemetry_container.setVisible(telemetry_enabled and bool(self.telemetry_combos))
+
+            # Build mapping: label -> list[file_path]
+            telemetry_by_label = {}
+            for p in telemetry_files:
+                label = builder.get_telemetry_color_label_from_file(p)
+                telemetry_by_label.setdefault(label, []).append(p)
+
+            # Populate combos and restore saved selection
+            if self.telemetry_combos:
+                self._block_signals(True)
+                try:
+                    for label, combo in self.telemetry_combos.items():
+                        current = combo.currentData()
+                        saved = (
+                            self._pending_telemetry_restore.get(label)
+                            if isinstance(self._pending_telemetry_restore, dict)
+                            else None
+                        )
+
+                        options = telemetry_by_label.get(label, [])
+                        combo.clear()
+                        combo.addItem(f"{label}: None", None)
+                        for fpath in options:
+                            combo.addItem(f"{label}: {os.path.basename(fpath)}", fpath)
+
+                        target = saved if saved in options else (current if current in options else None)
+                        if target:
+                            idx = combo.findData(target)
+                            if idx >= 0:
+                                combo.setCurrentIndex(idx)
+                finally:
+                    self._block_signals(False)
+
+                # Clear pending restore once applied
+                self._pending_telemetry_restore = {}
+
+                # Collect telemetry selections (enforce one per color via combo)
+                if telemetry_enabled:
+                    for label, combo in self.telemetry_combos.items():
+                        chosen = combo.currentData()
+                        if chosen:
+                            telemetry_selected.append(chosen)
+
+            # 2. Get Selected Colors
+            colors = [k for k, cb in self.color_checks.items() if cb.isChecked()]
+            for k, cb in self.color_checks.items():
+                self.global_colors_state[k] = cb.isChecked()
+
+            # If telemetry is enabled, pass only the explicitly selected telemetry files
+            if telemetry_enabled:
+                # Always include the key so the builder can print an empty Telemetry header if nothing is selected yet
+                selected_categories["Telemetry"] = telemetry_selected
+                # Keep top sentence behavior unchanged: only add Telemetry when a telemetry file is selected
+                if telemetry_selected:
+                    active_cats_display_names.append("Telemetry")
+
+            # 4. Build Header String
+            header_str = ""
+            if active_cats_display_names:
+                if len(active_cats_display_names) == 1:
+                    header_str = f"{active_cats_display_names[0]} was correct and to spec."
+                elif len(active_cats_display_names) == 2:
+                    header_str = (
+                        f"{active_cats_display_names[0]} and {active_cats_display_names[1]} were correct and to spec."
+                    )
                 else:
-                    combo.setVisible(False)
-                    combo.clear() # Clear so it doesn't hold old state
+                    last = active_cats_display_names.pop()
+                    header_str = f"{', '.join(active_cats_display_names)}, and {last} were correct and to spec."
+            else:
+                header_str = "Nothing selected."
 
-            # --- Add to Selected Categories if Checked ---
-            if cb and cb.isChecked():
-                active_cats_display_names.append(display_name)
-                
-                # Determine which file(s) to use
-                final_files = []
-                
-                if combo and combo.isVisible() and combo.count() > 0:
-                    # Use specific selected file
-                    selected_path = combo.currentData()
-                    if selected_path:
-                        final_files = [selected_path]
+            # 5. Generate Body
+            body = builder.generate_report(selected_categories, colors, selected_alerts=None)
+
+            # --- Notification Logic ---
+            color_dependent_cats = ["alerts", "suppliesPublic", "suppliesPrivate", "supplyAssessment", "DSR Packet"]
+            has_dependent_cat = any(cat in selected_categories for cat in color_dependent_cats)
+
+            if has_dependent_cat and not colors:
+                self.lbl_status.setText("⚠ No Color Selected")
+                self.lbl_status.setVisible(True)
+            else:
+                self.lbl_status.setVisible(False)
+
+            # Strip default header from body if it exists
+            lines = body.split("\n")
+            if len(lines) > 0 and "correct and to spec" in lines[0]:
+                if len(lines) > 2:
+                    body = "\n".join(lines[2:])
                 else:
-                    # Use all found (default behavior) or whatever was found
-                    final_files = category_files
-                
-                if final_files:
-                    selected_categories[internal_key] = final_files
-                
-                # Special Case: Alerts. Even if no files found yet (maybe mismatch), pass the key if checked
-                if internal_key == "alerts":
-                     selected_categories[internal_key] = final_files # Might be empty
+                    body = ""
 
-                # Special Case: Tap (43/63). Always include if checked, even if no files found (it's manual)
-                if internal_key == "Tap":
-                     # Pass the DISPLAY NAME so builder knows which header to use (43-Tap vs 63-Tap)
-                     selected_categories[internal_key] = [display_name] 
+            final_text = f"{header_str}\n\n{body}"
 
-        # 2. Get Selected Colors
-        colors = [k for k, cb in self.color_checks.items() if cb.isChecked()]
-        
-        # 3. Selected Alerts Logic (Removed manual map)
-        # We just pass the selected_categories which includes 'alerts' if checked.
-        
-        # 4. Build Header String
-        header_str = ""
-        if active_cats_display_names:
-            if len(active_cats_display_names) == 1:
-                header_str = f"{active_cats_display_names[0]} was correct and to spec."
-            elif len(active_cats_display_names) == 2:
-                header_str = f"{active_cats_display_names[0]} and {active_cats_display_names[1]} were correct and to spec."
+            # Add exactly 2 newlines at the end ONLY if UI or EWS is selected
+            if "UI" in selected_categories or "EWS" in selected_categories:
+                final_text = final_text.rstrip()
+                final_text += "\n\n"
+
+            # Save scroll position
+            v_scroll = self.result_viewer.verticalScrollBar().value()
+            self.result_viewer.setPlainText(final_text)
+            self.result_viewer.verticalScrollBar().setValue(v_scroll)
+
+            # Disable copy button if nothing selected
+            if header_str == "Nothing selected." and not body:
+                self.btn_copy.setEnabled(False)
             else:
-                last = active_cats_display_names.pop()
-                header_str = f"{', '.join(active_cats_display_names)}, and {last} were correct and to spec."
-        else:
-            header_str = "Nothing selected."
-            
-        # 5. Generate Body
-        # Pass None for selected_alerts as we rely on auto-match logic in builder now
-        body = builder.generate_report(selected_categories, colors, selected_alerts=None)
-        
-        # --- Notification Logic ---
-        # Check if color-dependent categories are selected but NO colors are selected
-        # Added DSR and supplyAssessment to list
-        color_dependent_cats = ["alerts", "suppliesPublic", "suppliesPrivate", "supplyAssessment", "Telemetry", "DSR Packet"]
-        has_dependent_cat = any(cat in selected_categories for cat in color_dependent_cats)
-        
-        if has_dependent_cat and not colors:
-            self.lbl_status.setText("⚠ No Color Selected")
-            self.lbl_status.setVisible(True)
-        else:
-            self.lbl_status.setVisible(False)
-        
-        # Strip default header from body if it exists
-        lines = body.split('\n')
-        if len(lines) > 0 and "correct and to spec" in lines[0]:
-            if len(lines) > 2:
-                body = '\n'.join(lines[2:])
-            else:
-                body = ""
-            
-        final_text = f"{header_str}\n\n{body}"
-
-        # Add exactly 2 newlines at the end ONLY if UI or EWS is selected
-        if "UI" in selected_categories or "EWS" in selected_categories:
-            final_text = final_text.rstrip() + "\n\n" 
-            # Note: rstrip() ensures we start from known end, then add 3 \n to get 2 blank lines (Line + Blank + Blank)
-            # Actually standard is usually text + \n\n for 2 empty lines.
-            # Let's stick to appending to whatever is there, but ensuring 2 blank lines at visual end.
-            
-            # Reset to clean end
-            final_text = final_text.rstrip()
-            # Add 2 blank lines (requires 3 newlines: one to end current line, two for blanks)
-            final_text += "\n\n"
-        
-        # Save scroll position
-        v_scroll = self.result_viewer.verticalScrollBar().value()
-        
-        self.result_viewer.setPlainText(final_text)
-        
-        # Restore scroll position
-        self.result_viewer.verticalScrollBar().setValue(v_scroll)
-        
-        # Disable copy button if nothing selected
-        if header_str == "Nothing selected." and not body:
-            self.btn_copy.setEnabled(False)
-        else:
-            self.btn_copy.setEnabled(True)
+                self.btn_copy.setEnabled(True)
+        finally:
+            self._in_generate_report = False
 

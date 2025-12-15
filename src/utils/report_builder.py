@@ -58,6 +58,43 @@ class ReportBuilder:
                 
         return found_items
 
+    def get_telemetry_color_label_from_file(self, file_path):
+        """
+        Determines the display label (e.g., 'Black', 'Cyan', 'Tri-Color') for a telemetry file.
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+            if not content:
+                return "Unknown"
+            data = json.loads(content)
+        except Exception:
+            return "Unknown"
+
+        supply_code = None
+        try:
+            if "eventDetail" in data and "identityInfo" in data["eventDetail"]:
+                supply_code = data["eventDetail"]["identityInfo"].get("supplyColorCode")
+        except Exception:
+            supply_code = None
+
+        if not supply_code:
+            return "Unknown"
+
+        code = str(supply_code).strip().upper()
+
+        # Strategy-specific labels
+        if self.strategy and self.strategy.get_name() == "Dune IPH":
+            return "Black" if code == "K" else "Tri-Color"
+
+        # Default (IIC-like): C/M/Y/K -> names
+        return {
+            "C": "Cyan",
+            "M": "Magenta",
+            "Y": "Yellow",
+            "K": "Black",
+        }.get(code, "Unknown")
+
     def get_available_alerts(self):
         """
         Scans alert files and returns a list of alert details.
@@ -118,6 +155,7 @@ class ReportBuilder:
         output.append(f"UI, EWS, CDM, and Telemetry were correct and to spec.")
         output.append("")
         
+        empty_lines_when_no_content = 3
         sections = ["suppliesPrivate", "suppliesPublic", "supplyAssessment", "DSR Packet"]
         
         # We will process alerts differently: Only if 'alerts' is selected, we look for them.
@@ -129,26 +167,33 @@ class ReportBuilder:
              sections.insert(0, "alerts") # Put alerts first or last? Usually top.
 
         for section in sections:
+            # Only include sections that were selected (even if there are no files yet)
+            if section not in selected_categories:
+                continue
+
             files = selected_categories.get(section, [])
             # For alerts, we might not have 'files' passed if the UI logic removed it from the map because no file was explicitly checked.
             # But scan_files finds them. The UI passes what is selected.
             # If "Alerts" toggle is ON, the UI should pass the alert files in selected_categories["alerts"].
             
-            if files: 
-                # Determine processor based on section
-                if section == "alerts":
-                    # Use the new target_alert_ids derived from colors
-                    processor = lambda c: self._process_alerts_json(c, target_alert_ids)
-                elif "supplies" in section:
-                    processor = lambda c: self._process_supplies_json(c, colors)
-                elif section in ["supplyAssessment", "DSR Packet"]:
-                     processor = lambda c: self._process_color_coded_json(c, colors)
-                else:
-                    processor = self._process_generic_json
+            # Determine processor based on section
+            if section == "alerts":
+                processor = lambda c: self._process_alerts_json(c, target_alert_ids)
+            elif "supplies" in section:
+                processor = lambda c: self._process_supplies_json(c, colors)
+            elif section in ["supplyAssessment", "DSR Packet"]:
+                processor = lambda c: self._process_color_coded_json(c, colors)
+            else:
+                processor = self._process_generic_json
 
-                section_text = self._build_section(section, files, processor)
-                if section_text:
-                    output.append(section_text)
+            section_lines = self._build_section(
+                section,
+                files,
+                processor,
+                force_header=True,
+                empty_line_count=empty_lines_when_no_content,
+            )
+            output.extend(section_lines)
 
         # 3. Process Tap (Manual Input)
         # UI stores this as selected_categories["Tap"] = ["43-Tap"] or ["63-Tap"] (display label).
@@ -165,18 +210,43 @@ class ReportBuilder:
 
         if tap_label:
             output.append(self._format_section_header(tap_label))
-            output.append("\n\n")  # Blank space for manual input
+            output.extend([""] * empty_lines_when_no_content)  # Blank space for manual input
             # Note: No content generation needed
 
         # 4. Process Telemetry
-        telemetry_files = selected_categories.get("Telemetry", [])
-        if telemetry_files:
-            processed_telemetry = self._process_telemetry(telemetry_files, colors)
-            if processed_telemetry:
+        # - If Telemetry was selected but no files are selected yet, print a single empty Telemetry header.
+        # - If telemetry files are selected, print separate sections per color label.
+        if "Telemetry" in selected_categories:
+            telemetry_files = selected_categories.get("Telemetry", [])
+            if not telemetry_files:
                 output.append(self._format_section_header("Telemetry"))
-                output.append("")  # Blank line after header
-                output.extend(processed_telemetry)
-                output.append("")  # Blank line after content
+                output.extend([""] * empty_lines_when_no_content)
+            else:
+                grouped = {}
+                for p in telemetry_files:
+                    label = self.get_telemetry_color_label_from_file(p)
+                    grouped.setdefault(label, []).append(p)
+
+                # Preserve a reasonable order (strategy cartridge order first, then Unknown)
+                ordered_labels = []
+                if self.strategy:
+                    ordered_labels.extend(self.strategy.get_cartridges())
+                for lbl in grouped.keys():
+                    if lbl not in ordered_labels:
+                        ordered_labels.append(lbl)
+
+                for lbl in ordered_labels:
+                    files = grouped.get(lbl)
+                    if not files:
+                        continue
+                    processed = self._process_telemetry(files)
+                    output.append(self._format_section_header(f"Telemetry {lbl}"))
+                    if processed:
+                        output.append("")
+                        output.extend(processed)
+                        output.append("")
+                    else:
+                        output.extend([""] * empty_lines_when_no_content)
 
         # 5. Process "Other"
         other_files = selected_categories.get("Other", [])
@@ -193,33 +263,58 @@ class ReportBuilder:
 
         return "\n".join(output)
 
-    def _build_section(self, section_name, file_paths, processor_func):
+    def _build_section(self, section_name, file_paths, processor_func, force_header=False, empty_line_count=3):
+        """
+        Builds a section as a list of lines.
+        If force_header is True, the header is returned even if there is no content, followed by empty_line_count blanks.
+        """
         header = self._format_section_header(section_name)
-        content = []
-        
+        lines = []
+
+        # No files: either empty section or skip
+        if not file_paths:
+            if force_header:
+                lines.append(header)
+                lines.extend([""] * empty_line_count)
+            return lines
+
+        content_lines = []
         valid_data_found = False
-        
+
         for file_path in file_paths:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     file_content = f.read()
-                    
-                    processed_text = processor_func(file_content)
-                        
-                    # If processor returned empty string (e.g. no matching colors), skip it
-                    if processed_text.strip() == "" or processed_text.strip() == "{}":
-                        continue
-                        
-                    content.append(processed_text)
-                    valid_data_found = True
+
+                processed_text = processor_func(file_content)
+
+                # If processor returned empty string (e.g. no matching colors), skip it
+                if processed_text.strip() == "" or processed_text.strip() == "{}":
+                    continue
+
+                content_lines.extend(processed_text.splitlines())
+                content_lines.append("")  # blank line between file blocks
+                valid_data_found = True
             except Exception as e:
-                content.append(f"Error reading {os.path.basename(file_path)}: {str(e)}")
+                content_lines.append(f"Error reading {os.path.basename(file_path)}: {str(e)}")
+                content_lines.append("")
+                valid_data_found = True
 
         if not valid_data_found:
-             return None
+            if force_header:
+                lines.append(header)
+                lines.extend([""] * empty_line_count)
+            return lines
 
-        # Format: Header, blank line, content, blank line (no footer here)
-        return f"{header}\n\n" + "\n".join(content) + "\n"
+        # Trim trailing blanks
+        while content_lines and content_lines[-1] == "":
+            content_lines.pop()
+
+        lines.append(header)
+        lines.append("")  # blank line after header
+        lines.extend(content_lines)
+        lines.append("")  # blank line after section
+        return lines
 
     def _format_section_header(self, name):
         total_len = 50
@@ -270,11 +365,19 @@ class ReportBuilder:
                          code = obj_colors[0]
 
                 if not code: return False
-                
+
+                # Strategy-driven matching (handles IPH Tri-Color ⇔ CMY, etc.)
+                if self.strategy:
+                    try:
+                        return self.strategy.matches_color_code(code, colors)
+                    except Exception:
+                        # Fallback to legacy behavior below if strategy method misbehaves
+                        pass
+
+                # Legacy fallback matching (IIC-style)
                 code = str(code).lower()
                 for c in colors:
                     c_lower = c.lower()
-                    # Simple match logic
                     if c_lower == "cyan" and ("c" == code or "cyan" in code): return True
                     if c_lower == "magenta" and ("m" == code or "magenta" in code): return True
                     if c_lower == "yellow" and ("y" == code or "yellow" in code): return True
@@ -510,11 +613,7 @@ class ReportBuilder:
                     
         return data
 
-    def _process_telemetry(self, file_paths, colors):
-        # If no colors selected, return empty (consistent with supplies behavior)
-        if not colors:
-            return []
-        
+    def _process_telemetry(self, file_paths):
         results = []
         for path in file_paths:
             try:
@@ -524,39 +623,6 @@ class ReportBuilder:
                         # Parse and check color match
                         try:
                             data = json.loads(content)
-                            
-                            # If colors are specified, check if this telemetry matches
-                            if colors:
-                                # Extract supplyColorCode from telemetry structure
-                                supply_color = None
-                                if "eventDetail" in data and "identityInfo" in data["eventDetail"]:
-                                    supply_color = data["eventDetail"]["identityInfo"].get("supplyColorCode")
-                                
-                                # Check if this supply color matches any selected color
-                                if supply_color:
-                                    color_match = False
-                                    supply_color_lower = supply_color.lower()
-                                    for c in colors:
-                                        target = c.lower()
-                                        if target == "magenta" and supply_color_lower == "m":
-                                            color_match = True
-                                            break
-                                        if target == "cyan" and supply_color_lower == "c":
-                                            color_match = True
-                                            break
-                                        if target == "yellow" and supply_color_lower == "y":
-                                            color_match = True
-                                            break
-                                        if target == "black" and supply_color_lower == "k":
-                                            color_match = True
-                                            break
-                                    
-                                    if not color_match:
-                                        continue  # Skip this telemetry item
-                                else:
-                                    # No supplyColorCode found, skip it if colors are filtered
-                                    continue
-                            
                             # Pretty print with standard 4-space indent
                             pretty = json.dumps(data, indent=4)
                             # Add tab prefix to each line
@@ -565,7 +631,6 @@ class ReportBuilder:
                         except json.JSONDecodeError:
                             # If not valid JSON, skip it
                             pass
-                        results.append("")
             except:
                 pass
         return results

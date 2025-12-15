@@ -82,3 +82,28 @@ class DuneIPHStrategy(BaseDuneStrategy):
             if target == "tri-color" and is_tri_color: return True
             
         return False
+
+    def matches_color_code(self, code, selected_colors):
+        """
+        IPH: selected colors are 'Black' and 'Tri-Color'.
+        - Black matches K
+        - Tri-Color matches CMY (and any CMY-like composite that includes C, M, and Y and excludes K)
+        """
+        if not code or not selected_colors:
+            return False
+
+        code_str = str(code).strip().upper()
+        is_black = (code_str == "K")
+        is_tri = (
+            code_str == "CMY"
+            or ("C" in code_str and "M" in code_str and "Y" in code_str and "K" not in code_str)
+        )
+
+        for c in selected_colors:
+            target = str(c).strip().lower()
+            if target == "black" and is_black:
+                return True
+            if target in ["tri-color", "tricolor", "tri color"] and is_tri:
+                return True
+
+        return False

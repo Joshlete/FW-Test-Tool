@@ -237,7 +237,7 @@ class DuneTab(QtTabContent):
             
             # Use default args in lambda to capture loop variables correctly
             if action_type == "ui":
-                q_action.triggered.connect(lambda checked=False, p=param: self.action_manager.capture_alert_ui(p))
+                q_action.triggered.connect(lambda checked=False, p=param: self.action_manager.capture_ui_screen(p))
             elif action_type == "ecl":
                 q_action.triggered.connect(lambda checked=False, p=param: self.action_manager.capture_ecl(p))
                 
