@@ -1,7 +1,7 @@
 import os
 import threading
 from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QLineEdit)
-from PySide6.QtCore import Qt, QThreadPool, QTimer
+from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
@@ -25,12 +25,17 @@ class AresTab(QtTabContent):
     Ares Tab Implementation (formerly Trillium).
     Uses separate managers for logic (composition pattern).
     """
+
+    capture_finished = Signal()
+
     def __init__(self, config_manager):
         super().__init__(tab_name="ares", config_manager=config_manager) # Initializes step_manager and file_manager
         
         self.config_manager = config_manager
         self.thread_pool = QThreadPool()
         self.ip = None
+
+        self.capture_finished.connect(lambda: self._set_busy(self.btn_ews, False, "Capture EWS"))
         
         # Snip Tool
         self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
@@ -320,7 +325,7 @@ class AresTab(QtTabContent):
                 log_error("ews.capture", "exception", "EWS capture failed with exception", {"error": str(e)})
                 self.error_occurred.emit(f"EWS capture failed: {str(e)}")
             finally:
-                self._set_busy(self.btn_ews, False, idle_text="Capture EWS")
+                self.capture_finished.emit()
                 
         threading.Thread(target=_run_capture).start()
 
