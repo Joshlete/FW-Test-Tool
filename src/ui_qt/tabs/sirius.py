@@ -2,7 +2,7 @@ import os
 import threading
 import requests
 from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QFileDialog, QSplitterHandle)
-from PySide6.QtCore import Qt, QThreadPool, QByteArray, QTimer
+from PySide6.QtCore import Qt, QThreadPool, QByteArray, QTimer, Signal
 from PySide6.QtGui import QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
@@ -57,12 +57,18 @@ class SiriusTab(QtTabContent):
     Sirius Tab Implementation.
     Combines UI Stream, LEDM controls, Alerts, and Telemetry in a modern layout.
     """
+    
+    capture_finished = Signal()
+
     def __init__(self, config_manager):
         super().__init__(tab_name="sirius", config_manager=config_manager) # Initializes step_manager and file_manager
         
         self.config_manager = config_manager
         self.thread_pool = QThreadPool()
         
+        # Connect signal for EWS capture button reset
+        self.capture_finished.connect(lambda: self._set_busy(self.btn_ews, False, "Capture EWS"))
+
         # --- Toolbar & Steps ---
         self.toolbar = ActionToolbar()
         self.layout.addWidget(self.toolbar)
@@ -283,7 +289,7 @@ class SiriusTab(QtTabContent):
             except Exception as e:
                 self.error_occurred.emit(f"EWS capture failed: {str(e)}")
             finally:
-                self._set_busy(self.btn_ews, False, idle_text="Capture EWS")
+                self.capture_finished.emit()
                 
         threading.Thread(target=_run_capture).start()
 

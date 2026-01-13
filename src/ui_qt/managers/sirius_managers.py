@@ -1,7 +1,7 @@
 import os
 import json
 import xml.etree.ElementTree as ET
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
 
 from ..workers_sirius import FetchSiriusAlertsWorker, FetchSiriusLEDMWorker, FetchSiriusTelemetryWorker, EraseSiriusTelemetryWorker
@@ -159,13 +159,15 @@ class SiriusLEDMManager(QObject):
             
         self.status_message.emit(f"Fetching {endpoint}...")
         worker = FetchSiriusLEDMWorker(self.ip, [endpoint])
-        worker.signals.finished.connect(lambda results: self._on_view_fetched(endpoint, results))
+        worker.signals.finished.connect(self._on_view_fetched)
         self.thread_pool.start(worker)
 
-    def _on_view_fetched(self, endpoint, results):
-        content = results.get(endpoint, "No data")
-        self.widget.display_data(endpoint, content)
-        self.status_message.emit("Ready")
+    @Slot(object)
+    def _on_view_fetched(self, results):
+        for endpoint, content in results.items():
+            self.widget.display_data(endpoint, content)
+            self.status_message.emit("Ready")
+            break
 
     def _on_error(self, msg):
         self.widget.set_loading(False)

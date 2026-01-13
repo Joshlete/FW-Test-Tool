@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 from ..workers import FetchAlertsWorker, AlertActionWorker
 from src.utils.logging.app_logger import log_error, log_info
 
@@ -72,9 +72,22 @@ class AlertsManager(QObject):
         worker = AlertActionWorker(self.ip, alert_id, action_value)
         
         # On success: Refresh the list and notify user
-        worker.signals.finished.connect(lambda: self.fetch_alerts())
-        worker.signals.finished.connect(lambda: self.status_message.emit(f"Action '{action_value}' successful"))
+        # We pass the action_value using a partial or helper, but simpler to just emit the message in the slot
+        # if we know what it was. Or just a generic success message.
+        # However, to be cleaner, we can store context or just emit generic success.
+        # Let's use a specialized slot that fetches alerts and emits success.
         
+        self._pending_action_value = action_value # Store temp state or use partial-like approach with a custom class
+        # Actually, let's just use a dedicated slot for this common pattern
+        
+        worker.signals.finished.connect(self._on_action_success)
         worker.signals.error.connect(self._on_error)
         
         self.thread_pool.start(worker)
+
+    @Slot()
+    def _on_action_success(self):
+        self.fetch_alerts()
+        # If we want the specific message, we'd need to pass it. 
+        # For now a generic message is safer than threading bugs.
+        self.status_message.emit("Alert action successful")

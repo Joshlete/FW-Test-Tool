@@ -1,6 +1,6 @@
 import os
 import json
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 from ..workers import FetchCDMWorker
 from src.utils.logging.app_logger import log_error, log_info
 
@@ -112,10 +112,18 @@ class CDMManager(QObject):
         worker.signals.error.connect(lambda msg: self._on_error(msg, "CDM capture failed"))
         
         # Always reset loading state when done
-        worker.signals.finished.connect(lambda: self.widget.set_loading(False))
-        worker.signals.error.connect(lambda: self.widget.set_loading(False))
+        worker.signals.finished.connect(self._on_capture_finished)
+        worker.signals.error.connect(self._on_capture_finished_error)
         
         self.thread_pool.start(worker)
+
+    @Slot()
+    def _on_capture_finished(self):
+        self.widget.set_loading(False)
+
+    @Slot()
+    def _on_capture_finished_error(self):
+        self.widget.set_loading(False)
 
     def _on_capture_complete(self, results, variant):
         saved_count = 0
@@ -199,20 +207,24 @@ class CDMManager(QObject):
         )
         
         worker = FetchCDMWorker(self.ip, [endpoint])
-        worker.signals.finished.connect(lambda results: self._on_view_fetched(endpoint, results))
+        worker.signals.finished.connect(self._on_view_fetched)
         worker.signals.error.connect(lambda msg: self._on_error(msg, "CDM request failed"))
         self.thread_pool.start(worker)
 
-    def _on_view_fetched(self, endpoint, results):
-        content = results.get(endpoint, "No data")
-        self.widget.display_data(endpoint, content)
-        self.status_message.emit("Ready")
-        log_info(
-            "cdm.view",
-            "succeeded",
-            f"Fetched {endpoint}",
-            {"endpoint": endpoint},
-        )
+    @Slot(object)
+    def _on_view_fetched(self, results):
+        # We expect only one endpoint result for view_cdm_data
+        for endpoint, content in results.items():
+            self.widget.display_data(endpoint, content)
+            self.status_message.emit("Ready")
+            log_info(
+                "cdm.view",
+                "succeeded",
+                f"Fetched {endpoint}",
+                {"endpoint": endpoint},
+            )
+            # Only display the first one if multiple (shouldn't happen here)
+            break
 
     def _on_error(self, error_msg, user_message="CDM operation failed"):
         self.widget.set_loading(False)
