@@ -7,13 +7,13 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 from src.ui_qt.components.report_builder_window import ReportBuilderWindow
-from src.ui_qt.styles import load_stylesheet
+from src.ui_qt.utils.theme_manager import ThemeManager
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     # Load global styles so it looks correct
-    app.setStyleSheet(load_stylesheet())
+    ThemeManager.load_theme(app)
     
     window = ReportBuilderWindow()
     # Override directory for testing

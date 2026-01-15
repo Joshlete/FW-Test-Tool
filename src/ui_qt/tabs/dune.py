@@ -272,7 +272,8 @@ class DuneTab(QtTabContent):
         pages = self.strategy.get_ews_pages()
         for page in pages:
             action = QAction(page, self)
-            action.triggered.connect(lambda checked=False, p=page: self.action_manager.capture_ews(f"EWS {p}"))
+            # Pass the raw page name; the action manager/file manager handle the "EWS" prefixing.
+            action.triggered.connect(lambda checked=False, p=page: self.action_manager.capture_ews(p))
             menu.addAction(action)
         return menu
 

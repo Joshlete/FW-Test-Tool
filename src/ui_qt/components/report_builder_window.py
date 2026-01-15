@@ -336,7 +336,18 @@ class ReportBuilderWindow(QMainWindow):
     def set_directory(self, directory):
         """Public method to update directory from parent"""
         if directory and os.path.exists(directory):
+            # If directory changes, treat as a new run: reset all step/history state
+            try:
+                old_dir = os.path.abspath(self.default_dir) if self.default_dir else ""
+                new_dir = os.path.abspath(directory)
+            except Exception:
+                old_dir = str(self.default_dir)
+                new_dir = str(directory)
+
             self.dir_input.setText(directory)
+            if new_dir != old_dir:
+                self._reset_run_state()
+
             self.default_dir = directory
             self.config_manager.set("capture_path", directory)
             self.generate_report()
@@ -345,6 +356,61 @@ class ReportBuilderWindow(QMainWindow):
             if hasattr(self, 'file_model'):
                 self.file_model.setRootPath(directory)
                 self.tree_view.setRootIndex(self.file_model.index(directory))
+
+    def _reset_run_state(self):
+        """
+        Reset all Report Builder state for a new directory/run:
+        - Clear step memory
+        - Reset to Step 1
+        - Clear all selections (categories, colors, telemetry picks)
+        - Clear preview/status UI
+        """
+        # Prevent any nested generation during reset
+        self._in_generate_report = True
+        try:
+            self.current_step = 1
+            self.step_data = {}
+            self._pending_telemetry_restore = {}
+
+            self._block_signals(True)
+            try:
+                # Reset categories
+                for cb in self.category_checks.values():
+                    cb.setChecked(False)
+
+                # Reset per-category file selectors
+                for combo in self.category_combos.values():
+                    combo.setVisible(False)
+                    combo.clear()
+
+                # Reset global colors
+                for name, cb in self.color_checks.items():
+                    cb.setChecked(False)
+                    self.global_colors_state[name] = False
+
+                # Reset telemetry per-color selectors to None
+                for combo in self.telemetry_combos.values():
+                    if combo.count() > 0:
+                        combo.setCurrentIndex(0)
+            finally:
+                self._block_signals(False)
+
+            # Reset step UI
+            if hasattr(self, "step_input"):
+                self.step_input.setText(str(self.current_step))
+
+            # Reset status UI
+            if hasattr(self, "lbl_status"):
+                self.lbl_status.setVisible(False)
+                self.lbl_status.setText("")
+
+            # Clear preview + disable copy until something is selected
+            if hasattr(self, "result_viewer"):
+                self.result_viewer.setPlainText("")
+            if hasattr(self, "btn_copy"):
+                self.btn_copy.setEnabled(False)
+        finally:
+            self._in_generate_report = False
 
     def set_strategy(self, strategy):
         """Update the printer strategy dynamically."""

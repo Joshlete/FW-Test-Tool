@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Printer Testing Environment V12 (Industrial HMI)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <style>
+        /* Industrial Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #404040; }
+        ::-webkit-scrollbar-thumb:hover { background: #737373; }
+        
+        .font-mono-data { font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace; }
+        
+        /* Animation: Scan Line */
+        @keyframes scan { 0%, 100% { left: 10%; } 50% { left: 80%; } }
+        .animate-scan { animation: scan 4s ease-in-out infinite; }
+
+        /* Button Active State helper */
+        .btn-active:active { transform: translateY(1px); }
+
+        /* Custom Checkbox Style */
+        .custom-checkbox:checked {
+            background-color: #ffffff; /* White check */
+            border-color: #ffffff;
+        }
+        .custom-checkbox:checked::after {
+            content: '✔';
+            display: block;
+            color: #000;
+            font-size: 10px;
+            text-align: center;
+            line-height: 12px;
+        }
+    </style>
+</head>
+<body class="bg-black text-neutral-300 font-sans h-screen flex flex-col overflow-hidden selection:bg-white selection:text-black">
+
+    <!-- HEADER: Minimal & High Contrast -->
+    <header class="h-14 bg-neutral-900 border-b border-neutral-800 flex items-center px-4 shrink-0 z-20 gap-4">
+        
+        <!-- Logo -->
+        <div class="text-white text-lg shrink-0 opacity-80 hover:opacity-100 transition-opacity">
+            <i class="fa-solid fa-cube"></i>
+        </div>
+
+        <!-- IP Address: Dark inputs for focus -->
+        <div class="relative group shrink-0">
+            <label class="absolute -top-2 left-1 bg-neutral-900 px-1 text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Target IP</label>
+            <div class="flex items-center">
+                <input type="text" value="15.8.177.192" class="bg-black border border-neutral-700 text-green-500 font-mono-data text-xs rounded-l focus:ring-1 focus:ring-neutral-500 block w-28 p-1.5 h-8">
+                <button class="h-8 bg-neutral-800 border-y border-r border-neutral-700 hover:bg-neutral-700 text-neutral-400 hover:text-white px-2 rounded-r transition-colors">
+                    <i class="fa-solid fa-link text-xs"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Family Selector -->
+        <div class="relative group shrink-0">
+            <label class="absolute -top-2 left-1 bg-neutral-900 px-1 text-[9px] text-neutral-500 font-bold uppercase tracking-wider">Family</label>
+            <select class="bg-black border border-neutral-700 hover:border-neutral-500 text-white text-xs font-bold uppercase rounded focus:ring-1 focus:ring-neutral-500 block w-32 p-1.5 h-8 cursor-pointer">
+                <option selected>Dune IIC</option>
+                <option>Dune IPH</option>
+                <option>Sirius</option>
+            </select>
+        </div>
+
+        <!-- Directory -->
+        <div class="relative group flex-1 min-w-0">
+            <label class="absolute -top-2 left-1 bg-neutral-900 px-1 text-[9px] text-neutral-400 font-bold uppercase tracking-wider"><i class="fa-regular fa-folder-open mr-1"></i> Directory</label>
+            <div class="flex items-center w-full">
+                <input type="text" value="/mnt/data/tests/dune_series/2023-10-27_run_04/" class="bg-black border border-neutral-700 text-neutral-300 font-mono-data text-xs rounded focus:ring-1 focus:ring-neutral-500 block w-full p-1.5 h-8 truncate hover:bg-neutral-900 transition-colors">
+            </div>
+        </div>
+
+        <!-- Menu Button -->
+        <div class="flex items-center shrink-0">
+            <button class="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-white hover:bg-neutral-800 rounded border border-transparent hover:border-neutral-700 transition-all">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN GRID -->
+    <main class="flex-1 p-3 overflow-y-auto lg:overflow-hidden min-h-0 bg-black">
+        <div class="grid grid-cols-12 gap-3 min-h-fit lg:h-full">
+
+            <!-- COL 1: CDM CONTROLS (Sectioned) -->
+            <div class="col-span-12 lg:col-span-3 flex flex-col h-[500px] lg:h-full bg-neutral-900 border border-neutral-800 rounded-sm overflow-hidden min-h-0">
+                <div class="px-3 py-2 bg-neutral-900 border-b border-neutral-800 flex justify-between items-center shrink-0">
+                    <h2 class="text-xs font-bold text-white uppercase tracking-wide">CDM Controls</h2>
+                    <span class="text-[9px] text-neutral-500 bg-black px-1.5 py-0.5 rounded border border-neutral-800">JSON</span>
+                </div>
+                
+                <!-- Sectioned List -->
+                <div class="flex-1 overflow-y-auto p-0">
+                    
+                    <!-- Section: Supply Data -->
+                    <div class="sticky top-0 bg-neutral-800/80 backdrop-blur-sm px-3 py-1 border-b border-neutral-700 z-10">
+                        <span class="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Supply Data</span>
+                    </div>
+                    <div class="px-2 py-1 space-y-0.5">
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" checked class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Alerts</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../supply/v1/alerts</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SuppliesPublic</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../suppliesPublic</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SuppliesPrivate</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../suppliesPrivate</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SupplyAssessment</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../supplyAssessment</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">RegionReset</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../regionReset</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SupplyHistory</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../supplyHistory</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">LifetimeCounters</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../lifetimeCounters</span>
+                        </label>
+                    </div>
+
+                    <!-- Section: Alerts & Events -->
+                    <div class="sticky top-0 bg-neutral-800/80 backdrop-blur-sm px-3 py-1 border-y border-neutral-700 z-10">
+                        <span class="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Alerts & Events</span>
+                    </div>
+                    <div class="px-2 py-1 space-y-0.5">
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Alert/Alerts</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../alert/v1/alerts</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Rtp/Alerts</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../rtp/v1/alerts</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">DCR SupplyData</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../dcrSupplyData</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">LifetimeCounter Snapshot</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../lifetimeCounterSnapshot</span>
+                        </label>
+                    </div>
+
+                    <!-- Section: System Info -->
+                    <div class="sticky top-0 bg-neutral-800/80 backdrop-blur-sm px-3 py-1 border-y border-neutral-700 z-10">
+                        <span class="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">System Info</span>
+                    </div>
+                    <div class="px-2 py-1 space-y-0.5">
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">PlatformInfo</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../platformInfo</span>
+                        </label>
+                        <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Identity</span>
+                            </div>
+                            <span class="text-[10px] text-neutral-600 font-mono-data">.../system/v1/identity</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="p-3 bg-neutral-900 border-t border-neutral-800 shrink-0">
+                    <button class="w-full py-2 bg-neutral-200 hover:bg-white text-black text-xs font-bold rounded shadow transition-all btn-active">
+                        SAVE TO DIRECTORY
+                    </button>
+                </div>
+            </div>
+
+            <!-- COL 2: CENTER OPERATIONS -->
+            <div class="col-span-12 lg:col-span-5 flex flex-col gap-3 h-[700px] lg:h-full min-h-0">
+                
+                <!-- Manual Operations - Redesigned as Tactile Keys -->
+                <div class="h-auto bg-neutral-900 border border-neutral-800 rounded-sm shrink-0">
+                    <div class="px-3 py-2 bg-neutral-900 border-b border-neutral-800">
+                        <h2 class="text-xs font-bold text-white uppercase tracking-wide">Manual Operations</h2>
+                    </div>
+                    
+                    <div class="p-3 grid grid-cols-2 gap-4">
+                        <!-- Left: Input Groups -->
+                        <div class="space-y-3 border-r border-neutral-800 pr-3">
+                            <div>
+                                <label class="text-[10px] text-neutral-500 font-bold uppercase mb-1 block">Step Control</label>
+                                <div class="flex">
+                                    <button class="bg-neutral-800 border border-neutral-700 hover:bg-neutral-700 hover:border-neutral-500 text-neutral-300 rounded-l px-3 py-1 btn-active"><i class="fa-solid fa-minus text-xs"></i></button>
+                                    <input type="text" value="1" class="w-full bg-black border-y border-neutral-700 text-center text-xs text-white font-mono-data focus:border-white focus:outline-none">
+                                    <button class="bg-neutral-800 border border-neutral-700 hover:bg-neutral-700 hover:border-neutral-500 text-neutral-300 rounded-r px-3 py-1 btn-active"><i class="fa-solid fa-plus text-xs"></i></button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-neutral-500 font-bold uppercase mb-1 block">Unlock</label>
+                                <div class="relative">
+                                    <input type="password" value="********" class="w-full bg-black border border-neutral-700 text-xs text-white rounded p-1.5 focus:border-white focus:outline-none hover:border-neutral-500 transition-colors">
+                                    <i class="fa-solid fa-lock absolute right-2 top-2 text-neutral-600 text-xs"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Action Keys -->
+                        <div class="flex flex-col gap-2 justify-center">
+                            <button class="flex items-center justify-between px-3 py-2 bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-neutral-500 rounded text-xs text-neutral-200 transition-all btn-active group">
+                                <span>Capture EWS</span>
+                                <i class="fa-solid fa-camera text-neutral-500 group-hover:text-white"></i>
+                            </button>
+                            <button class="flex items-center justify-between px-3 py-2 bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-neutral-500 rounded text-xs text-neutral-200 transition-all btn-active group">
+                                <span>Commands</span>
+                                <i class="fa-solid fa-terminal text-green-700 group-hover:text-green-500"></i>
+                            </button>
+                            <button class="flex items-center justify-between px-3 py-2 bg-neutral-800 hover:bg-neutral-750 border border-neutral-700 hover:border-neutral-500 rounded text-xs text-neutral-200 transition-all btn-active group">
+                                <span>Report</span>
+                                <i class="fa-solid fa-file-lines text-yellow-700 group-hover:text-yellow-500"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Printer View Container -->
+                <div class="flex-1 bg-black rounded border border-neutral-800 relative overflow-hidden flex flex-col min-h-[200px]">
+                    <!-- Toolbar Header -->
+                    <div class="px-3 py-2 border-b border-neutral-800 flex justify-between items-center bg-neutral-900 shrink-0">
+                        
+                        <!-- Tool Group -->
+                        <div class="flex items-center gap-2">
+                            <!-- Disconnect: Red for Danger -->
+                            <button class="h-7 bg-red-900/50 hover:bg-red-600 border border-red-900 text-red-200 hover:text-white text-[10px] font-bold px-3 rounded transition-all uppercase btn-active">
+                                Disconnect
+                            </button>
+                            
+                            <!-- Rotate Group: Joined for neatness -->
+                            <div class="flex rounded border border-neutral-700 overflow-hidden">
+                                <button class="h-7 w-8 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white border-r border-neutral-700 transition-colors" title="Rotate Left">
+                                    <i class="fa-solid fa-rotate-left text-[10px]"></i>
+                                </button>
+                                <button class="h-7 w-8 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors" title="Rotate Right">
+                                    <i class="fa-solid fa-rotate-right text-[10px]"></i>
+                                </button>
+                            </div>
+
+                            <!-- Capture Dropdown Redesign: Split Button style -->
+                            <div class="relative inline-block text-left z-30">
+                                <button id="captureBtn" class="h-7 flex items-center gap-2 bg-neutral-200 hover:bg-white text-black text-[10px] font-bold px-3 border border-transparent rounded shadow-sm transition-colors btn-active">
+                                    <i class="fa-solid fa-camera"></i> Capture <i class="fa-solid fa-caret-down opacity-50"></i>
+                                </button>
+                                
+                                <!-- Floating Menu (Styled High Contrast) -->
+                                <div id="captureMenu" class="absolute left-0 mt-2 w-48 bg-neutral-900 border border-neutral-700 rounded shadow-2xl opacity-0 invisible translate-y-1 transition-all duration-100 origin-top-left ring-1 ring-black ring-opacity-5">
+                                    <div class="py-1">
+                                        <div class="px-3 py-1.5 text-[9px] font-bold text-neutral-500 uppercase tracking-wider">Interface</div>
+                                        <a href="#" class="block px-4 py-2 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white">Home Screen</a>
+                                        <a href="#" class="block px-4 py-2 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white">Notification Center</a>
+                                        
+                                        <div class="h-px bg-neutral-800 my-1"></div>
+                                        <div class="px-3 py-1.5 text-[9px] font-bold text-neutral-500 uppercase tracking-wider">ECL Layers</div>
+                                        
+                                        <a href="#" class="flex items-center px-4 py-2 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white">
+                                            <span class="w-2 h-2 rounded-full bg-white mr-2"></span> ECL All
+                                        </a>
+                                        <a href="#" class="flex items-center px-4 py-2 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white">
+                                            <span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span> ECL Black
+                                        </a>
+                                        <a href="#" class="flex items-center px-4 py-2 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white">
+                                            <span class="w-2 h-2 rounded-full bg-cyan-500 mr-2"></span> ECL Cyan
+                                        </a>
+                                        <a href="#" class="flex items-center px-4 py-2 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white">
+                                            <span class="w-2 h-2 rounded-full bg-pink-500 mr-2"></span> ECL Magenta
+                                        </a>
+                                        <a href="#" class="flex items-center px-4 py-2 text-[11px] text-neutral-300 hover:bg-neutral-800 hover:text-white">
+                                            <span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span> ECL Yellow
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status Indicator -->
+                        <div class="h-6 flex items-center gap-1.5 bg-neutral-950 border border-neutral-800 px-2 rounded">
+                            <div class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                            <span class="text-green-500 text-[9px] font-bold uppercase tracking-tighter">Live Feed</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Content Area (Deep Black for True Color) -->
+                    <div class="flex-1 bg-black relative flex items-center justify-center p-4">
+                        <div class="w-full max-w-[320px] bg-neutral-900 border border-neutral-800 rounded-sm overflow-hidden shadow-2xl">
+                            <!-- Status Header -->
+                            <div class="px-2 py-1 flex justify-between text-[10px] text-neutral-500 font-mono-data border-b border-neutral-800 bg-neutral-950">
+                                <span>Jan/14/2026 4:31 PM</span>
+                                <span>15.8.177.136</span>
+                            </div>
+                            <!-- Mock Content -->
+                            <div class="p-4 flex flex-col items-center justify-center space-y-4">
+                                <div class="text-neutral-600 text-[10px] uppercase tracking-widest font-bold">Waiting for Job</div>
+                                <div class="w-8 h-1 bg-neutral-800 rounded-full overflow-hidden">
+                                    <div class="w-full h-full bg-neutral-600 animate-scan"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COL 3: ALERTS & TELEMETRY -->
+            <div class="col-span-12 lg:col-span-4 flex flex-col gap-3 h-[800px] lg:h-full min-h-0">
+                
+                <!-- Alerts (Condensed) -->
+                <div class="bg-neutral-900 border border-neutral-800 rounded-sm flex flex-col max-h-[30%] shadow-sm shrink-0">
+                    <div class="px-3 py-2 border-b border-neutral-800 flex justify-between items-center bg-neutral-900">
+                        <h2 class="text-xs font-bold text-white uppercase tracking-wide">Alerts</h2>
+                        <button class="h-6 w-6 flex items-center justify-center text-neutral-500 hover:text-white hover:bg-neutral-800 rounded transition-colors"><i class="fa-solid fa-rotate-right text-xs"></i></button>
+                    </div>
+                    <div class="overflow-y-auto p-2 space-y-2 bg-neutral-950/50">
+                        <!-- Alert Item -->
+                        <div class="flex items-center p-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-600 transition-colors rounded-sm">
+                            <div class="w-1 h-8 bg-blue-500 rounded-full mr-3 shrink-0"></div>
+                            <div class="flex items-center justify-between w-full">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xs font-bold text-white">65554</span>
+                                    <span class="text-[10px] text-neutral-300 bg-neutral-900 px-1.5 py-0.5 rounded border border-neutral-800">usedHPSupplyFlow</span>
+                                    <span class="text-[10px] text-neutral-500 bg-neutral-900/50 px-1.5 py-0.5 rounded">Priority: 301</span>
+                                </div>
+                                <button class="px-3 py-0.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 text-[10px] rounded transition-colors">Ok</button>
+                            </div>
+                        </div>
+                        <!-- Alert Item -->
+                        <div class="flex items-center p-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-600 transition-colors rounded-sm">
+                            <div class="w-1 h-8 bg-green-500 rounded-full mr-3 shrink-0"></div>
+                            <div class="flex items-center justify-between w-full">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xs font-bold text-white">65555</span>
+                                    <span class="text-[10px] text-neutral-400">genuineSupplyDetected</span>
+                                </div>
+                                <button class="px-3 py-0.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 text-[10px] rounded transition-colors">Ok</button>
+                            </div>
+                        </div>
+                        <!-- Alert Item -->
+                        <div class="flex items-center p-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-600 transition-colors rounded-sm">
+                            <div class="w-1 h-8 bg-yellow-500 rounded-full mr-3 shrink-0"></div>
+                            <div class="flex items-center justify-between w-full">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xs font-bold text-white">65556</span>
+                                    <span class="text-[10px] text-neutral-400">nonGenuineSupply</span>
+                                </div>
+                                <button class="px-3 py-0.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 text-[10px] rounded transition-colors">Ok</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Telemetry -->
+                <div class="bg-neutral-900 border border-neutral-800 rounded-sm flex flex-col flex-1 overflow-hidden shadow-sm h-0">
+                    <div class="px-3 py-2 border-b border-neutral-800 flex justify-between items-center bg-neutral-900 shrink-0">
+                        <h2 class="text-xs font-bold text-white uppercase tracking-wide">Telemetry</h2>
+                        <div class="flex gap-1">
+                            <button class="h-6 w-6 flex items-center justify-center text-neutral-500 hover:text-white hover:bg-neutral-800 rounded transition-colors"><i class="fa-solid fa-rotate-right text-xs"></i></button>
+                            <button class="h-6 w-6 flex items-center justify-center text-neutral-500 hover:text-red-500 hover:bg-neutral-800 rounded transition-colors"><i class="fa-solid fa-trash-can text-xs"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-y-auto flex-1 p-0 bg-neutral-950">
+                        <table class="w-full">
+                             <!-- Row 36: Magenta -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-pink-500 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#36</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Magenta</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">timedInterval</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                            <!-- Row 35: Cyan -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-cyan-400 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#35</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Cyan</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">timedInterval</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                            <!-- Row 34: CMYK -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-neutral-200 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#34</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">CMYK</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">timedInterval</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                             <!-- Row 33: Magenta -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-pink-500 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#33</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Magenta</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyStateChange</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                            <!-- Row 32: Black -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-neutral-200 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#32</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Black</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyChangeDetected</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                            <!-- Row 31: Black -->
+                             <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-neutral-200 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#31</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Black</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyReplaced</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">doorOpenUnknown</td>
+                            </tr>
+                             <!-- Row 30: Yellow -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-yellow-400 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#30</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Yellow</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyChangeDetected</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                             <!-- Row 29: Yellow -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-yellow-400 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#29</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Yellow</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyReplaced</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">doorOpenUnknown</td>
+                            </tr>
+                             <!-- Row 28: Cyan -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-cyan-400 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#28</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Cyan</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyChangeDetected</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                             <!-- Row 27: Cyan -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-cyan-400 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#27</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Cyan</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyReplaced</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">doorOpenUnknown</td>
+                            </tr>
+                             <!-- Row 26: CMYK -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-neutral-200 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#26</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">CMYK</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyChangeDetected</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">none</td>
+                            </tr>
+                             <!-- Row 25: CMYK -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-neutral-200 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#25</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">CMYK</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyReplaced</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">doorOpenUnknown</td>
+                            </tr>
+                             <!-- Row 24: Magenta -->
+                            <tr class="border-b border-neutral-900 hover:bg-neutral-900/50">
+                                <td class="pl-3 py-1.5"><div class="w-1 h-4 bg-pink-500 rounded-full"></div></td>
+                                <td class="px-2 py-1.5 text-xs text-neutral-500 font-mono-data font-bold">#24</td>
+                                <td class="px-2 py-1.5 text-xs font-bold text-white">Magenta</td>
+                                <td class="px-2 py-1.5"><span class="text-[9px] font-bold text-neutral-400 bg-neutral-900 px-1 py-0.5 rounded border border-neutral-800">supplyChangeDetected</span></td>
+                                <td class="pr-3 py-1.5 text-right text-[9px] text-neutral-600 italic">usedConsumableInfo</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Dropdown Toggle Logic
+        document.addEventListener('DOMContentLoaded', () => {
+            const captureBtn = document.getElementById('captureBtn');
+            const captureMenu = document.getElementById('captureMenu');
+
+            captureBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                captureMenu.classList.toggle('opacity-0');
+                captureMenu.classList.toggle('invisible');
+                captureMenu.classList.toggle('translate-y-0');
+                captureMenu.classList.toggle('translate-y-1');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!captureMenu.contains(e.target) && !captureBtn.contains(e.target)) {
+                    captureMenu.classList.add('opacity-0', 'invisible');
+                    captureMenu.classList.remove('translate-y-0');
+                    captureMenu.classList.add('translate-y-1');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

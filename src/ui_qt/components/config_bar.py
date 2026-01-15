@@ -35,7 +35,7 @@ class ConfigBar(QFrame):
         ip_layout.setSpacing(8)
 
         ip_label = QLabel("IP:")
-        ip_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
+        # ip_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
         
         self.ip_input = QLineEdit()
         self.ip_input.setPlaceholderText("Enter IP")
@@ -50,7 +50,7 @@ class ConfigBar(QFrame):
         dir_layout.setSpacing(8)
 
         dir_label = QLabel("Directory:")
-        dir_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
+        # dir_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
         
         self.dir_input = QLineEdit()
         self.dir_input.setPlaceholderText("No directory selected")

@@ -58,9 +58,9 @@ def build():
         '--collect-all', 'PySide6', 
         '--collect-all', 'shiboken6',
 
-        # Include QSS styles
+        # Include QSS themes
         # format is "source;dest" for Windows
-        '--add-data', f"src/ui_qt/styles.qss{os.pathsep}src/ui_qt",
+        '--add-data', f"src/ui_qt/themes{os.pathsep}src/ui_qt/themes",
         
     ] + chromium_arg + [
         
