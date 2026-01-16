@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QAction, QGuiApplication
 import os
 
 
@@ -67,12 +67,15 @@ class AppHeader(QWidget):
     
     menu_item_clicked = Signal(str)
     
+    # Constant for uniform input height
+    HEADER_INPUT_HEIGHT = 36
+    
     def __init__(self, config_model, parent=None):
         super().__init__(parent)
         self.config_model = config_model
         
         self.setObjectName("AppHeader")
-        self.setFixedHeight(56)
+        self.setFixedHeight(90)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         
         # Main horizontal layout
@@ -80,10 +83,6 @@ class AppHeader(QWidget):
         layout.setContentsMargins(16, 8, 16, 8)
         layout.setSpacing(16)
         
-        # --- Logo (optional icon placeholder) ---
-        # self.logo = QLabel("◆")
-        # self.logo.setObjectName("HeaderLogo")
-        # layout.addWidget(self.logo)
         
         # --- Target IP Group ---
         self.ip_group = HeaderInputGroup("Target IP")
@@ -91,15 +90,18 @@ class AppHeader(QWidget):
         self.ip_input.setObjectName("HeaderInput")
         self.ip_input.setPlaceholderText("Enter IP")
         self.ip_input.setFixedWidth(130)
+        self.ip_input.setFixedHeight(self.HEADER_INPUT_HEIGHT)
         self.ip_input.setText(config_model.ip)
         self.ip_input.textChanged.connect(self._on_ip_changed)
         self.ip_group.add_widget(self.ip_input)
         
-        # Optional: Connect button (like link icon in HTML)
-        # self.connect_btn = QPushButton("🔗")
-        # self.connect_btn.setObjectName("HeaderButton")
-        # self.connect_btn.setFixedSize(28, 28)
-        # self.ip_group.add_widget(self.connect_btn)
+        # Copy Button (attached to IP input)
+        self.copy_btn = QPushButton("❐") # Unicode copy icon
+        self.copy_btn.setObjectName("HeaderButton")
+        self.copy_btn.setFixedSize(28, self.HEADER_INPUT_HEIGHT)
+        self.copy_btn.setToolTip("Copy IP")
+        self.copy_btn.clicked.connect(self._copy_ip)
+        self.ip_group.add_widget(self.copy_btn)
         
         self.ip_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         layout.addWidget(self.ip_group)
@@ -111,6 +113,7 @@ class AppHeader(QWidget):
         self.family_combo.addItems(config_model.FAMILIES)
         self.family_combo.setCurrentIndex(config_model.family_index)
         self.family_combo.setFixedWidth(120)
+        self.family_combo.setFixedHeight(self.HEADER_INPUT_HEIGHT)
         self.family_combo.currentIndexChanged.connect(self._on_family_changed)
         self.family_group.add_widget(self.family_combo)
         
@@ -118,19 +121,20 @@ class AppHeader(QWidget):
         layout.addWidget(self.family_group)
         
         # --- Directory Group (Expanding) ---
-        self.dir_group = HeaderInputGroup("Directory")
+        self.dir_group = HeaderInputGroup("Directory") 
         
         self.dir_input = QLineEdit()
         self.dir_input.setObjectName("HeaderInput")
         self.dir_input.setPlaceholderText("No directory selected")
         self.dir_input.setReadOnly(True)
+        self.dir_input.setFixedHeight(self.HEADER_INPUT_HEIGHT)
         self.dir_input.setText(config_model.directory)
         self.dir_group.add_widget(self.dir_input, stretch=1)
         
         # Browse button
         self.browse_btn = QPushButton("📂")
         self.browse_btn.setObjectName("HeaderButton")
-        self.browse_btn.setFixedSize(28, 28)
+        self.browse_btn.setFixedSize(28, self.HEADER_INPUT_HEIGHT)
         self.browse_btn.setToolTip("Browse Directory")
         self.browse_btn.clicked.connect(self._browse_directory)
         self.dir_group.add_widget(self.browse_btn)
@@ -138,7 +142,7 @@ class AppHeader(QWidget):
         # Open in Explorer button
         self.open_btn = QPushButton("↗")
         self.open_btn.setObjectName("HeaderButton")
-        self.open_btn.setFixedSize(28, 28)
+        self.open_btn.setFixedSize(28, self.HEADER_INPUT_HEIGHT)
         self.open_btn.setToolTip("Open in File Explorer")
         self.open_btn.clicked.connect(self._open_in_explorer)
         self.dir_group.add_widget(self.open_btn)
@@ -150,10 +154,11 @@ class AppHeader(QWidget):
         self.menu_btn = QToolButton()
         self.menu_btn.setObjectName("HamburgerButton")
         self.menu_btn.setText("☰")
-        self.menu_btn.setFixedSize(32, 32)
+        self.menu_btn.setFixedSize(32, self.HEADER_INPUT_HEIGHT)  # Match input height
         self.menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.menu_btn.setMenu(self._create_menu())
-        layout.addWidget(self.menu_btn)
+        # Align to bottom so it lines up with the input boxes (not the labels above them)
+        layout.addWidget(self.menu_btn, 0, Qt.AlignmentFlag.AlignBottom)
         
         # --- Connect to ConfigModel signals for external updates ---
         config_model.ip_changed.connect(self._update_ip_display)
@@ -186,6 +191,23 @@ class AppHeader(QWidget):
     def _on_ip_changed(self, text: str):
         """User typed in IP field -> update model."""
         self.config_model.set_ip(text)
+        
+    def _copy_ip(self):
+        """Copy current IP to clipboard with visual feedback."""
+        clipboard = QGuiApplication.clipboard()
+        if clipboard:
+            clipboard.setText(self.ip_input.text())
+            # Visual feedback: briefly show checkmark
+            original_text = self.copy_btn.text()
+            self.copy_btn.setText("✓")
+            self.copy_btn.setStyleSheet("color: #22C55E;")  # Green checkmark
+            # Revert after 800ms
+            QTimer.singleShot(800, lambda: self._reset_copy_button(original_text))
+    
+    def _reset_copy_button(self, original_text: str):
+        """Reset copy button to original state."""
+        self.copy_btn.setText(original_text)
+        self.copy_btn.setStyleSheet("")  # Clear inline style, revert to QSS
     
     def _on_family_changed(self, index: int):
         """User selected family -> update model."""

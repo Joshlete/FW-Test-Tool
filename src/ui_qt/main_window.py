@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
         # Initialize Config Model (shared state with signals)
         self.config_model = ConfigModel()
         
-        self.setWindowTitle(f"FW Test Tool v{VERSION}")
+        self.setWindowTitle(f"FW TEST TOOL V{VERSION}")
         self.resize(1280, 800)
         
         # Central Widget & Layout
@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         self.sirius_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
         self.sirius_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
-        # 3. Ares
+        # 4. Ares
         self.ares_tab = AresTab(config_manager=self.config_manager)
         self.content_stack.addWidget(self.ares_tab)
         
@@ -171,14 +171,14 @@ class MainWindow(QMainWindow):
         self.ares_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
         self.ares_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
-        # 4. Tools (Placeholder)
+        # 5. Tools (Placeholder)
         self.content_stack.addWidget(self._create_placeholder("Tools"))
         
-        # 5. Settings (Real Implementation)
+        # 6. Settings (Real Implementation)
         self.settings_tab = SettingsTab()
         self.content_stack.addWidget(self.settings_tab)
 
-        # 6. Log Tab
+        # 7. Log Tab
         self.log_tab = LogTab()
         self.content_stack.addWidget(self.log_tab)
 
