@@ -27,34 +27,16 @@ class ToastWidget(QWidget):
         
         # Message Label
         self.label = QLabel()
-        self.label.setStyleSheet("color: white; font-weight: bold; font-size: 14px; background: transparent; border: none;")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setObjectName("ToastLabel") # Defined in QSS or handled generally
+        # We'll set text color explicitly in show_message or let standard QSS handle it if "Toast" ID used on widget
         layout.addWidget(self.label, 1) # Stretch factor 1 to take up space
         
         # Close Button
         self.close_btn = QPushButton("✕")
         self.close_btn.setFixedSize(30, 30)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.close_btn.setStyleSheet("""
-            QPushButton {
-                color: #DDDDDD;
-                background-color: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 15px; /* Circular */
-                font-weight: bold;
-                font-size: 14px;
-                padding: 0px;
-                margin: 0px;
-            }
-            QPushButton:hover {
-                color: #FFFFFF;
-                background-color: rgba(255, 255, 255, 0.2);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-            }
-            QPushButton:pressed {
-                background-color: rgba(255, 255, 255, 0.3);
-            }
-        """)
+        self.close_btn.setObjectName("ToastClose")
         self.close_btn.clicked.connect(self.slide_down)
         layout.addWidget(self.close_btn, 0) # Fixed size
         
@@ -93,28 +75,21 @@ class ToastWidget(QWidget):
             self.resize(300, self.height())
             
         # Apply Styles based on type
+        # We set ID to Toast and apply dynamic property type for QSS styling
+        self.setObjectName("Toast")
+        self.setProperty("type", style) # error, success, info
+        
+        # Force style update
+        self.style().unpolish(self)
+        self.style().polish(self)
+        
         if style == "error":
-            bg_color = "#252526" # Dark Grey Background
-            border_color = "#D32F2F" # Red Border
             log_error("toast", "shown", message)
         elif style == "success":
-            bg_color = "#252526"
-            border_color = "#388E3C" # Green Border
             log_info("toast", "shown", message, {"style": style})
         else:
-            bg_color = "#252526"
-            border_color = "#007ACC" # Blue Border
             log_info("toast", "shown", message, {"style": style})
             
-        self.setStyleSheet(
-            f"background-color: {bg_color};"
-            f"border: 2px solid {border_color};"
-            "border-radius: 8px;"
-        )
-        # Ensure label keeps expected styling (parent stylesheet no longer overrides)
-        self.label.setStyleSheet(
-            "color: white; font-weight: bold; font-size: 14px; background: transparent; border: none;"
-        )
         
         # Calculate Positions
         if self.parent():

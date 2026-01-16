@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QStackedWidget, QLabel, QFrame
 from PySide6.QtCore import Qt
-from src.ui_qt.components.navbar import NavBar
-from src.ui_qt.components.config_bar import ConfigBar
+from src.ui_qt.components.app_header import AppHeader
+from src.ui_qt.models.config_model import ConfigModel
 from src.ui_qt.tabs.settings import SettingsTab
 from src.ui_qt.tabs.ares import AresTab
 from src.ui_qt.tabs.sirius import SiriusTab
@@ -16,11 +16,38 @@ from src.version import VERSION
 import os
 
 class MainWindow(QMainWindow):
+    """
+    Main application window with unified header and stacked content.
+    
+    Architecture:
+        - ConfigModel: Shared state (IP, Family, Directory) with signals
+        - AppHeader: Unified header bar with inputs and hamburger menu
+        - Content Stack: Family tabs + Tools/Settings/Log pages
+    """
+    
+    # Map family names to stack indices
+    FAMILY_TAB_MAP = {
+        "Dune IIC": 0,
+        "Dune IPH": 1,
+        "Sirius": 2,
+        "Ares": 3,
+    }
+    
+    # Map menu items to stack indices
+    MENU_TAB_MAP = {
+        "tools": 4,
+        "settings": 5,
+        "log": 6,
+    }
+    
     def __init__(self):
         super().__init__()
         
-        # Initialize Configuration Manager
+        # Initialize Configuration Manager (persistence)
         self.config_manager = ConfigManager()
+        
+        # Initialize Config Model (shared state with signals)
+        self.config_model = ConfigModel()
         
         self.setWindowTitle(f"FW Test Tool v{VERSION}")
         self.resize(1280, 800)
@@ -31,32 +58,26 @@ class MainWindow(QMainWindow):
         
         # Main Layout
         layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         
-        # 1. Configuration Bar (IP & Directory)
-        self.config_bar = ConfigBar()
-        layout.addWidget(self.config_bar)
+        # 1. App Header (IP, Family, Directory, Hamburger Menu)
+        self.header = AppHeader(self.config_model)
+        layout.addWidget(self.header)
+        
         self._init_logging()
         
-        # Spacer between config and tabs
-        layout.addSpacing(20)
-        
-        # 2. Navigation Bar
-        self.navbar = NavBar()
-        layout.addWidget(self.navbar)
-        
-        # 3. Content Area Container (Folder Look)
+        # 2. Content Area Container
         self.content_container = QFrame()
         self.content_container.setObjectName("ContentArea")
         content_layout = QVBoxLayout(self.content_container)
-        content_layout.setContentsMargins(0, 0, 0, 0) # Tabs handle their own padding
+        content_layout.setContentsMargins(20, 20, 20, 20)
         
         # Stacked Widget inside container
         self.content_stack = QStackedWidget()
         content_layout.addWidget(self.content_stack)
         
-        layout.addWidget(self.content_container)
+        layout.addWidget(self.content_container, 1)  # Stretch to fill
         
         # Create Toast Widget (Parented to MainWindow so it floats over everything)
         self.toast = ToastWidget(self)
@@ -64,35 +85,44 @@ class MainWindow(QMainWindow):
         # Initialize Tabs
         self._init_tabs()
         
-        # Connect Navigation Signals
-        self.navbar.tab_changed.connect(self._on_tab_changed)
-
-        # Connect Config Bar Signals
-        self.config_bar.ip_changed.connect(self.ares_tab.update_ip)
-        self.config_bar.ip_changed.connect(self.sirius_tab.update_ip)
-        self.config_bar.ip_changed.connect(self.dune_iic_tab.update_ip)
-        self.config_bar.ip_changed.connect(self.dune_iph_tab.update_ip)
-        self.config_bar.directory_changed.connect(self.ares_tab.update_directory)
-        self.config_bar.directory_changed.connect(self.sirius_tab.update_directory)
-        self.config_bar.directory_changed.connect(self.dune_iic_tab.update_directory)
-        self.config_bar.directory_changed.connect(self.dune_iph_tab.update_directory)
-        # self.config_bar.directory_changed.connect(configure_file_logging) # Keep log in app root
+        # --- Connect ConfigModel Signals ---
+        # IP changes -> update all tabs
+        self.config_model.ip_changed.connect(self.ares_tab.update_ip)
+        self.config_model.ip_changed.connect(self.sirius_tab.update_ip)
+        self.config_model.ip_changed.connect(self.dune_iic_tab.update_ip)
+        self.config_model.ip_changed.connect(self.dune_iph_tab.update_ip)
         
-        # Connect Config Bar to Config Manager (Auto-Save)
-        self.config_bar.ip_changed.connect(lambda ip: self.config_manager.set("last_ip", ip))
-        self.config_bar.directory_changed.connect(lambda d: self.config_manager.set("output_directory", d))
+        # Directory changes -> update all tabs
+        self.config_model.directory_changed.connect(self.ares_tab.update_directory)
+        self.config_model.directory_changed.connect(self.sirius_tab.update_directory)
+        self.config_model.directory_changed.connect(self.dune_iic_tab.update_directory)
+        self.config_model.directory_changed.connect(self.dune_iph_tab.update_directory)
+        
+        # Family changes -> switch content stack
+        self.config_model.family_changed.connect(self._on_family_changed)
+        
+        # Header hamburger menu -> switch to tools/settings/log
+        self.header.menu_item_clicked.connect(self._on_menu_item_clicked)
+        
+        # Persist state changes
+        self.config_model.ip_changed.connect(lambda ip: self.config_manager.set("last_ip", ip))
+        self.config_model.directory_changed.connect(lambda d: self.config_manager.set("output_directory", d))
+        self.config_model.family_changed.connect(lambda f: self.config_manager.set("last_family", f))
         
         # Load Saved State
         self._load_saved_state()
 
-    def _on_tab_changed(self, index):
-        """Handle tab change: update stack and save state."""
-        self.content_stack.setCurrentIndex(index)
-        
-        # Save tab name for persistence
-        if 0 <= index < len(self.navbar.tabs):
-            tab_name = self.navbar.tabs[index]
-            self.config_manager.set("last_active_tab", tab_name)
+    def _on_family_changed(self, family: str):
+        """Handle family selection change: switch to corresponding tab."""
+        if family in self.FAMILY_TAB_MAP:
+            index = self.FAMILY_TAB_MAP[family]
+            self.content_stack.setCurrentIndex(index)
+    
+    def _on_menu_item_clicked(self, item: str):
+        """Handle hamburger menu item clicks: switch to tools/settings/log."""
+        if item in self.MENU_TAB_MAP:
+            index = self.MENU_TAB_MAP[item]
+            self.content_stack.setCurrentIndex(index)
         
     def _init_logging(self):
         """Ensure file logging targets the application root directory."""
@@ -155,33 +185,29 @@ class MainWindow(QMainWindow):
     def _create_placeholder(self, name):
         label = QLabel(f"{name} Tab Content Placeholder")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("font-size: 24px; color: #555;")
+        label.setObjectName("PageTitle")
         return label
         
     def _load_saved_state(self):
-        """Populate UI with values from ConfigManager."""
+        """Populate ConfigModel with values from ConfigManager (persistence)."""
         # Check both new keys and legacy keys for backward compatibility
         last_ip = self.config_manager.get("last_ip") or self.config_manager.get("ip_address", "")
         output_dir = self.config_manager.get("output_directory") or self.config_manager.get("directory", os.getcwd())
+        last_family = self.config_manager.get("last_family", "Dune IIC")
+        
+        # Load state into model (this triggers signals -> updates UI and tabs)
+        # Use load_state for initial load without triggering signals, then set individually
+        # Or just set them which will emit signals and update everything
         
         if last_ip:
-            self.config_bar.ip_input.setText(last_ip)
-            self.ares_tab.update_ip(last_ip)
-            self.sirius_tab.update_ip(last_ip)
-            self.dune_iic_tab.update_ip(last_ip)
-            self.dune_iph_tab.update_ip(last_ip)
+            self.config_model.set_ip(last_ip)
             
         if output_dir:
-            self.config_bar.dir_input.setText(output_dir)
-            self.ares_tab.update_directory(output_dir)
-            self.sirius_tab.update_directory(output_dir)
-            self.dune_iic_tab.update_directory(output_dir)
-            self.dune_iph_tab.update_directory(output_dir)
-
-        # Load last active tab
-        last_tab_name = self.config_manager.get("last_active_tab")
-        if last_tab_name:
-            # Find index by name
-            if last_tab_name in self.navbar.tabs:
-                index = self.navbar.tabs.index(last_tab_name)
-                self.navbar.set_current_tab(index)
+            self.config_model.set_directory(output_dir)
+        
+        # Set family (this also switches the tab)
+        if last_family and last_family in self.config_model.FAMILIES:
+            self.config_model.set_family(last_family)
+        else:
+            # Default to first family
+            self._on_family_changed(self.config_model.family)

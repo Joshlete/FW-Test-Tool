@@ -13,7 +13,7 @@ class SettingsTab(QtTabContent):
         # Add some content to prove it works
         label = QLabel("Application Settings")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("font-size: 24px; color: #888;")
+        label.setObjectName("PageTitle")
         
         self.layout.addWidget(label)
         self.layout.addStretch() # Push content to top

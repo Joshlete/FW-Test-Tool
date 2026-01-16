@@ -37,7 +37,7 @@ class TelemetryWidget(QWidget):
         self.erase_btn = QPushButton("Erase All")
         self.erase_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.erase_btn.setFixedWidth(100)
-        self.erase_btn.setObjectName("DangerButtonHover")
+        self.erase_btn.setObjectName("DestructiveButton")
         self.erase_btn.clicked.connect(self._confirm_erase)
         toolbar.addWidget(self.erase_btn)
         
@@ -47,11 +47,9 @@ class TelemetryWidget(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll_area.setStyleSheet("background-color: transparent;") # Transparent background
         
         # Container widget inside scroll area
         self.cards_container = QWidget()
-        self.cards_container.setStyleSheet("background-color: transparent;")
         self.cards_layout = QVBoxLayout(self.cards_container)
         self.cards_layout.setContentsMargins(0, 0, 5, 0) # Right margin for scrollbar
         self.cards_layout.setSpacing(4) # Tight spacing
@@ -63,7 +61,7 @@ class TelemetryWidget(QWidget):
         # Empty State Label (Shown by default)
         self.empty_lbl = QLabel("No telemetry data")
         self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_lbl.setStyleSheet("color: #666; font-size: 14px; font-style: italic;")
+        self.empty_lbl.setObjectName("PlaceholderText")
         
         # Show empty state by default
         self.cards_layout.insertWidget(0, self.empty_lbl)
@@ -92,26 +90,6 @@ class TelemetryWidget(QWidget):
         msg_box.setDefaultButton(QMessageBox.StandardButton.No)
         
         # Apply dark theme styling to the message box
-        msg_box.setStyleSheet("""
-            QMessageBox {
-                background-color: #2D2D30;
-            }
-            QLabel {
-                color: #FFFFFF;
-                background-color: transparent;
-            }
-            QPushButton {
-                background-color: #3C3C3C;
-                color: #FFFFFF;
-                border: none;
-                padding: 6px 16px;
-                border-radius: 4px;
-                min-width: 60px;
-            }
-            QPushButton:hover {
-                background-color: #4C4C4C;
-            }
-        """)
         
         result = msg_box.exec()
         if result == QMessageBox.StandardButton.Yes:

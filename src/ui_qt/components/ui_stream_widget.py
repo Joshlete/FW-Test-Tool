@@ -110,13 +110,13 @@ class UIStreamWidget(QWidget):
         
         # --- Image Display Area ---
         self.image_frame = QFrame()
-        self.image_frame.setStyleSheet("background-color: #1E1E1E; border-radius: 4px;")
+        self.image_frame.setObjectName("ImageFrame")
         self.image_frame.setMinimumHeight(300)
         
         img_layout = QVBoxLayout(self.image_frame)
         self.image_label = QLabel("Remote UI Disconnected")
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setStyleSheet("color: #666;")
+        self.image_label.setObjectName("PlaceholderText")
         img_layout.addWidget(self.image_label)
         
         layout.addWidget(self.image_frame, 1) # Expand to fill available space

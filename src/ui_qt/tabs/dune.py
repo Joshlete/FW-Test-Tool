@@ -155,7 +155,7 @@ class DuneTab(QtTabContent):
         
         # Password Field (Center)
         pwd_label = QLabel("Password:")
-        pwd_label.setStyleSheet("color: #DDD; margin-right: 5px;")
+        pwd_label.setObjectName("ConfigLabel")
         self.toolbar.layout.addWidget(pwd_label)
         
         self.pwd_input = QLineEdit()
@@ -166,15 +166,6 @@ class DuneTab(QtTabContent):
         self.pwd_input.textChanged.connect(lambda t: self.config_manager.set("password", t))
         
         # Apply pill style
-        self.pwd_input.setStyleSheet("""
-            QLineEdit {
-                background-color: rgba(255, 255, 255, 0.08);
-                color: #FFFFFF;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 13px;
-                padding: 4px 12px;
-            }
-        """)
         self.toolbar.layout.addWidget(self.pwd_input)
 
     def open_report_builder(self):
@@ -201,27 +192,6 @@ class DuneTab(QtTabContent):
         Used by the Stream Widget context menu.
         """
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2D2D2D;
-                border: 1px solid #3D3D3D;
-                color: #FFFFFF;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 5px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #007ACC;
-                color: #FFFFFF;
-            }
-            QMenu::separator {
-                height: 1px;
-                background-color: #3D3D3D;
-                margin: 5px 10px;
-            }
-        """)
         
         options = self.strategy.get_capture_options()
         for opt in options:
@@ -251,24 +221,6 @@ class DuneTab(QtTabContent):
         Used by the Toolbar button.
         """
         menu = QMenu(self)
-        # Styling is now handled by the ModernButton stylesheet which targets QMenu
-        # But we can also set it on the menu directly to be safe
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2D2D2D;
-                border: 1px solid #3D3D3D;
-                color: #FFFFFF;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 5px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #007ACC;
-                color: #FFFFFF;
-            }
-        """)
         pages = self.strategy.get_ews_pages()
         for page in pages:
             action = QAction(page, self)
@@ -279,22 +231,6 @@ class DuneTab(QtTabContent):
 
     def _create_commands_menu(self):
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2D2D2D;
-                border: 1px solid #3D3D3D;
-                color: #FFFFFF;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 5px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #007ACC;
-                color: #FFFFFF;
-            }
-        """)
         cmds = ["AUTH", "Print 10-Tap", "Print PSR"]
         for cmd in cmds:
             action = QAction(cmd, self)
@@ -318,13 +254,7 @@ class DuneTab(QtTabContent):
         
         # Card wrapper for consistent boundary
         stream_card = QFrame()
-        stream_card.setStyleSheet("""
-            QFrame {
-                background-color: #1E1E1E;
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 10px;
-            }
-        """)
+        stream_card.setObjectName("Card")
         stream_card_layout = QVBoxLayout(stream_card)
         stream_card_layout.setContentsMargins(10, 10, 10, 10)
         stream_card_layout.addWidget(self.stream_widget)
@@ -358,19 +288,12 @@ class DuneTab(QtTabContent):
 
     def _init_center_column(self):
         center_container = QFrame()
-        center_container.setStyleSheet("""
-            QFrame#CdmCard {
-                background-color: #1E1E1E;
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 10px;
-            }
-        """)
-        center_container.setObjectName("CdmCard")
+        center_container.setObjectName("Card")
         center_layout = QVBoxLayout(center_container)
         center_layout.setContentsMargins(15, 12, 15, 12)
         
         cdm_label = QLabel("CDM Controls")
-        cdm_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #DDD;")
+        cdm_label.setObjectName("SectionHeader")
         
         self.cdm_widget = CDMWidget()
         self.cdm_manager = CDMManager(self.cdm_widget, self.thread_pool, self.step_manager)
@@ -390,16 +313,10 @@ class DuneTab(QtTabContent):
         
         # Alerts
         alerts_container = QFrame()
-        alerts_container.setStyleSheet("""
-            QFrame {
-                background-color: rgba(255, 255, 255, 0.02);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 10px;
-            }
-        """)
+        alerts_container.setObjectName("Card")
         alerts_layout = QVBoxLayout(alerts_container)
         alerts_label = QLabel("Alerts")
-        alerts_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #DDD;")
+        alerts_label.setObjectName("SectionHeader")
         self.alerts_widget = AlertsWidget()
         self.alerts_manager = AlertsManager(self.alerts_widget, self.thread_pool)
         alerts_layout.addWidget(alerts_label)
@@ -407,16 +324,10 @@ class DuneTab(QtTabContent):
         
         # Telemetry
         telemetry_container = QFrame()
-        telemetry_container.setStyleSheet("""
-            QFrame {
-                background-color: rgba(255, 255, 255, 0.02);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 10px;
-            }
-        """)
+        telemetry_container.setObjectName("Card")
         telemetry_layout = QVBoxLayout(telemetry_container)
         telemetry_label = QLabel("Telemetry")
-        telemetry_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #DDD;")
+        telemetry_label.setObjectName("SectionHeader")
         self.telemetry_widget = TelemetryWidget()
         # We now use self.file_manager for telemetry if possible, but TelemetryManager 
         # might still need explicit directory or we pass file_manager.

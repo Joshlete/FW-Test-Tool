@@ -57,7 +57,7 @@ class AresTab(QtTabContent):
         
         # Password Field (Center)
         pwd_label = QLabel("Password:")
-        pwd_label.setStyleSheet("color: #DDD; margin-right: 5px; background-color: transparent;")
+        pwd_label.setObjectName("ConfigLabel")
         self.toolbar.layout.addWidget(pwd_label)
         
         self.pwd_input = QLineEdit()
@@ -67,26 +67,6 @@ class AresTab(QtTabContent):
         self.pwd_input.setText(self.config_manager.get("password", ""))
         self.pwd_input.textChanged.connect(self._on_password_changed)
         
-        # Modern/macOS-style styling
-        self.pwd_input.setStyleSheet("""
-            QLineEdit {
-                background-color: rgba(255, 255, 255, 0.08);
-                color: #FFFFFF;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 13px; /* Pill shape */
-                padding: 4px 12px;
-                font-size: 13px;
-                selection-background-color: #007ACC;
-            }
-            QLineEdit:hover {
-                background-color: rgba(255, 255, 255, 0.12);
-                border: 1px solid rgba(255, 255, 255, 0.25);
-            }
-            QLineEdit:focus {
-                background-color: rgba(255, 255, 255, 0.15);
-                border: 1px solid #007ACC;
-            }
-        """)
         self.toolbar.layout.addWidget(self.pwd_input)
         
         # Add Spacer (Right) to center the password field
@@ -105,7 +85,7 @@ class AresTab(QtTabContent):
         cdm_container.setObjectName("Card")
         cdm_layout = QVBoxLayout(cdm_container)
         cdm_label = QLabel("CDM Controls")
-        cdm_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        cdm_label.setObjectName("SectionHeader")
         
         self.cdm_widget = CDMWidget()
         cdm_layout.addWidget(cdm_label)
@@ -124,7 +104,7 @@ class AresTab(QtTabContent):
         alerts_container.setObjectName("Card")
         alerts_layout = QVBoxLayout(alerts_container)
         alerts_label = QLabel("Alerts")
-        alerts_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        alerts_label.setObjectName("SectionHeader")
         
         self.alerts_widget = AlertsWidget()
         alerts_layout.addWidget(alerts_label)
@@ -135,7 +115,7 @@ class AresTab(QtTabContent):
         telemetry_container.setObjectName("Card")
         telemetry_layout = QVBoxLayout(telemetry_container)
         telemetry_label = QLabel("Telemetry")
-        telemetry_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        telemetry_label.setObjectName("SectionHeader")
         
         self.telemetry_widget = TelemetryWidget()
         telemetry_layout.addWidget(telemetry_label)

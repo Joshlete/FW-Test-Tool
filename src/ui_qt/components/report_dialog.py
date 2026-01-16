@@ -93,7 +93,7 @@ class ReportDialog(QDialog):
         if not has_items:
             no_files = QLabel("No files found for this step.")
             no_files.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            no_files.setStyleSheet("color: #888; margin-top: 50px;")
+            no_files.setObjectName("PlaceholderText")
             scroll_layout.addWidget(no_files)
 
         scroll_layout.addStretch()
@@ -112,7 +112,7 @@ class ReportDialog(QDialog):
         file_cb = QCheckBox(file_name)
         file_cb.setChecked(True)
         file_cb.setProperty("file_path", file_path)
-        file_cb.setStyleSheet("font-weight: bold; color: #EEE;")
+        file_cb.setObjectName("BoldCheckbox")
         layout.addWidget(file_cb)
         
         # Store in main items list so we know this file is "selected" generally
@@ -191,76 +191,11 @@ class ReportDialog(QDialog):
 
     def apply_styles(self):
         # Improved styling to fix cut-offs and overlap
-        self.setStyleSheet("""
-            QDialog { 
-                background-color: #2D2D2D; 
-                color: #FFF; 
-                font-family: "Segoe UI", Arial;
-            }
-            QGroupBox { 
-                color: #DDD; 
-                font-weight: bold; 
-                border: 1px solid #444; 
-                border-radius: 6px;
-                margin-top: 20px; /* Space for title */
-                font-size: 13px;
-                padding-top: 10px;
-            }
-            QGroupBox::title { 
-                subcontrol-origin: margin; 
-                left: 10px; 
-                padding: 0 5px; 
-                top: 0px; 
-                background-color: #2D2D2D; 
-            }
-            QCheckBox { 
-                color: #CCC; 
-                padding: 4px; 
-                spacing: 8px; 
-                font-size: 12px;
-            }
-            QCheckBox:checked { 
-                color: #FFF; 
-            }
-            QCheckBox::indicator { 
-                width: 18px; 
-                height: 18px; 
-                border: 1px solid #666; 
-                border-radius: 4px; 
-                background: #333; 
-            }
-            QCheckBox::indicator:hover {
-                border-color: #888;
-            }
-            QCheckBox::indicator:checked { 
-                background-color: #007ACC; 
-                border-color: #007ACC; 
-            }
-            QScrollArea { 
-                border: none; 
-                background-color: transparent; 
-            }
-            QWidget { 
-                background-color: transparent; 
-            }
-            QPushButton { 
-                background-color: #3C3C3C; 
-                color: white; 
-                border: 1px solid #555; 
-                padding: 8px 24px; 
-                border-radius: 4px; 
-                font-weight: bold;
-                min-width: 80px; 
-            }
-            QPushButton:hover { 
-                background-color: #4C4C4C; 
-                border-color: #666;
-            }
-            QPushButton[text="OK"] { 
-                background-color: #007ACC; 
-                border: none;
-            }
-            QPushButton[text="OK"]:hover { 
-                background-color: #1E90FF; 
-            }
-        """)
+        # Now relying on dark_theme.qss for base, only adding Dialog-specifics if needed
+        # Or even better, just let the global theme handle it.
+        # But dialogs often need specific geometry/layout tweaks that generic QSS misses?
+        # Actually QSS handles QDialog quite well.
+        # Let's remove the heavy override and trust the system theme + minimal tweaks.
+        pass
+        
+        # self.setStyleSheet("""...""") - Removed

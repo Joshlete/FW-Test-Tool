@@ -71,10 +71,8 @@ class LEDMWidget(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent;")
         
         content_widget = QWidget()
-        content_widget.setStyleSheet("background: transparent;")
         self.grid_layout = QVBoxLayout(content_widget)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
         self.grid_layout.setSpacing(2)

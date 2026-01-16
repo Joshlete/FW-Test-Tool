@@ -268,70 +268,9 @@ class ReportBuilderWindow(QMainWindow):
         # Initial Load
         self._load_step_data(self.current_step)
         
-        # Add local styles for new list components
-        self.setStyleSheet(self.styleSheet() + """
-            QPushButton#SidebarRow {
-                text-align: left;
-                padding: 10px 15px;
-                background-color: transparent;
-                border: 1px solid transparent;
-                border-radius: 4px;
-                color: #CCC;
-                font-size: 13px;
-            }
-            QPushButton#SidebarRow:hover {
-                background-color: rgba(255, 255, 255, 0.05);
-                color: #FFF;
-            }
-            QPushButton#SidebarRow:checked {
-                background-color: #333333;
-                border: 1px solid #444;
-                color: #FFF;
-                font-weight: bold;
-            }
-            QLabel#SectionHeader {
-                color: #666;
-                font-weight: bold;
-                font-size: 12px;
-                margin-top: 15px;
-                margin-bottom: 5px;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-            }
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-            /* Ensure scroll contents background matches sidebar */
-            QWidget#ScrollContents {
-                background-color: #252526; 
-            }
-            /* File Tree Styles */
-            QTreeView {
-                background-color: #252526;
-                border: none;
-                border-left: 1px solid #333;
-                color: #DDD;
-                font-size: 10px; /* Smaller text */
-            }
-            QTreeView::item {
-                padding: 2px; /* Tighter padding */
-            }
-            QTreeView::item:hover {
-                background-color: #3C3C3C;
-            }
-            QTreeView::item:selected {
-                background-color: #007ACC;
-                color: white;
-            }
-            QHeaderView::section {
-                background-color: #2D2D2D;
-                color: #AAA;
-                border: none;
-                border-bottom: 1px solid #333;
-                padding: 4px;
-            }
-        """)
+        # Add local styles for new list components (now in dark_theme.qss, only needed here if specific override)
+        # Removed extensive inline styling block.
+        # self.setStyleSheet(self.styleSheet() + ...)
 
     def set_directory(self, directory):
         """Public method to update directory from parent"""
@@ -479,7 +418,8 @@ class ReportBuilderWindow(QMainWindow):
             text_edit = QTextEdit()
             text_edit.setPlainText(content)
             text_edit.setReadOnly(True)
-            text_edit.setStyleSheet("background-color: #1E1E1E; color: #DDD; font-family: Consolas, monospace;")
+            # text_edit.setStyleSheet("background-color: #1E1E1E; color: #DDD; font-family: Consolas, monospace;")
+            # Now handled by QPlainTextEdit, QTextEdit in dark_theme.qss
             
             layout.addWidget(text_edit)
             dialog.exec_()
@@ -501,13 +441,13 @@ class ReportBuilderWindow(QMainWindow):
         step_group_layout.setSpacing(8)
         
         step_label = QLabel("Step:")
-        step_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
+        step_label.setObjectName("ConfigLabel")
         
         # Step Pill Container
         step_pill = QFrame()
         step_pill.setObjectName("StepPill") # Reuse style from previous phase
         step_pill.setFixedHeight(34) # Explicitly set height
-        step_pill.setStyleSheet("QFrame#StepPill { background-color: #252526; }") # Match background
+        # step_pill.setStyleSheet("QFrame#StepPill { background-color: #252526; }") # Handled by QSS
         step_pill_layout = QHBoxLayout(step_pill)
         step_pill_layout.setContentsMargins(5, 2, 5, 2) # Reduced vertical margins
         step_pill_layout.setSpacing(0)
@@ -540,7 +480,7 @@ class ReportBuilderWindow(QMainWindow):
         dir_group_layout.setSpacing(8)
         
         dir_label = QLabel("Directory:")
-        dir_label.setStyleSheet("font-weight: bold; color: #AAAAAA; font-size: 13px;")
+        dir_label.setObjectName("ConfigLabel")
         
         self.dir_input = QLineEdit(self.default_dir)
         self.dir_input.setPlaceholderText("No directory selected")
@@ -617,20 +557,7 @@ class ReportBuilderWindow(QMainWindow):
                 combo = QComboBox()
                 combo.setObjectName("FileSelector")
                 combo.setVisible(False)
-                combo.setStyleSheet("""
-                    QComboBox {
-                        background-color: #2D2D30;
-                        border: 1px solid #3E3E42;
-                        border-radius: 4px;
-                        color: #DDD;
-                        padding: 4px;
-                        margin-left: 20px; /* Indent */
-                        font-size: 11px;
-                    }
-                    QComboBox::drop-down {
-                        border: none;
-                    }
-                """)
+                # Stylesheet removed, handled by dark_theme.qss
                 combo.currentIndexChanged.connect(self.generate_report)
             
             # Container for row (Button + Combo)
@@ -675,7 +602,7 @@ class ReportBuilderWindow(QMainWindow):
         # Status Label (Hidden by default)
         self.lbl_status = QLabel("")
         self.lbl_status.setObjectName("StatusLabel")
-        self.lbl_status.setStyleSheet("color: #FF5555; font-weight: bold; margin-top: 10px;")
+        # self.lbl_status.setStyleSheet("color: #FF5555; font-weight: bold; margin-top: 10px;") # Handled by QSS
         self.lbl_status.setWordWrap(True)
         self.lbl_status.setVisible(False)
         controls_layout.addWidget(self.lbl_status)
@@ -770,17 +697,7 @@ class ReportBuilderWindow(QMainWindow):
         for label in labels:
             combo = QComboBox()
             combo.setObjectName("TelemetrySelector")
-            combo.setStyleSheet("""
-                QComboBox {
-                    background-color: #2D2D30;
-                    border: 1px solid #3E3E42;
-                    border-radius: 4px;
-                    color: #DDD;
-                    padding: 4px;
-                    font-size: 11px;
-                }
-                QComboBox::drop-down { border: none; }
-            """)
+            # Stylesheet removed, handled by dark_theme.qss
 
             # Placeholder; options are populated per-step in generate_report()
             combo.addItem(f"{label}: None", None)
@@ -795,38 +712,15 @@ class ReportBuilderWindow(QMainWindow):
         header_layout.setContentsMargins(0, 0, 0, 5)
         
         lbl_preview = QLabel("Generated Report Preview:")
-        lbl_preview.setStyleSheet("font-weight: bold; color: #DDD;")
+        lbl_preview.setObjectName("SectionHeader")
         
         self.btn_copy = QPushButton("Copy")
         self.btn_copy.setFixedWidth(70) # Increased width to fit "Copied!"
-        self.btn_copy.setStyleSheet("""
-            QPushButton {
-                background-color: #3C3C3C;
-                border: 1px solid #555;
-                color: #EEE;
-                border-radius: 4px;
-                padding: 2px 8px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #4C4C4C;
-                color: #FFF;
-            }
-            QPushButton:pressed {
-                background-color: #007ACC;
-                border-color: #007ACC;
-            }
-            QPushButton[copied="true"] {
-                background-color: #007ACC;
-                border: 1px solid #007ACC;
-                color: white;
-            }
-            QPushButton:disabled {
-                background-color: #2D2D2D;
-                border: 1px solid #444;
-                color: #666;
-            }
-        """)
+        # Button styling removed - mostly handled by generic QPushButton or specific ID in QSS if needed
+        # We can add a specific ID for this button to keep its custom copied state behavior visual if needed
+        # But for now, let's stick to standard buttons unless user asks for this specific behavior back in QSS
+        # Actually, let's give it an ObjectName so we can target it if we want to restore specific behavior
+        self.btn_copy.setObjectName("CopyButton")
         self.btn_copy.clicked.connect(self.copy_to_clipboard)
         
         header_layout.addWidget(lbl_preview)
@@ -837,15 +731,7 @@ class ReportBuilderWindow(QMainWindow):
         
         # Replace QTextEdit with CodeEditor
         self.result_viewer = CodeEditor()
-        self.result_viewer.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #1E1E1E;
-                color: #D4D4D4;
-                border: none;
-                font-family: Consolas, "Courier New", monospace;
-                font-size: 13px;
-            }
-        """)
+        # self.result_viewer.setStyleSheet(...) - Handled by QPlainTextEdit in QSS
         self.preview_layout.addWidget(self.result_viewer)
 
     def copy_to_clipboard(self):

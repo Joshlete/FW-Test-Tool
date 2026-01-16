@@ -7,23 +7,8 @@ class OverlayButton(QPushButton):
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(0, 0, 0, 150);
-                color: white;
-                border: 1px solid rgba(255, 255, 255, 50);
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: rgba(0, 0, 0, 200);
-                border: 1px solid rgba(255, 255, 255, 100);
-            }
-            QPushButton:pressed {
-                background-color: rgba(0, 70, 150, 200);
-            }
-        """)
+        self.setObjectName("OverlayButton")
+        # self.setStyleSheet(...) - Handled by OverlayButton ID in dark_theme.qss
 
 class InteractiveDisplay(QLabel):
     """
@@ -40,7 +25,6 @@ class InteractiveDisplay(QLabel):
         self.source_size = QSize(800, 480) # Default, will update
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(320, 240)
-        self.setStyleSheet("background-color: #000;")
 
     def set_pixmap(self, pixmap):
         self.setPixmap(pixmap)
@@ -123,20 +107,13 @@ class DuneUIStreamWidget(QWidget):
         
         # --- 0. Printer View Label (Restored) ---
         self.lbl_title = QLabel("Printer View")
-        self.lbl_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #DDD; padding: 0 0 5px 0;")
+        self.lbl_title.setObjectName("SectionHeader")
         self.layout.addWidget(self.lbl_title)
         
         # --- 1. Integrated Header Bar ---
         self.header = QFrame()
         self.header.setFixedHeight(60) # Increased height for better button fit (was 50)
-        self.header.setStyleSheet("""
-            QFrame {
-                background-color: #2D2D2D;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                border-bottom: 1px solid #3D3D3D;
-            }
-        """)
+        self.header.setObjectName("StreamHeader")
         header_layout = QHBoxLayout(self.header)
         header_layout.setContentsMargins(10, 5, 10, 5) # Added vertical margin
         header_layout.setSpacing(15) 
@@ -147,29 +124,11 @@ class DuneUIStreamWidget(QWidget):
         self.btn_view.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_view.clicked.connect(self.view_toggled.emit)
         self.btn_view.setMinimumHeight(32)
-        self.btn_view.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 6px 16px;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QPushButton:checked {
-                background-color: #F44336; /* Red when active (Disconnect) */
-                /* text property removed as it is invalid in Qt stylesheets */
-            }
-            QPushButton:hover {
-                opacity: 0.9;
-            }
-        """)
+        self.btn_view.setObjectName("StreamToggle")
         
         # Center: Rotation Controls
         rotate_container = QWidget()
         rotate_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        rotate_container.setStyleSheet("background: transparent;")
         rotate_layout = QHBoxLayout(rotate_container)
         rotate_layout.setContentsMargins(0, 0, 0, 0)
         rotate_layout.setSpacing(5)
@@ -184,22 +143,7 @@ class DuneUIStreamWidget(QWidget):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setMinimumWidth(40)
             btn.setFixedHeight(32)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    color: #DDD;
-                    border: 1px solid #444;
-                    border-radius: 4px;
-                    font-size: 24px; /* Larger font for arrows */
-                    padding: 0px;
-                    text-align: center;
-                    margin: 0px;
-                }
-                QPushButton:hover {
-                    background-color: #3D3D3D;
-                    color: white;
-                }
-            """)
+            btn.setObjectName("RotationButton")
             
         self.btn_rot_left.clicked.connect(lambda: self._rotate(-90))
         self.btn_rot_right.clicked.connect(lambda: self._rotate(90))
@@ -215,44 +159,13 @@ class DuneUIStreamWidget(QWidget):
         self.btn_ecl.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_ecl.setToolTip("Capture UI images")
         self.btn_ecl.setMinimumHeight(32)
-        self.btn_ecl.setStyleSheet("""
-            QToolButton {
-                background-color: transparent;
-                color: #DDD;
-                border: 1px solid #444;
-                border-radius: 4px;
-                font-size: 13px;
-                padding: 4px 12px;
-                font-weight: bold;
-            }
-            QToolButton:hover {
-                background-color: #3D3D3D;
-                color: white;
-            }
-            QToolButton::menu-button {
-                border-left: 1px solid #444;
-            }
-            QMenu {
-                background-color: #2D2D2D;
-                border: 1px solid #3D3D3D;
-                color: #FFFFFF;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 5px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #007ACC;
-                color: #FFFFFF;
-            }
-        """)
+        self.btn_ecl.setObjectName("StreamCapture")
         
         # Force menu to show immediately on click if InstantPopup is weird (redundant but safe)
         # InstantPopup should work natively for QToolButton.
         
         self.lbl_status = QLabel(" Offline")
-        self.lbl_status.setStyleSheet("color: #888; font-size: 12px; margin-left: 5px;")
+        self.lbl_status.setObjectName("StatusLabel")
         
         # Assemble Header
         header_layout.addWidget(self.btn_view)
@@ -267,7 +180,7 @@ class DuneUIStreamWidget(QWidget):
         # --- 2. Display Area ---
         # Container for the display
         self.container = QFrame()
-        self.container.setStyleSheet("background-color: #1E1E1E; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px;")
+        self.container.setObjectName("ImageFrame")
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -297,22 +210,10 @@ class DuneUIStreamWidget(QWidget):
         # Apply changes to buttons
         for btn in [self.btn_rot_left, self.btn_rot_right]:
             btn.setMinimumWidth(min_width)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: transparent;
-                    color: #DDD;
-                    border: 1px solid #444;
-                    border-radius: 4px;
-                    font-size: {font_size}; 
-                    padding: 0px;
-                    text-align: center;
-                    margin: 0px;
-                }}
-                QPushButton:hover {{
-                    background-color: #3D3D3D;
-                    color: white;
-                }}
-            """)
+            # Re-apply font size dynamically if needed, or rely on QSS
+            # Since QSS handles the base style, we can just set the property or style if strictly needed
+            # For now, let's trust the static QSS or just update font size via simple stylesheet if dynamic size is critical
+            btn.setStyleSheet(f"font-size: {font_size};")
 
         # Re-scale current pixmap if it exists
         if self.current_pixmap:
@@ -352,61 +253,29 @@ class DuneUIStreamWidget(QWidget):
     def set_status(self, connected, message):
         if "Connecting" in str(message):
             self.lbl_status.setText(" ● Connecting...")
-            self.lbl_status.setStyleSheet("color: #FFEB3B; font-size: 12px; font-weight: bold; margin-left: 5px;")
+            self.lbl_status.setProperty("type", "warning")
             self.btn_view.setText("Connecting...")
             self.btn_view.setEnabled(False)
             self.btn_view.setChecked(True)
-            self.btn_view.setStyleSheet("""
-                QPushButton {
-                    background-color: #FF9800;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 6px 16px;
-                    font-weight: bold;
-                    font-size: 13px;
-                }
-            """)
         elif connected:
             self.lbl_status.setText(" ● Live")
-            self.lbl_status.setStyleSheet("color: #4CAF50; font-size: 12px; font-weight: bold; margin-left: 5px;")
+            self.lbl_status.setProperty("type", "success")
             self.btn_view.setText("Disconnect")
             self.btn_view.setEnabled(True)
             self.btn_view.setChecked(True)
-            self.btn_view.setStyleSheet("""
-                QPushButton {
-                    background-color: #F44336;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 6px 16px;
-                    font-weight: bold;
-                    font-size: 13px;
-                }
-                QPushButton:hover { opacity: 0.9; }
-            """)
         else:
             # Disconnected: Clear View
             self.current_pixmap = None
             self.display.clear()
             
             self.lbl_status.setText(" ● Offline")
-            self.lbl_status.setStyleSheet("color: #888; font-size: 12px; margin-left: 5px;")
+            self.lbl_status.setProperty("type", "default")
             self.btn_view.setText("View UI")
             self.btn_view.setEnabled(True)
             self.btn_view.setChecked(False)
-            self.btn_view.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 6px 16px;
-                    font-weight: bold;
-                    font-size: 13px;
-                }
-                QPushButton:hover { opacity: 0.9; }
-            """)
+            
+        self.lbl_status.style().unpolish(self.lbl_status)
+        self.lbl_status.style().polish(self.lbl_status)
 
     def _rotate(self, angle):
         self.current_rotation = (self.current_rotation + angle) % 360

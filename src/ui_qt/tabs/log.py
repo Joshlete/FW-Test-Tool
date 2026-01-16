@@ -29,7 +29,7 @@ class LogTab(QtTabContent):
         card_layout.setSpacing(16)
 
         title = QLabel("Application Log")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title.setObjectName("SectionHeader")
         card_layout.addWidget(title)
 
         controls = QHBoxLayout()

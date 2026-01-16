@@ -16,34 +16,13 @@ class SlidePanel(QFrame):
         self.setObjectName("SlidePanel")
         self.current_endpoint = None
         
-        # Visual Styling
-        self.setStyleSheet("""
-            QFrame#SlidePanel {
-                background-color: rgba(37, 37, 38, 0.90); /* Increased transparency */
-                border-left: 1px solid #444;
-                border-top: 1px solid #444;
-                border-bottom: 1px solid #444;
-                border-top-left-radius: 16px;
-                border-bottom-left-radius: 16px;
-                border-right: 1px solid transparent; /* Ensure no right border visible */
-                margin-right: 0px; 
-            }
-            QLabel { 
-                color: #EEE; 
-                background-color: transparent; 
-            }
-            QTextEdit { 
-                background-color: rgba(30, 30, 30, 0.7); 
-                border: 1px solid #444; 
-                color: #CE9178;
-                font-family: Consolas, 'Courier New', monospace;
-                border-radius: 6px;
-            }
-        """)
+        # Visual Styling - Now mostly handled by dark_theme.qss, but TextEdit still needs specific override 
+        # because QPlainTextEdit generic style might conflict or we want specific code color here.
+        # Keeping TextEdit inline for syntax-highlight-like colors if preferred, or moving to QSS.
+        # Moving main panel styling to QSS.
         
         # Enable Shadow via GraphicsEffect
-        shadow = QGraphicsOpacityEffect(self) # Placeholder, actually want DropShadow
-        # self.setGraphicsEffect(self._create_shadow()) # Custom shadow method needed for real shadow
+        shadow = QGraphicsOpacityEffect(self) # Placeholder
         
         self.setup_ui()
         
@@ -63,21 +42,12 @@ class SlidePanel(QFrame):
         # Header
         header_layout = QHBoxLayout()
         self.title_label = QLabel("Details")
-        self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.title_label.setObjectName("SlideTitle")
         
         self.close_btn = QPushButton("×")
         self.close_btn.setFixedSize(40, 40)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.08);
-                font-size: 24px;
-                color: #FFF;
-                border: none;
-                border-radius: 20px;
-            }
-            QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); }
-        """)
+        self.close_btn.setObjectName("SlideClose")
         self.close_btn.clicked.connect(self.close_panel)
         
         header_layout.addWidget(self.title_label)
@@ -91,24 +61,13 @@ class SlidePanel(QFrame):
         
         self.copy_btn = QPushButton("Copy JSON to Clipboard")
         self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_btn.setObjectName("SlideAction")
         
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refresh_btn.setObjectName("SlideAction")
         self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         
-        btn_style = """
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 4px;
-                padding: 6px 12px;
-                color: #EEE;
-            }
-            QPushButton:hover { background-color: rgba(255, 255, 255, 0.2); color: #FFF; }
-            QPushButton:pressed { background-color: rgba(255, 255, 255, 0.05); }
-        """
-        self.copy_btn.setStyleSheet(btn_style)
-        self.refresh_btn.setStyleSheet(btn_style)
         
         toolbar.addWidget(self.copy_btn)
         toolbar.addWidget(self.refresh_btn)

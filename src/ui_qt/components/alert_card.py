@@ -82,7 +82,7 @@ class AlertCard(QFrame):
         # --- Title (String ID) ---
         title_text = str(alert_data.get('stringId', 'Unknown Alert'))
         self.title = QLabel(title_text)
-        self.title.setStyleSheet("font-weight: bold; font-size: 13px; color: #E0E0E0;")
+        self.title.setObjectName("CardTitle")
         layout.addWidget(self.title)
         
         # --- Badges (Extra Bubbles) ---
@@ -91,36 +91,20 @@ class AlertCard(QFrame):
         for badge_text in badges:
             if badge_text:
                 badge = QLabel(str(badge_text))
-                badge.setStyleSheet("""
-                    QLabel {
-                        background-color: rgba(255, 255, 255, 0.1);
-                        color: #CCC;
-                        border-radius: 8px;
-                        padding: 2px 8px;
-                        font-size: 11px;
-                    }
-                """)
+                badge.setObjectName("CardBadge")
                 layout.addWidget(badge)
 
         # --- Info (Category) ---
         cat = alert_data.get('category', 'General')
         self.info = QLabel(cat)
-        self.info.setStyleSheet("color: #AAAAAA; font-size: 12px;")
+        self.info.setObjectName("CardInfo")
         layout.addWidget(self.info)
         
         # --- Priority Bubble ---
         pri = alert_data.get('priority', '')
         if pri:
             pri_lbl = QLabel(f"Priority: {pri}")
-            pri_lbl.setStyleSheet("""
-                QLabel {
-                    background-color: rgba(255, 255, 255, 0.1);
-                    color: #CCC;
-                    border-radius: 8px;
-                    padding: 2px 8px;
-                    font-size: 11px;
-                }
-            """)
+            pri_lbl.setObjectName("CardBadge")
             layout.addWidget(pri_lbl)
         
         layout.addStretch(1) # Push actions to the right
@@ -134,26 +118,7 @@ class AlertCard(QFrame):
                     # Create button for this action
                     btn = QPushButton(action_value.capitalize().replace('_', ' '))
                     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                    # Compact pill style
-                    btn.setStyleSheet("""
-                        QPushButton {
-                            background-color: #2A2A2A;
-                            border: 1px solid #444;
-                            border-radius: 10px;
-                            color: #CCC;
-                            padding: 2px 10px;
-                            font-size: 11px;
-                            min-width: 50px;
-                        }
-                        QPushButton:hover {
-                            background-color: #3A3A3A;
-                            border-color: #666;
-                            color: #FFF;
-                        }
-                        QPushButton:pressed {
-                            background-color: #222;
-                        }
-                    """)
+                    btn.setObjectName("CardAction")
                     btn.clicked.connect(lambda checked=False, av=action_value: self._on_action_clicked(av))
                     layout.addWidget(btn)
 
@@ -175,14 +140,5 @@ class AlertCard(QFrame):
 
     def _set_severity_style(self, severity):
         # Main Card Style
-        self.setStyleSheet(f"""
-            QFrame#AlertCard {{
-                background-color: #1E1E1E;
-                border: 1px solid #333;
-                border-radius: 6px;
-            }}
-            QFrame#AlertCard:hover {{
-                background-color: #252525;
-                border-color: #444;
-            }}
-        """)
+        # Handled by AlertCard ID in dark_theme.qss
+        pass

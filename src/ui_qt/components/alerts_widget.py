@@ -39,11 +39,9 @@ class AlertsWidget(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll_area.setStyleSheet("background-color: transparent;") # Transparent background
         
         # Container widget inside scroll area
         self.cards_container = QWidget()
-        self.cards_container.setStyleSheet("background-color: transparent;")
         self.cards_layout = QVBoxLayout(self.cards_container)
         self.cards_layout.setContentsMargins(0, 0, 5, 0) # Right margin for scrollbar
         self.cards_layout.setSpacing(4) # Reduced spacing for compact list
@@ -55,7 +53,7 @@ class AlertsWidget(QWidget):
         # Empty State Label (Shown by default)
         self.empty_lbl = QLabel("No active alerts")
         self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_lbl.setStyleSheet("color: #666; font-size: 14px; font-style: italic;")
+        self.empty_lbl.setObjectName("PlaceholderText")
         
         # Show empty state by default
         self.cards_layout.insertWidget(0, self.empty_lbl)
@@ -109,22 +107,6 @@ class AlertsWidget(QWidget):
     def _show_context_menu(self, alert_data):
         """Display context menu for alert card."""
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2D2D2D;
-                border: 1px solid #3D3D3D;
-                color: #FFFFFF;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 5px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #007ACC;
-                color: #FFFFFF;
-            }
-        """)
         
         capture_action = QAction("Capture Alert UI", self)
         capture_action.triggered.connect(lambda: self.capture_requested.emit(alert_data))

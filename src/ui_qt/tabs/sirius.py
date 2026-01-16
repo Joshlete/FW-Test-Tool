@@ -98,7 +98,7 @@ class SiriusTab(QtTabContent):
         stream_container.setObjectName("Card")
         stream_layout = QVBoxLayout(stream_container)
         stream_label = QLabel("Printer Screen")
-        stream_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        stream_label.setObjectName("SectionHeader")
         
         self.ui_widget = UIStreamWidget(self.config_manager)
         stream_layout.addWidget(stream_label)
@@ -109,7 +109,7 @@ class SiriusTab(QtTabContent):
         ledm_container.setObjectName("Card")
         ledm_layout = QVBoxLayout(ledm_container)
         ledm_label = QLabel("LEDM Controls")
-        ledm_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        ledm_label.setObjectName("SectionHeader")
         
         self.ledm_widget = LEDMWidget()
         ledm_layout.addWidget(ledm_label)
@@ -134,7 +134,7 @@ class SiriusTab(QtTabContent):
         alerts_container.setObjectName("Card")
         alerts_layout = QVBoxLayout(alerts_container)
         alerts_label = QLabel("Alerts")
-        alerts_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        alerts_label.setObjectName("SectionHeader")
         
         self.alerts_widget = AlertsWidget()
         alerts_layout.addWidget(alerts_label)
@@ -145,7 +145,7 @@ class SiriusTab(QtTabContent):
         telemetry_container.setObjectName("Card")
         telemetry_layout = QVBoxLayout(telemetry_container)
         telemetry_label = QLabel("Telemetry")
-        telemetry_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #DDD;")
+        telemetry_label.setObjectName("SectionHeader")
         
         self.telemetry_widget = TelemetryWidget()
         telemetry_layout.addWidget(telemetry_label)

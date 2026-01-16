@@ -96,46 +96,27 @@ class TelemetryCard(QFrame):
 
         # --- Sequence Number ---
         seq_lbl = QLabel(f"#{seq_num}")
-        seq_lbl.setStyleSheet("color: #666; font-family: monospace; font-weight: bold;")
+        seq_lbl.setObjectName("CardMono")
         layout.addWidget(seq_lbl)
 
         # --- Color Name ---
         color_lbl = QLabel(color_name)
-        color_lbl.setStyleSheet("font-weight: bold; font-size: 13px; color: #E0E0E0;")
+        color_lbl.setObjectName("CardTitle")
         layout.addWidget(color_lbl)
 
-        # --- Separator ---
-        # sep1 = QLabel("•")
-        # sep1.setStyleSheet("color: #444;")
-        # layout.addWidget(sep1)
 
         # --- Trigger ---
         trigger_lbl = QLabel(trigger)
-        trigger_lbl.setStyleSheet("color: #448AFF; font-weight: bold;") # Blue tint for trigger
+        trigger_lbl.setObjectName("TriggerLabel")
         layout.addWidget(trigger_lbl)
 
-        # --- Separator ---
-        # sep2 = QLabel("•")
-        # sep2.setStyleSheet("color: #444;")
-        # layout.addWidget(sep2)
 
         # --- Reasons ---
         reasons_lbl = QLabel(reasons_str)
-        reasons_lbl.setStyleSheet("color: #AAAAAA; font-size: 12px; font-style: italic;")
+        reasons_lbl.setObjectName("CardInfo")
         layout.addWidget(reasons_lbl, 1) # Stretch to fill right side
 
         # --- Style ---
-        self.setStyleSheet("""
-            QFrame#TelemetryCard {
-                background-color: #1E1E1E;
-                border: 1px solid #333;
-                border-radius: 6px;
-            }
-            QFrame#TelemetryCard:hover {
-                background-color: #252525;
-                border-color: #444;
-            }
-        """)
 
     def _show_context_menu(self, position):
         menu = QMenu()
