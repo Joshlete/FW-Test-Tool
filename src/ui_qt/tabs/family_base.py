@@ -4,7 +4,6 @@ from PySide6.QtGui import QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
-from ..components.slide_panel import SlidePanel
 
 class FamilySplitterHandle(QSplitterHandle):
     def __init__(self, orientation, parent):
@@ -131,9 +130,6 @@ class FamilyTabBase(QtTabContent):
         
         right_layout.addWidget(self.right_splitter)
         self.main_splitter.addWidget(right_container)
-        
-        # Slide Panel (Overlay on Right Column)
-        self.slide_panel = SlidePanel(right_container)
 
     def _wire_base_controllers(self):
         """Wire Alerts and Telemetry controllers."""
@@ -188,9 +184,3 @@ class FamilyTabBase(QtTabContent):
     def _restore_splitter_state(self):
         """Restore splitter state from config. Override/Implement in subclasses or here with dynamic keys."""
         pass
-
-    def resizeEvent(self, event):
-        """Ensure slide panel resizes with the window."""
-        super().resizeEvent(event)
-        if hasattr(self, 'slide_panel') and self.slide_panel.isVisible():
-            self.slide_panel.resizeEvent(None)

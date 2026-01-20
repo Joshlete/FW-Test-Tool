@@ -678,42 +678,6 @@ QPushButton#RotationButton:hover {
     color: white;
 }
 
-/* Slide Panel */
-QFrame#SlidePanel {
-    background-color: rgba(37, 37, 38, 0.95); 
-    border-left: 1px solid #444;
-    border-top: 1px solid #444;
-    border-bottom: 1px solid #444;
-    border-top-left-radius: 16px;
-    border-bottom-left-radius: 16px;
-}
-QLabel#SlideTitle {
-    font-size: 18px; 
-    font-weight: bold;
-    color: #EEE;
-}
-QPushButton#SlideClose {
-    background-color: rgba(255, 255, 255, 0.08);
-    font-size: 24px;
-    color: #FFF;
-    border: none;
-    border-radius: 20px;
-}
-QPushButton#SlideClose:hover { 
-    background-color: rgba(255, 255, 255, 0.2); 
-}
-QPushButton#SlideAction {
-    background-color: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-    padding: 6px 12px;
-    color: #EEE;
-}
-QPushButton#SlideAction:hover { 
-    background-color: rgba(255, 255, 255, 0.2); 
-    color: #FFF; 
-}
-
 /* Toast Notification */
 QWidget#Toast {
     background-color: #252526;

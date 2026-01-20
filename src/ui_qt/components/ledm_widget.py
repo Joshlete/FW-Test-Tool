@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget
                                QPushButton, QScrollArea, QCheckBox, QMenu, QDialog, QTextEdit)
 from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QAction, QCursor
+from .code_editor import CodeEditor
 import json
 import xml.etree.ElementTree as ET
 
@@ -207,6 +208,7 @@ class LEDMWidget(QWidget):
             cb.setEnabled(not is_loading)
 
     def display_data(self, endpoint, content):
+        """Show a dialog with the fetched data (with line numbers)."""
         # Format XML
         try:
             root = ET.fromstring(content)
@@ -215,23 +217,58 @@ class LEDMWidget(QWidget):
         except:
             pass
             
+        # Show Dialog
         dialog = QDialog(self)
         dialog.setWindowTitle(f"LEDM Viewer - {self._get_friendly_name(endpoint)}")
         dialog.resize(800, 600)
+        dialog.setStyleSheet("QDialog { background-color: #1e1e1e; }")
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 8)
         
-        text_edit = QTextEdit()
-        text_edit.setPlainText(content)
-        text_edit.setReadOnly(True)
-        text_edit.setFontPointSize(10)
-        layout.addWidget(text_edit)
+        # Code editor with line numbers
+        editor = CodeEditor()
+        editor.setPlainText(content)
         
+        layout.addWidget(editor)
+        
+        # Button row
         btn_layout = QHBoxLayout()
-        copy_btn = QPushButton("Copy")
-        copy_btn.clicked.connect(text_edit.selectAll)
-        copy_btn.clicked.connect(text_edit.copy)
+        btn_layout.setContentsMargins(8, 0, 8, 0)
+        
+        copy_btn = QPushButton("Copy to Clipboard")
+        copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0e639c;
+                color: white;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1177bb;
+            }
+        """)
+        copy_btn.clicked.connect(lambda: editor.selectAll())
+        copy_btn.clicked.connect(lambda: editor.copy())
+        
         close_btn = QPushButton("Close")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3c3c3c;
+                color: #cccccc;
+                border: 1px solid #555555;
+                padding: 6px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #4c4c4c;
+                color: white;
+            }
+        """)
         close_btn.clicked.connect(dialog.accept)
+        
+        btn_layout.addStretch()
         btn_layout.addWidget(copy_btn)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)

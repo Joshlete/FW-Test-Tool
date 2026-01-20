@@ -108,10 +108,6 @@ class DuneTab(FamilyTabBase):
                 lambda endpoints, variant: data_ctrl.fetch_and_save(endpoints, variant)
             )
             self.cdm_widget.view_requested.connect(data_ctrl.view_endpoint)
-            
-            # Override CDM display to use SlidePanel
-            self.cdm_widget.display_data = self.show_data_in_slide_panel
-            self.slide_panel.refresh_requested.connect(data_ctrl.view_endpoint)
 
         # --- Printer Controller (VNC) ---
         printer_ctrl = self._controllers.get('printer')
@@ -169,18 +165,10 @@ class DuneTab(FamilyTabBase):
     # --- Controller Logic Helpers ---
 
     def _on_data_fetched(self, results: dict):
+        """Display fetched data in a dialog window."""
         for endpoint, content in results.items():
-            self.show_data_in_slide_panel(endpoint, content)
+            self.cdm_widget.display_data(endpoint, content)
             break
-
-    def show_data_in_slide_panel(self, endpoint, content):
-        try:
-            import json
-            parsed = json.loads(content)
-            content = json.dumps(parsed, indent=4)
-        except:
-            pass
-        self.slide_panel.open_panel(endpoint, content)
 
     # --- Connection & View Logic ---
 

@@ -13,7 +13,6 @@ from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
 from ..components.cdm_widget import CDMWidget
-from ..components.slide_panel import SlidePanel
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
@@ -146,9 +145,6 @@ class AresTab(QtTabContent):
         
         right_panel_layout.addWidget(right_splitter)
         
-        # Slide Panel (Overlay)
-        self.slide_panel = SlidePanel(right_panel_container)
-        
         # Assemble Main Layout
         main_splitter.addWidget(cdm_container)
         main_splitter.addWidget(right_panel_container)
@@ -209,34 +205,12 @@ class AresTab(QtTabContent):
                 lambda endpoints, variant: data_ctrl.fetch_and_save(endpoints, variant)
             )
             self.cdm_widget.view_requested.connect(data_ctrl.view_endpoint)
-            
-            # Override CDM widget's display_data to use slide panel
-            self.cdm_widget.display_data = self.show_data_in_slide_panel
-            
-            # Slide panel refresh -> re-fetch last endpoint
-            self.slide_panel.refresh_requested.connect(data_ctrl.view_endpoint)
 
     def _on_data_fetched(self, results: dict):
-        """Handle data fetched from controller - display in slide panel."""
+        """Handle data fetched from controller - display in dialog."""
         for endpoint, content in results.items():
-            self.show_data_in_slide_panel(endpoint, content)
+            self.cdm_widget.display_data(endpoint, content)
             break  # Show first result
-
-    def show_data_in_slide_panel(self, endpoint, content):
-        """Display data in the slide panel."""
-        try:
-            import json
-            parsed = json.loads(content)
-            content = json.dumps(parsed, indent=4)
-        except:
-            pass
-        self.slide_panel.open_panel(endpoint, content)
-
-    def resizeEvent(self, event):
-        """Ensure slide panel resizes with the window."""
-        super().resizeEvent(event)
-        if hasattr(self, 'slide_panel') and self.slide_panel.isVisible():
-            self.slide_panel.resizeEvent(None)
 
     def on_show(self):
         pass

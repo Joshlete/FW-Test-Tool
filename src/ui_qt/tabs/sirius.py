@@ -93,9 +93,6 @@ class SiriusTab(FamilyTabBase):
                 lambda endpoints, variant: data_ctrl.fetch_and_save(endpoints, variant)
             )
             self.ledm_widget.view_requested.connect(data_ctrl.view_endpoint)
-            
-            self.ledm_widget.display_data = self.show_data_in_slide_panel
-            self.slide_panel.refresh_requested.connect(data_ctrl.view_endpoint)
 
         # --- Printer Card Interactions ---
         self.printer_card.view_toggled.connect(self.ui_widget._toggle_connection)
@@ -139,19 +136,10 @@ class SiriusTab(FamilyTabBase):
         self.ui_widget.pwd_input.setText(pwd)
 
     def _on_data_fetched(self, results: dict):
+        """Display fetched data in a dialog window."""
         for endpoint, content in results.items():
-            self.show_data_in_slide_panel(endpoint, content)
+            self.ledm_widget.display_data(endpoint, content)
             break
-
-    def show_data_in_slide_panel(self, endpoint, content):
-        try:
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(content)
-            ET.indent(root)
-            content = ET.tostring(root, encoding='unicode')
-        except:
-            pass
-        self.slide_panel.open_panel(endpoint, content)
 
     # --- Capture Logic ---
 
