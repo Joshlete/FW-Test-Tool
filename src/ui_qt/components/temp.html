@@ -92,7 +92,13 @@
             <div class="col-span-12 lg:col-span-3 flex flex-col h-[500px] lg:h-full bg-neutral-900 border border-neutral-800 rounded-sm overflow-hidden min-h-0">
                 <div class="px-3 py-2 bg-neutral-900 border-b border-neutral-800 flex justify-between items-center shrink-0">
                     <h2 class="text-xs font-bold text-white uppercase tracking-wide">CDM Controls</h2>
-                    <span class="text-[9px] text-neutral-500 bg-black px-1.5 py-0.5 rounded border border-neutral-800">JSON</span>
+                    <div class="flex items-center gap-3">
+                        <!-- Selection Counter (shows when items selected) -->
+                        <span id="selectionIndicator" class="text-[10px] text-neutral-500 hidden">
+                            <span id="selectionCount">0 selected</span>
+                        </span>
+                        <span class="text-[9px] text-neutral-500 bg-black px-1.5 py-0.5 rounded border border-neutral-800">JSON</span>
+                    </div>
                 </div>
                 
                 <!-- Sectioned List -->
@@ -105,49 +111,49 @@
                     <div class="px-2 py-1 space-y-0.5">
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" checked class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" checked class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Alerts</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../supply/v1/alerts</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SuppliesPublic</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../suppliesPublic</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SuppliesPrivate</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../suppliesPrivate</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SupplyAssessment</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../supplyAssessment</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">RegionReset</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../regionReset</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">SupplyHistory</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../supplyHistory</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">LifetimeCounters</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../lifetimeCounters</span>
@@ -161,28 +167,28 @@
                     <div class="px-2 py-1 space-y-0.5">
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Alert/Alerts</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../alert/v1/alerts</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Rtp/Alerts</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../rtp/v1/alerts</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">DCR SupplyData</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../dcrSupplyData</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">LifetimeCounter Snapshot</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../lifetimeCounterSnapshot</span>
@@ -196,14 +202,14 @@
                     <div class="px-2 py-1 space-y-0.5">
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">PlatformInfo</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../platformInfo</span>
                         </label>
                         <label class="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-neutral-800 cursor-pointer group transition-colors select-none">
                             <div class="flex items-center">
-                                <input type="checkbox" class="w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
+                                <input type="checkbox" class="cdm-checkbox w-3.5 h-3.5 appearance-none border border-neutral-600 rounded-sm bg-neutral-900 custom-checkbox">
                                 <span class="ml-2 text-xs text-neutral-400 group-hover:text-white">Identity</span>
                             </div>
                             <span class="text-[10px] text-neutral-600 font-mono-data">.../system/v1/identity</span>
@@ -211,9 +217,16 @@
                     </div>
                 </div>
                 <div class="p-3 bg-neutral-900 border-t border-neutral-800 shrink-0">
-                    <button class="w-full py-2 bg-neutral-200 hover:bg-white text-black text-xs font-bold rounded shadow transition-all btn-active">
-                        SAVE TO DIRECTORY
-                    </button>
+                    <div class="flex items-center gap-3">
+                        <!-- Clear Button (Ghost style, left side) -->
+                        <button id="clearBtnFooter" class="hidden px-4 py-2 bg-transparent hover:bg-neutral-800 text-neutral-400 hover:text-white text-xs font-medium rounded border border-neutral-700 hover:border-neutral-600 transition-all btn-active">
+                            Clear
+                        </button>
+                        <!-- Save Button (Primary, takes remaining space) -->
+                        <button class="flex-1 py-2 bg-neutral-200 hover:bg-white text-black text-xs font-bold rounded shadow transition-all btn-active">
+                            SAVE TO DIRECTORY
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -521,8 +534,8 @@
     </main>
 
     <script>
-        // Dropdown Toggle Logic
         document.addEventListener('DOMContentLoaded', () => {
+            // --- Dropdown Toggle Logic ---
             const captureBtn = document.getElementById('captureBtn');
             const captureMenu = document.getElementById('captureMenu');
 
@@ -541,6 +554,41 @@
                     captureMenu.classList.add('translate-y-1');
                 }
             });
+
+            // --- CDM Selection Counter + Clear Logic ---
+            const cdmCheckboxes = document.querySelectorAll('.cdm-checkbox');
+            const selectionIndicator = document.getElementById('selectionIndicator');
+            const selectionCount = document.getElementById('selectionCount');
+            const clearBtnFooter = document.getElementById('clearBtnFooter');
+
+            function updateSelectionCount() {
+                const checkedCount = document.querySelectorAll('.cdm-checkbox:checked').length;
+                
+                if (checkedCount > 0) {
+                    selectionIndicator.classList.remove('hidden');
+                    selectionCount.textContent = `${checkedCount} selected`;
+                    clearBtnFooter.classList.remove('hidden');
+                } else {
+                    selectionIndicator.classList.add('hidden');
+                    clearBtnFooter.classList.add('hidden');
+                }
+            }
+
+            // Listen to all CDM checkboxes
+            cdmCheckboxes.forEach(cb => {
+                cb.addEventListener('change', updateSelectionCount);
+            });
+
+            // Clear button in footer
+            clearBtnFooter.addEventListener('click', () => {
+                cdmCheckboxes.forEach(cb => {
+                    cb.checked = false;
+                });
+                updateSelectionCount();
+            });
+
+            // Initial count
+            updateSelectionCount();
         });
     </script>
 </body>

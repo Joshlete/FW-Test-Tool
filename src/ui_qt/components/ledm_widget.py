@@ -19,6 +19,7 @@ class LEDMWidget(QWidget):
     save_requested = Signal(list, object) # (endpoints_list, variant_string_or_none)
     view_requested = Signal(str)          # (endpoint_url)
     error_occurred = Signal(str)
+    selection_changed = Signal(int)       # (count of selected items)
 
     def __init__(self):
         super().__init__()
@@ -174,10 +175,17 @@ class LEDMWidget(QWidget):
         count = sum(1 for cb in self.checkboxes.values() if cb.isChecked())
         self.clear_btn.setVisible(count > 0)
         self.save_btn.setText(f"Save {count} Selected" if count > 0 else "Save Selected")
+        
+        # Emit signal for parent wrappers
+        self.selection_changed.emit(count)
 
     def _clear_selection(self):
         for cb in self.checkboxes.values():
             cb.setChecked(False)
+    
+    def clear_selection(self):
+        """Public method to clear all selections (for external callers)."""
+        self._clear_selection()
 
     def _on_save_clicked(self, variant):
         selected = [ep for ep, cb in self.checkboxes.items() if cb.isChecked()]

@@ -17,6 +17,7 @@ class CDMWidget(QWidget):
     save_requested = Signal(list, object) # (endpoints_list, variant_string_or_none)
     view_requested = Signal(str)          # (endpoint_url)
     error_occurred = Signal(str)
+    selection_changed = Signal(int)       # (count of selected items)
 
     def __init__(self):
         super().__init__()
@@ -263,10 +264,17 @@ class CDMWidget(QWidget):
             self.save_cdm_btn.setText(f"Save {count} Selected Items")
         else:
             self.save_cdm_btn.setText("Save Selected Items")
+        
+        # Emit signal for parent wrappers
+        self.selection_changed.emit(count)
 
     def _clear_cdm(self):
         for cb in self.cdm_checkboxes.values():
             cb.setChecked(False)
+    
+    def clear_selection(self):
+        """Public method to clear all selections (for external callers)."""
+        self._clear_cdm()
 
     def _show_save_context_menu(self, pos):
         menu = QMenu(self)

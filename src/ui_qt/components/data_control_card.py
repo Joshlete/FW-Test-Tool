@@ -16,13 +16,9 @@ class DataControlCard(QFrame):
         self.setObjectName("Card")
         self.inner_widget = inner_widget
         
-        # Connect inner widget signals if needed, or just let them bubble up?
-        # The inner widget emits save_requested(list, variant). 
-        # But here we have a footer button that triggers the save.
-        # We need to trigger the inner widget's save logic.
-        
         self._init_layout(title, badge_text)
         self._hide_inner_header()
+        self._connect_selection_signal()
 
     def _init_layout(self, title, badge_text):
         layout = QVBoxLayout(self)
@@ -38,28 +34,42 @@ class DataControlCard(QFrame):
         title_lbl = QLabel(title.upper())
         title_lbl.setObjectName("CardHeaderTitle")
         
+        # Selection Count Label (hidden by default)
+        self.selection_lbl = QLabel("")
+        self.selection_lbl.setObjectName("SelectionCount")
+        self.selection_lbl.hide()
+        
         badge = QLabel(badge_text)
         badge.setObjectName("Badge")
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
+        header_layout.addWidget(self.selection_lbl)
         header_layout.addWidget(badge)
         
         layout.addWidget(header)
         
         # --- Content (Inner Widget) ---
-        # We assume inner_widget is a QWidget
         layout.addWidget(self.inner_widget, 1) # Stretch to fill
         
         # --- Footer ---
         footer = QFrame()
-        footer.setObjectName("CardFooter") # For styling (border-top, padding)
-        footer_layout = QVBoxLayout(footer)
+        footer.setObjectName("CardFooter")
+        footer_layout = QHBoxLayout(footer)  # Changed to HBoxLayout for side-by-side buttons
         footer_layout.setContentsMargins(12, 12, 12, 12)
+        footer_layout.setSpacing(12)
         
+        # Clear Button (Ghost style, hidden by default)
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setObjectName("GhostButton")
+        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_btn.clicked.connect(self._on_clear_clicked)
+        self.clear_btn.hide()
+        
+        # Save Button (Primary style)
         self.save_btn = QPushButton("SAVE TO DIRECTORY")
-        self.save_btn.setObjectName("PrimaryButton") # Use same style as ManualOps
+        self.save_btn.setObjectName("PrimaryButton")
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_btn.clicked.connect(lambda: self._on_save_clicked(None))
         
@@ -67,7 +77,8 @@ class DataControlCard(QFrame):
         self.save_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.save_btn.customContextMenuRequested.connect(self._show_save_context_menu)
         
-        footer_layout.addWidget(self.save_btn)
+        footer_layout.addWidget(self.clear_btn)
+        footer_layout.addWidget(self.save_btn, 1)  # Save takes remaining space
         layout.addWidget(footer)
 
     def _hide_inner_header(self):
@@ -83,6 +94,26 @@ class DataControlCard(QFrame):
                     item.widget().hide()
         except Exception:
             pass
+    
+    def _connect_selection_signal(self):
+        """Connect to inner widget's selection_changed signal if available."""
+        if hasattr(self.inner_widget, 'selection_changed'):
+            self.inner_widget.selection_changed.connect(self._on_selection_changed)
+    
+    def _on_selection_changed(self, count):
+        """Update header count and footer clear button visibility."""
+        if count > 0:
+            self.selection_lbl.setText(f"{count} selected")
+            self.selection_lbl.show()
+            self.clear_btn.show()
+        else:
+            self.selection_lbl.hide()
+            self.clear_btn.hide()
+    
+    def _on_clear_clicked(self):
+        """Clear all selections in the inner widget."""
+        if hasattr(self.inner_widget, 'clear_selection'):
+            self.inner_widget.clear_selection()
 
     def _on_save_clicked(self, variant):
         """Trigger save on the inner widget."""
