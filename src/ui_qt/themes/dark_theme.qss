@@ -43,16 +43,68 @@ QFrame#Card, .Card {
     border-radius: 4px; /* rounded-sm */
 }
 
-/* Section Headers inside Cards */
-QLabel#SectionHeader {
+/* Card Header/Footer */
+QFrame#CardHeader {
+    background-color: #171717;
+    border: none;
+    border-bottom: 1px solid #262626;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+/* Card Header Title (white text) */
+QLabel#CardHeaderTitle {
     color: #FFFFFF;
     font-weight: bold;
     text-transform: uppercase;
-    font-size: 11px; /* text-xs */
-    background-color: transparent; /* Changed from #171717 to transparent for versatility */
-    border-bottom: 1px solid #262626;
-    padding: 8px;
-    margin-top: 5px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+}
+QFrame#CardFooter {
+    background-color: #171717;
+    border-top: 1px solid #262626;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+
+/* Section Headers inside Cards (lighter than card bg) */
+QLabel#SectionHeader {
+    background-color: rgba(38, 38, 38, 0.8); /* neutral-800 at 80% - LIGHTER than card */
+    color: #a3a3a3; /* neutral-400 - visible muted text */
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 1px;
+    border: none;
+    border-bottom: 1px solid #404040; /* neutral-700 */
+    padding: 4px 12px;
+    margin: 0px;
+}
+
+/* CDM Row Container - flat, no borders between items */
+QWidget#CDMRow {
+    background-color: transparent;
+    border: none;
+    border-radius: 2px;
+    padding: 0px;
+    margin: 1px 8px; /* horizontal padding from card edge */
+}
+QWidget#CDMRow:hover {
+    background-color: #262626; /* subtle hover */
+}
+
+/* Path Label (.../v1/alerts) - transparent, muted */
+QLabel#PathLabel {
+    background-color: transparent;
+    color: #525252; /* neutral-600 */
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-size: 10px;
+    padding: 0px;
+    border: none;
 }
 
 /* Config Labels (IP, Directory, Step) */
@@ -60,6 +112,14 @@ QLabel#ConfigLabel {
     font-weight: bold;
     color: #AAAAAA;
     font-size: 13px;
+}
+
+/* Field Labels (Manual Ops) */
+QLabel#FieldLabel {
+    color: #737373; /* neutral-500 */
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
 }
 
 /* Placeholder / Status Text */
@@ -71,8 +131,8 @@ QLabel#PlaceholderText {
 
 /* Image Frame (Stream) */
 QFrame#ImageFrame {
-    background-color: #1E1E1E;
-    border-radius: 4px;
+    background-color: #000000; /* Deep black */
+    border-radius: 0px; /* Flush */
 }
 
 /* --- INPUTS --- */
@@ -86,6 +146,17 @@ QLineEdit {
 }
 QLineEdit:focus {
     border: 1px solid #737373; /* neutral-500 */
+}
+
+/* Dark Input (Password) */
+QLineEdit#DarkInput {
+    background-color: #000000;
+    border: 1px solid #404040;
+    color: #FFFFFF;
+    font-size: 12px;
+}
+QLineEdit#DarkInput:focus {
+    border: 1px solid #FFFFFF;
 }
 
 /* --- BUTTONS --- */
@@ -103,6 +174,82 @@ QPushButton:hover {
 }
 QPushButton:pressed {
     background-color: #171717; /* neutral-900 */
+}
+
+/* Action Key (Tactile Keys) */
+QPushButton#ActionKey {
+    background-color: #262626;
+    border: 1px solid #404040;
+    color: #E5E5E5;
+    font-size: 11px;
+    border-radius: 4px;
+    text-align: center; /* Center if only text */
+}
+QPushButton#ActionKey:hover {
+    background-color: #2D2D2D; /* neutral-750 */
+    border-color: #737373;
+    color: #FFFFFF;
+}
+QPushButton#ActionKey:pressed {
+    background-color: #171717;
+    border-color: #262626;
+    transform: translateY(1px);
+}
+
+/* Danger Button (Disconnect) */
+QPushButton#DangerButton {
+    background-color: rgba(127, 29, 29, 0.5); /* red-900/50 */
+    border: 1px solid #7f1d1d;
+    color: #fecaca; /* red-200 */
+    font-weight: bold;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+QPushButton#DangerButton:hover {
+    background-color: #dc2626; /* red-600 */
+    color: #FFFFFF;
+}
+QPushButton#DangerButton[connected="true"] {
+    /* Style for "DISCONNECT" state (Red) */
+    background-color: rgba(127, 29, 29, 0.5);
+    border: 1px solid #7f1d1d;
+    color: #fecaca;
+}
+QPushButton#DangerButton[connected="false"] {
+    /* Style for "CONNECT" state (Green/Neutral) */
+    background-color: rgba(20, 83, 45, 0.5); /* green-900/50 */
+    border: 1px solid #14532d;
+    color: #bbf7d0; /* green-200 */
+}
+
+/* Rotate Buttons */
+QFrame#RotateGroup {
+    border: 1px solid #404040;
+    border-radius: 4px;
+    background-color: #262626;
+}
+QPushButton#RotateButtonLeft {
+    background-color: #262626;
+    border: none;
+    border-right: 1px solid #404040;
+    border-radius: 0px;
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+    color: #A3A3A3;
+    font-size: 14px;
+}
+QPushButton#RotateButtonRight {
+    background-color: #262626;
+    border: none;
+    border-radius: 0px;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    color: #A3A3A3;
+    font-size: 14px;
+}
+QPushButton#RotateButtonLeft:hover, QPushButton#RotateButtonRight:hover {
+    background-color: #404040;
+    color: #FFFFFF;
 }
 
 /* Primary Action Button (White) */
@@ -193,17 +340,26 @@ QPushButton#GhostButton:hover {
     border: 1px solid #444;
 }
 
-/* Arrow Button (CDM Row) */
-QPushButton#ArrowButton {
-    background-color: #333;
-    color: #CCC;
-    border: 1px solid #444;
-    border-radius: 4px;
-    font-size: 11px;
+/* View Button (CDM/LEDM Row - Ghost Pill) */
+QPushButton#ViewButton {
+    background-color: transparent;
+    color: #737373; /* neutral-500 */
+    border: 1px solid #404040; /* neutral-700 */
+    border-radius: 12px; /* pill shape */
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    margin-right: 8px;
 }
-QPushButton#ArrowButton:hover {
-    background-color: #444;
-    color: #FFF;
+QPushButton#ViewButton:hover {
+    background-color: #262626; /* neutral-800 */
+    color: #FFFFFF;
+    border-color: #525252; /* neutral-600 */
+}
+QPushButton#ViewButton:pressed {
+    background-color: #171717;
+    border-color: #404040;
 }
 
 /* --- MENUS --- */
@@ -242,26 +398,46 @@ QCheckBox::indicator {
 QCheckBox::indicator:checked {
     background-color: #FFFFFF;
     border-color: #FFFFFF;
+    image: none; /* We use CSS tricks usually, but here we just fill it white */
 }
+/* If we want a checkmark, we need an image. For simplicity, solid white box or native style. 
+   Plan says "Custom Checkbox Style ... White check". 
+   Without an image resource, let's stick to solid white or just rely on native check. 
+   If I had a check icon I'd use 'image: url(:/icons/check.png);'
+*/
 
-/* Tile Checkbox (CDM/LEDM Grid) */
+/* Tile Checkbox (CDM/LEDM Grid) - transparent, sits on card bg */
 QCheckBox#TileCheckbox {
-    background-color: #252526;
-    border: 1px solid #333;
-    border-radius: 4px;
-    padding: 8px;
+    background-color: transparent;
+    border: none;
+    padding: 6px 8px;
+    color: #a3a3a3; /* neutral-400 by default */
 }
 QCheckBox#TileCheckbox:hover {
-    background-color: #2D2D2D;
-    border-color: #555;
+    background-color: transparent;
+    color: #FFFFFF;
 }
-/* When parent row is checked, we might want to style it, 
-   but QCheckBox itself doesn't know about parent row state easily via QSS selector.
-   The python code sets a property on the ROW widget, not the checkbox. 
-*/
+QCheckBox#TileCheckbox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #525252; /* neutral-600 */
+    border-radius: 2px;
+    background-color: #171717; /* card bg */
+}
+QCheckBox#TileCheckbox::indicator:checked {
+    background-color: #FFFFFF;
+    border-color: #FFFFFF;
+}
+/* Row checked state - text becomes white/bold */
 QWidget#CDMRow[checked="true"] QCheckBox#TileCheckbox {
-    background-color: #004466; /* Dark blue bg for checked items */
-    border-color: #007ACC;
+    color: #FFFFFF;
+    font-weight: bold;
+}
+
+/* CDM Group Container - transparent */
+QWidget#CDMGroupContainer {
+    background-color: transparent;
+    border: none;
 }
 
 /* Bold Checkbox (Report Dialog) */
@@ -404,6 +580,37 @@ QLabel#CardBadge {
     border-radius: 8px;
     padding: 2px 8px;
     font-size: 11px;
+}
+
+/* Badge (JSON/XML) */
+QLabel#Badge {
+    background-color: #000000;
+    color: #737373; /* neutral-500 */
+    border: 1px solid #262626; /* neutral-800 */
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 9px;
+    font-weight: bold;
+}
+
+/* Status Badge (Live Feed) */
+QFrame#StatusBadge {
+    background-color: #0a0a0a; /* neutral-950 */
+    border: 1px solid #262626;
+    border-radius: 4px;
+}
+QLabel#StatusDot {
+    color: #22c55e; /* green-500 */
+    font-size: 12px;
+}
+QLabel#StatusDot[active="false"] {
+    color: #525252; /* neutral-600 */
+}
+QLabel#StatusText {
+    color: #22c55e;
+    font-size: 9px;
+    font-weight: bold;
+    text-transform: uppercase;
 }
 
 /* Compact Action Button (Cards) */
@@ -679,4 +886,3 @@ QMenu#HamburgerMenu::separator {
     background-color: #262626;
     margin: 4px 8px;
 }
-

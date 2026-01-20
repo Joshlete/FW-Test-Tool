@@ -81,7 +81,7 @@ class CDMWidget(QWidget):
         content_widget = QWidget()
         self.grid_layout = QVBoxLayout(content_widget)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.grid_layout.setSpacing(15)
+        self.grid_layout.setSpacing(0)  # No spacing between sections
         
         # Group endpoints
         grouped_endpoints = self._group_endpoints(self.cdm_endpoints)
@@ -94,9 +94,10 @@ class CDMWidget(QWidget):
             
             # Items Container
             group_container = QWidget()
+            group_container.setObjectName("CDMGroupContainer")
             group_layout = QVBoxLayout(group_container)
-            group_layout.setContentsMargins(0, 0, 0, 0)
-            group_layout.setSpacing(2)
+            group_layout.setContentsMargins(0, 4, 0, 4)  # Small vertical padding
+            group_layout.setSpacing(1)  # Minimal spacing between rows
             
             for endpoint in endpoints:
                 friendly_name = self._get_friendly_name(endpoint)
@@ -120,16 +121,39 @@ class CDMWidget(QWidget):
                 row_widget = QWidget()
                 row_widget.setObjectName("CDMRow") # ID for styling
                 row_layout = QHBoxLayout(row_widget)
-                row_layout.setContentsMargins(4, 0, 4, 0) # Add padding inside the row
+                row_layout.setContentsMargins(0, 0, 0, 0) # Zero margins for full-bleed hover
                 row_layout.setSpacing(0)
                 
-                row_layout.addWidget(cb, 1) # Checkbox takes mostly all space
+                # Checkbox (Left)
+                # Since we want padding on the left but the row handles background,
+                # we can rely on the checkbox's internal padding via QSS or add a small spacer/margin here.
+                # QSS padding is cleaner.
                 
-                # Arrow Button
-                arrow_btn = QPushButton("View")
-                arrow_btn.setFixedSize(70, 28)
+                row_layout.addWidget(cb) # Checkbox takes space content
+                
+                # Path Label (Right-aligned, before view button)
+                # Extract path logic if needed, but endpoint string is the path.
+                # We want it to look like ".../supply/v1/alerts"
+                # Truncate if too long? Or just show last N chars? 
+                # The HTML shows ".../supply/v1/alerts".
+                # Let's clean it up slightly or just use it as is.
+                
+                path_text = endpoint
+                if len(path_text) > 25:
+                    path_text = "..." + path_text[-25:]
+                
+                path_lbl = QLabel(path_text)
+                path_lbl.setObjectName("PathLabel")
+                path_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                
+                row_layout.addStretch() # Push everything right
+                row_layout.addWidget(path_lbl)
+                
+                # Arrow Button (Ghost Pill style - replaces path on hover)
+                arrow_btn = QPushButton("VIEW")
+                arrow_btn.setFixedHeight(24)
                 arrow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                arrow_btn.setObjectName("ArrowButton")
+                arrow_btn.setObjectName("ViewButton")
                 # Fix lambda: add checked=False default arg or ignore it
                 arrow_btn.clicked.connect(lambda checked=False, ep=endpoint: self.view_requested.emit(ep))
                 arrow_btn.hide() # Hide by default, show on hover
@@ -140,7 +164,8 @@ class CDMWidget(QWidget):
                 row_widget.setAttribute(Qt.WidgetAttribute.WA_Hover)
                 # Install event filter or use enterEvent to toggle arrow
                 row_widget.installEventFilter(self)
-                row_widget.arrow_btn = arrow_btn # Store reference
+                row_widget.arrow_btn = arrow_btn  # Store reference
+                row_widget.path_lbl = path_lbl    # Store reference for toggle
                 
                 group_layout.addWidget(row_widget)
                 self.cdm_checkboxes[endpoint] = cb
@@ -153,18 +178,20 @@ class CDMWidget(QWidget):
         layout.addWidget(scroll)
 
     def eventFilter(self, obj, event):
-        """Handle hover events for rows to show/hide arrow."""
+        """Handle hover events for rows to show/hide arrow (replaces path)."""
         if event.type() == QEvent.Type.Enter:
-            if hasattr(obj, 'arrow_btn'):
+            if hasattr(obj, 'arrow_btn') and hasattr(obj, 'path_lbl'):
+                obj.path_lbl.hide()
                 obj.arrow_btn.show()
         elif event.type() == QEvent.Type.Leave:
-            if hasattr(obj, 'arrow_btn'):
+            if hasattr(obj, 'arrow_btn') and hasattr(obj, 'path_lbl'):
                 obj.arrow_btn.hide()
+                obj.path_lbl.show()
         elif event.type() == QEvent.Type.MouseButtonPress:
             # Allow clicking anywhere on the row to toggle the checkbox,
-            # unless clicking the arrow button (which handles its own click)
+            # unless clicking the view button (which handles its own click)
             child = obj.childAt(event.pos())
-            if child and child.objectName() == "ArrowButton":
+            if child and child.objectName() == "ViewButton":
                 return False
             
             layout = obj.layout()

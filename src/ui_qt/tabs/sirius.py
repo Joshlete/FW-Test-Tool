@@ -1,251 +1,90 @@
 """
-Sirius Tab - Refactored to use Controllers instead of Managers.
-
-Uses VCMS architecture:
-- Views: AlertsWidget, TelemetryWidget, LEDMWidget, UIStreamWidget
-- Controllers: Injected from MainWindow
+Sirius Tab - Refactored to use FamilyTabBase and Cards.
 """
 import os
 import threading
 import requests
-from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QSplitterHandle)
-from PySide6.QtCore import Qt, QByteArray, QTimer, Signal
-from PySide6.QtGui import QPainter, QPen, QColor
-from .base import QtTabContent
-from ..components.alerts_widget import AlertsWidget
-from ..components.telemetry_widget import TelemetryWidget
+from PySide6.QtWidgets import (QVBoxLayout, QFrame, QMenu)
+from PySide6.QtCore import Qt, QByteArray, Signal, QTimer
+from PySide6.QtGui import QAction, QCursor
+from .family_base import FamilyTabBase
 from ..components.ledm_widget import LEDMWidget
 from ..components.ui_stream_widget import UIStreamWidget
-from ..components.slide_panel import SlidePanel
-from ..components.action_toolbar import ActionToolbar
-from ..components.step_control import StepControl
-from src.utils.config_manager import ConfigManager
+from ..components.manual_ops_card import ManualOpsCard
+from ..components.data_control_card import DataControlCard
+from ..components.printer_view_card import PrinterViewCard
 from src.utils.ews_capture import EWSScreenshotCapturer
 
 
-class SiriusSplitterHandle(QSplitterHandle):
-    def __init__(self, orientation, parent):
-        super().__init__(orientation, parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setCursor(Qt.CursorShape.SplitHCursor if orientation == Qt.Orientation.Horizontal else Qt.CursorShape.SplitVCursor)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor(30, 30, 30))
-        line_color = QColor(100, 100, 100)
-        pen = QPen(line_color, 1, Qt.PenStyle.DotLine)
-        painter.setPen(pen)
-
-        if self.orientation() == Qt.Orientation.Horizontal:
-            center_x = self.width() // 2
-            painter.drawLine(center_x, 10, center_x, self.height() - 10)
-        else:
-            center_y = self.height() // 2
-            painter.drawLine(10, center_y, self.width() - 10, center_y)
-
-
-class SiriusSplitter(QSplitter):
-    def __init__(self, orientation, parent=None):
-        super().__init__(orientation, parent)
-        self.setHandleWidth(9)
-
-    def createHandle(self):
-        return SiriusSplitterHandle(self.orientation(), self)
-
-
-class SiriusTab(QtTabContent):
+class SiriusTab(FamilyTabBase):
     """
     Sirius Tab Implementation.
-    Now uses controllers for business logic instead of managers.
     """
     
     capture_finished = Signal()
 
     def __init__(self, config_manager, controllers=None):
-        """
-        Initialize SiriusTab.
+        super().__init__(tab_name="sirius", config_manager=config_manager, controllers=controllers)
         
-        Args:
-            config_manager: Configuration manager for persistence
-            controllers: Optional dict with 'data', 'alerts', 'telemetry', 'printer' controllers
-        """
-        super().__init__(tab_name="sirius", config_manager=config_manager)
+        # Connect signals
+        self._connect_sirius_signals()
         
-        self.config_manager = config_manager
-        self.ip = None
-        
-        # Store controllers
-        self._controllers = controllers or {}
-        
-        # Connect signal for EWS capture button reset
-        self.capture_finished.connect(lambda: self._set_busy(self.btn_ews, False, "Capture EWS"))
+        # Restore Busy State logic for EWS button
+        # We need to access the button from ManualOpsCard
+        self.capture_finished.connect(lambda: self._set_busy(self.manual_ops.btn_ews, False, "Capture EWS"))
 
-        # --- Toolbar & Steps ---
-        self._init_toolbar()
-        
-        # --- Main Layout ---
-        self._init_layout()
-        
-        # --- Restore Splitter States ---
-        self._restore_splitter_states()
-        
-        # --- Wire Controllers to Widgets ---
-        self._wire_controllers()
-
-    def _init_toolbar(self):
-        """Initialize the action toolbar."""
-        self.toolbar = ActionToolbar()
-        self.layout.addWidget(self.toolbar)
-        
-        self.step_control = StepControl(self.step_manager)
-        self.toolbar.add_widget_left(self.step_control)
-        
-        self.toolbar.add_spacer()
-        
-        self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
-
-    def _init_layout(self):
-        """Initialize the main layout."""
-        # --- Main Splitter ---
-        self.main_splitter = SiriusSplitter(Qt.Orientation.Horizontal)
-        
-        # --- Left Panel: UI Stream + LEDM ---
-        left_panel = QFrame()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 10, 0)
-        
-        self.left_splitter = SiriusSplitter(Qt.Orientation.Vertical)
-        
-        # UI Stream (Top Left)
-        stream_container = QFrame()
-        stream_container.setObjectName("Card")
-        stream_layout = QVBoxLayout(stream_container)
-        stream_label = QLabel("Printer Screen")
-        stream_label.setObjectName("SectionHeader")
-        
-        self.ui_widget = UIStreamWidget(self.config_manager)
-        stream_layout.addWidget(stream_label)
-        stream_layout.addWidget(self.ui_widget)
-        
-        # LEDM Controls (Bottom Left)
-        ledm_container = QFrame()
-        ledm_container.setObjectName("Card")
-        ledm_layout = QVBoxLayout(ledm_container)
-        ledm_label = QLabel("LEDM Controls")
-        ledm_label.setObjectName("SectionHeader")
-        
+    def _setup_left_column(self):
+        """Setup Data Control (LEDM)."""
         self.ledm_widget = LEDMWidget()
-        ledm_layout.addWidget(ledm_label)
-        ledm_layout.addWidget(self.ledm_widget)
-        
-        self.left_splitter.addWidget(stream_container)
-        self.left_splitter.addWidget(ledm_container)
-        self.left_splitter.setStretchFactor(0, 1)
-        self.left_splitter.setStretchFactor(1, 1)
-        
-        left_layout.addWidget(self.left_splitter)
-        
-        # --- Right Panel: Alerts + Telemetry ---
-        right_panel_container = QFrame()
-        right_panel_layout = QVBoxLayout(right_panel_container)
-        right_panel_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.right_splitter = SiriusSplitter(Qt.Orientation.Vertical)
-        
-        # Alerts (Top Right)
-        alerts_container = QFrame()
-        alerts_container.setObjectName("Card")
-        alerts_layout = QVBoxLayout(alerts_container)
-        alerts_label = QLabel("Alerts")
-        alerts_label.setObjectName("SectionHeader")
-        
-        self.alerts_widget = AlertsWidget()
-        alerts_layout.addWidget(alerts_label)
-        alerts_layout.addWidget(self.alerts_widget)
-        
-        # Telemetry (Bottom Right)
-        telemetry_container = QFrame()
-        telemetry_container.setObjectName("Card")
-        telemetry_layout = QVBoxLayout(telemetry_container)
-        telemetry_label = QLabel("Telemetry")
-        telemetry_label.setObjectName("SectionHeader")
-        
-        self.telemetry_widget = TelemetryWidget()
-        telemetry_layout.addWidget(telemetry_label)
-        telemetry_layout.addWidget(self.telemetry_widget)
-        
-        self.right_splitter.addWidget(alerts_container)
-        self.right_splitter.addWidget(telemetry_container)
-        self.right_splitter.setStretchFactor(0, 1)
-        self.right_splitter.setStretchFactor(1, 1)
-        
-        right_panel_layout.addWidget(self.right_splitter)
-        
-        # --- Slide Panel ---
-        self.slide_panel = SlidePanel(right_panel_container)
-        
-        # Assemble Main Splitter
-        self.main_splitter.addWidget(left_panel)
-        self.main_splitter.addWidget(right_panel_container)
-        self.main_splitter.setStretchFactor(0, 1)
-        self.main_splitter.setStretchFactor(1, 1)
-        
-        self.layout.addWidget(self.main_splitter)
+        self.data_card = DataControlCard(self.ledm_widget, title="LEDM Controls", badge_text="XML")
+        self.main_splitter.addWidget(self.data_card)
 
-    def _restore_splitter_states(self):
-        """Restore splitter states from config."""
-        saved_main = self.config_manager.get("sirius_main_splitter")
-        if saved_main:
-            self.main_splitter.restoreState(QByteArray.fromBase64(saved_main.encode()))
-
-        saved_left = self.config_manager.get("sirius_left_splitter")
-        if saved_left:
-            self.left_splitter.restoreState(QByteArray.fromBase64(saved_left.encode()))
-
-        saved_right = self.config_manager.get("sirius_right_splitter")
-        if saved_right:
-            self.right_splitter.restoreState(QByteArray.fromBase64(saved_right.encode()))
-
-        # Connect save handlers
-        self.main_splitter.splitterMoved.connect(self._save_splitter_states)
-        self.left_splitter.splitterMoved.connect(self._save_splitter_states)
-        self.right_splitter.splitterMoved.connect(self._save_splitter_states)
-
-    def _wire_controllers(self):
-        """Wire controllers to widgets if provided."""
+    def _setup_center_column(self):
+        """Setup Interaction (Manual Ops + Printer View)."""
+        center_container = QFrame()
+        center_layout = QVBoxLayout(center_container)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(10)
         
-        # --- Alerts Controller ---
-        alerts_ctrl = self._controllers.get('alerts')
-        if alerts_ctrl:
-            alerts_ctrl.alerts_updated.connect(self.alerts_widget.populate_alerts)
-            alerts_ctrl.loading_changed.connect(self.alerts_widget.set_loading)
-            alerts_ctrl.status_message.connect(self.status_message.emit)
-            alerts_ctrl.error_occurred.connect(self.error_occurred.emit)
-            
-            self.alerts_widget.fetch_requested.connect(alerts_ctrl.fetch_alerts)
-            # Note: Sirius uses LEDM, action_requested may not be supported
+        # 1. Manual Operations Card
+        self.manual_ops = ManualOpsCard(self.step_manager)
+        self.manual_ops.set_password(self.config_manager.get("password", ""))
         
-        # --- Telemetry Controller ---
-        telemetry_ctrl = self._controllers.get('telemetry')
-        if telemetry_ctrl:
-            telemetry_ctrl.set_step_manager(self.step_manager)
-            
-            telemetry_ctrl.telemetry_updated.connect(self.telemetry_widget.populate_telemetry)
-            telemetry_ctrl.loading_changed.connect(self.telemetry_widget.set_loading)
-            telemetry_ctrl.erasing_changed.connect(self.telemetry_widget.set_erasing)
-            telemetry_ctrl.status_message.connect(self.status_message.emit)
-            telemetry_ctrl.error_occurred.connect(self.error_occurred.emit)
-            
-            self.telemetry_widget.fetch_requested.connect(telemetry_ctrl.fetch_telemetry)
-            self.telemetry_widget.erase_requested.connect(telemetry_ctrl.erase_telemetry)
-            self.telemetry_widget.save_requested.connect(telemetry_ctrl.save_event)
+        # Configure Manual Ops - Sirius uses EWS capture via direct click, no menu?
+        # Old code: self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
+        # So we connect click directly.
+        
+        # Commands: Not in old SiriusTab? 
+        # Old SiriusTab had: StepControl and Capture EWS. No Commands, No Report button.
+        # ManualOpsCard has "Commands" and "Report" buttons.
+        # We can hide them or just leave them unconnected/disabled.
+        self.manual_ops.btn_cmds.hide() 
+        self.manual_ops.btn_report.hide()
+        
+        # 2. Printer View Card
+        self.ui_widget = UIStreamWidget(self.config_manager)
+        self.printer_card = PrinterViewCard(self.ui_widget)
+        
+        # Configure Printer View
+        # Sirius has UI capture and ECL capture (menu)
+        self.printer_card.set_capture_menu(self._create_capture_menu())
+        # Sirius doesn't support rotation (HTTPS static images usually, unless widget handles it)
+        # UIStreamWidget doesn't seem to have rotation logic.
+        self.printer_card.btn_rot_left.hide()
+        self.printer_card.btn_rot_right.hide()
+        
+        center_layout.addWidget(self.manual_ops)
+        center_layout.addWidget(self.printer_card, 1)
+        
+        self.main_splitter.addWidget(center_container)
+
+    def _connect_sirius_signals(self):
+        """Connect Sirius-specific signals."""
         
         # --- Data Controller (LEDM) ---
         data_ctrl = self._controllers.get('data')
         if data_ctrl:
             data_ctrl.set_step_manager(self.step_manager)
-            
             data_ctrl.data_fetched.connect(self._on_data_fetched)
             data_ctrl.status_message.connect(self.status_message.emit)
             data_ctrl.error_occurred.connect(self.error_occurred.emit)
@@ -255,43 +94,56 @@ class SiriusTab(QtTabContent):
             )
             self.ledm_widget.view_requested.connect(data_ctrl.view_endpoint)
             
-            # Override LEDM widget's display_data to use slide panel
             self.ledm_widget.display_data = self.show_data_in_slide_panel
-            
             self.slide_panel.refresh_requested.connect(data_ctrl.view_endpoint)
+
+        # --- Printer Card Interactions ---
+        self.printer_card.view_toggled.connect(self.ui_widget._toggle_connection)
+        # UIStreamWidget emits status, we need to update PrinterCard
+        # UIStreamWidget (old) didn't emit generic connection status signal easy to hook,
+        # it used _on_connection_status internally.
+        # I should probably hook into UIStreamWidget's signal if it has one.
+        # I defined `status_message` and `error_occurred` in `UIStreamWidget`.
+        # I should add a `connection_changed` signal to `UIStreamWidget` to properly update `PrinterViewCard`.
+        # For now, `UIStreamWidget` manages its own button text.
+        # `PrinterViewCard` manages ITS button.
+        # We need synchronization.
+        # `UIStreamWidget` has `_toggle_connection`.
+        # I'll rely on `status_message` for now, or assume `UIStreamWidget` needs a small update to emit state.
+        # But I can't modify `UIStreamWidget` easily (user said "Do NOT edit the plan", implies minimal changes to existing unless needed).
+        # Actually `UIStreamWidget` in my read output has `_safe_update_status`. 
+        # I can override/monkeypatch or just modify `UIStreamWidget` slightly? 
+        # I'll just use what I have. `PrinterViewCard` expects `set_connected`.
+        # I'll hook `status_message` to detect "Live" vs "Offline"? Brittle.
         
-        # --- Printer Controller (Sirius Stream) ---
-        printer_ctrl = self._controllers.get('printer')
-        if printer_ctrl:
-            # Sirius stream uses HTTPS, wire to UI widget
-            # UI widget has its own connection logic, so we just connect status
-            pass
-        
-        # --- UI Stream Widget Signals ---
-        self.ui_widget.status_message.connect(self.status_message.emit)
+        # Better: Connect `ui_widget.status_message` to a handler that updates card state.
+        self.ui_widget.status_message.connect(self._on_ui_status_message)
         self.ui_widget.error_occurred.connect(self.error_occurred.emit)
+        
+        # Capture from Printer Card menu
+        # PrinterCard emits capture_requested(str) from menu actions if set.
+        # Or we can just use the menu actions directly.
+        # I set the menu using _create_capture_menu.
+        
+        # Capture UI from UIWidget signal (it has its own button, but we hid controls?)
         self.ui_widget.capture_ui_requested.connect(self._capture_ui)
         self.ui_widget.capture_ecl_requested.connect(self._capture_ecl)
 
+        # --- Manual Ops Actions ---
+        self.manual_ops.ews_clicked.connect(self._on_capture_ews)
+        self.manual_ops.password_changed.connect(lambda t: self.config_manager.set("password", t))
+        self.manual_ops.password_changed.connect(self._update_password)
+
+    def _update_password(self, pwd):
+        # Update widget passwords
+        self.ui_widget.pwd_input.setText(pwd)
+
     def _on_data_fetched(self, results: dict):
-        """Handle data fetched from controller."""
         for endpoint, content in results.items():
             self.show_data_in_slide_panel(endpoint, content)
             break
 
-    def update_ip(self, new_ip):
-        """Called by MainWindow when IP changes."""
-        self.ip = new_ip
-        self.ui_widget.update_ip(new_ip)
-        # Controllers are updated by MainWindow directly
-
-    def update_directory(self, new_dir):
-        """Called by MainWindow when Directory changes."""
-        super().update_directory(new_dir)
-        # Controllers are updated by MainWindow directly
-
     def show_data_in_slide_panel(self, endpoint, content):
-        """Display data in the slide panel."""
         try:
             import xml.etree.ElementTree as ET
             root = ET.fromstring(content)
@@ -301,17 +153,41 @@ class SiriusTab(QtTabContent):
             pass
         self.slide_panel.open_panel(endpoint, content)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.slide_panel.isVisible():
-            self.slide_panel.resizeEvent(None)
+    # --- Capture Logic ---
 
-    def _save_splitter_states(self):
-        """Save the current state of all splitters to config."""
-        self.config_manager.set("sirius_main_splitter", self.main_splitter.saveState().toBase64().data().decode())
-        self.config_manager.set("sirius_left_splitter", self.left_splitter.saveState().toBase64().data().decode())
-        self.config_manager.set("sirius_right_splitter", self.right_splitter.saveState().toBase64().data().decode())
+    def _create_capture_menu(self):
+        menu = QMenu(self)
+        
+        # UI Capture
+        action_ui = QAction("Capture UI", self)
+        action_ui.triggered.connect(lambda: self._capture_ui(""))
+        menu.addAction(action_ui)
+        
+        menu.addSeparator()
+        
+        # ECL Options
+        for label, val in [
+            ("ECL All", "Estimated Cartridge Levels"),
+            ("ECL Black", "Estimated Cartridge Levels Black"),
+            ("ECL Tri-Color", "Estimated Cartridge Levels Tri-Color")
+        ]:
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked=False, v=val: self._capture_ecl(v))
+            menu.addAction(action)
             
+        return menu
+
+    def _capture_ui(self, description=""):
+        # Delegate to UIWidget's logic or reimplement?
+        # UIWidget has logic but it's internal _capture_ui method.
+        # We can call it if we access it, or reimplement.
+        # Since logic is simple (requests.get), reusing or copying is fine.
+        # UIWidget._capture_ui is protected but accessible.
+        self.ui_widget._capture_ui(description)
+
+    def _capture_ecl(self, description):
+        self.ui_widget._capture_ecl(description)
+
     def _on_capture_ews(self):
         if not self.ip:
             self.error_occurred.emit("No IP configured")
@@ -323,7 +199,7 @@ class SiriusTab(QtTabContent):
             return
 
         self.status_message.emit("Capturing EWS...")
-        self._set_busy(self.btn_ews, True, idle_text="Capture EWS")
+        self._set_busy(self.manual_ops.btn_ews, True, idle_text="Capture EWS")
         snap_step = self.step_manager.get_step()
         snap_ip = self.ip
         
@@ -363,57 +239,28 @@ class SiriusTab(QtTabContent):
             button.style().polish(button)
         QTimer.singleShot(0, apply_state)
 
-    def _capture_ui(self, description=""):
-        if not self.ip:
-            return
-        pwd = self.config_manager.get("password", "")
-        if not pwd:
-            self.error_occurred.emit("Password required")
-            return
-            
-        self.status_message.emit("Capturing UI...")
-        
-        def _run():
-            try:
-                url = f"https://{self.ip}/TestService/UI/ScreenCapture"
-                resp = requests.get(url, verify=False, auth=("admin", pwd), timeout=10)
-                resp.raise_for_status()
-                
-                base_name = "UI"
-                if description:
-                    base_name += f" {description}"
-                    
-                success, path = self.file_manager.save_image_data(resp.content, base_name)
-                
-                if success:    
-                    self.status_message.emit(f"Saved UI screenshot: {os.path.basename(path)}")
-                else:
-                    self.error_occurred.emit("Failed to save UI screenshot")
-                
-            except Exception as e:
-                self.error_occurred.emit(f"Capture failed: {str(e)}")
-                
-        threading.Thread(target=_run).start()
+    # --- UI Status Sync ---
+    def _on_ui_status_message(self, msg):
+        self.status_message.emit(msg)
+        if "Live" in msg or "Connected" in msg:
+            self.printer_card.set_connected(True)
+            self.printer_card.status_text.setText("LIVE FEED")
+        elif "Offline" in msg or "Disconnected" in msg:
+            self.printer_card.set_connected(False)
+            self.printer_card.status_text.setText("OFFLINE")
 
-    def _capture_ecl(self, description):
-        if not self.ip:
-            return
-        pwd = self.config_manager.get("password", "")
-        
-        def _run():
-            try:
-                url = f"https://{self.ip}/TestService/UI/ScreenCapture"
-                resp = requests.get(url, verify=False, auth=("admin", pwd), timeout=10)
-                resp.raise_for_status()
-                
-                base_name = f"UI {description}"
-                success, path = self.file_manager.save_image_data(resp.content, base_name)
-                
-                if success:
-                    self.status_message.emit(f"Saved ECL: {os.path.basename(path)}")
-                else:
-                    self.error_occurred.emit("Failed to save ECL")
-            except Exception as e:
-                self.error_occurred.emit(f"ECL capture failed: {str(e)}")
-                
-        threading.Thread(target=_run).start()
+    # --- Public API Overrides ---
+
+    def update_ip(self, new_ip):
+        self.ip = new_ip
+        self.ui_widget.update_ip(new_ip)
+
+    def _restore_splitter_state(self):
+        saved_state = self.config_manager.get("sirius_main_splitter")
+        if saved_state:
+            self.main_splitter.restoreState(QByteArray.fromBase64(saved_state.encode()))
+        self.main_splitter.splitterMoved.connect(self._save_splitter_state)
+
+    def _save_splitter_state(self, pos, index):
+        state = self.main_splitter.saveState().toBase64().data().decode()
+        self.config_manager.set("sirius_main_splitter", state)

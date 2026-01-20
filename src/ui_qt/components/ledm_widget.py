@@ -74,8 +74,8 @@ class LEDMWidget(QWidget):
         
         content_widget = QWidget()
         self.grid_layout = QVBoxLayout(content_widget)
-        self.grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.grid_layout.setSpacing(2)
+        self.grid_layout.setContentsMargins(0, 4, 0, 4)  # Small vertical padding
+        self.grid_layout.setSpacing(1)  # Minimal spacing between rows
         
         # Populate List
         for endpoint in self.ledm_endpoints:
@@ -85,7 +85,7 @@ class LEDMWidget(QWidget):
             row_widget = QWidget()
             row_widget.setObjectName("CDMRow") # Reuse CDM styling
             row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(4, 0, 4, 0)
+            row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(0)
             
             # Checkbox
@@ -98,13 +98,25 @@ class LEDMWidget(QWidget):
             cb.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             cb.customContextMenuRequested.connect(lambda pos, ep=endpoint: self._show_item_context_menu(pos, ep))
             
-            row_layout.addWidget(cb, 1)
+            row_layout.addWidget(cb)
             
-            # Arrow Button (View)
-            arrow_btn = QPushButton("View")
-            arrow_btn.setFixedSize(70, 28)
+            # Path Label
+            path_text = endpoint
+            if len(path_text) > 30:
+                path_text = "..." + path_text[-30:]
+            
+            path_lbl = QLabel(path_text)
+            path_lbl.setObjectName("PathLabel")
+            path_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            
+            row_layout.addStretch()
+            row_layout.addWidget(path_lbl)
+            
+            # View Button (Ghost Pill style - replaces path on hover)
+            arrow_btn = QPushButton("VIEW")
+            arrow_btn.setFixedHeight(24)
             arrow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            arrow_btn.setObjectName("ArrowButton")
+            arrow_btn.setObjectName("ViewButton")
             arrow_btn.clicked.connect(lambda checked=False, ep=endpoint: self.view_requested.emit(ep))
             arrow_btn.hide()
             
@@ -114,6 +126,7 @@ class LEDMWidget(QWidget):
             row_widget.setAttribute(Qt.WidgetAttribute.WA_Hover)
             row_widget.installEventFilter(self)
             row_widget.arrow_btn = arrow_btn
+            row_widget.path_lbl = path_lbl  # Store reference for toggle
             
             self.grid_layout.addWidget(row_widget)
             self.checkboxes[endpoint] = cb
@@ -124,15 +137,18 @@ class LEDMWidget(QWidget):
         layout.addWidget(scroll)
 
     def eventFilter(self, obj, event):
+        """Handle hover events for rows to show/hide view button (replaces path)."""
         if event.type() == QEvent.Type.Enter:
-            if hasattr(obj, 'arrow_btn'):
+            if hasattr(obj, 'arrow_btn') and hasattr(obj, 'path_lbl'):
+                obj.path_lbl.hide()
                 obj.arrow_btn.show()
         elif event.type() == QEvent.Type.Leave:
-            if hasattr(obj, 'arrow_btn'):
+            if hasattr(obj, 'arrow_btn') and hasattr(obj, 'path_lbl'):
                 obj.arrow_btn.hide()
+                obj.path_lbl.show()
         elif event.type() == QEvent.Type.MouseButtonPress:
             child = obj.childAt(event.pos())
-            if child and child.objectName() == "ArrowButton":
+            if child and child.objectName() == "ViewButton":
                 return False
             layout = obj.layout()
             if layout:
