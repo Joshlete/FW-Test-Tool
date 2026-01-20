@@ -46,11 +46,11 @@ class ThemeManager:
         # Dynamic path resolution based on where this file ends up
         current_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # Try relative path from this file first (assuming src/ui_qt/utils)
-        # We look in ../themes/
+        # Try relative path from this file (src/services/)
+        # Themes are in src/views/themes/
         possible_paths = [
-            os.path.join(current_dir, "..", "themes", filename), 
-            os.path.join("src", "ui_qt", "themes", filename)
+            os.path.join(current_dir, "..", "views", "themes", filename), 
+            os.path.join("src", "views", "themes", filename)
         ]
         
         for path in possible_paths:

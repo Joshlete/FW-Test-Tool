@@ -40,7 +40,7 @@ from src.ui_qt.strategies.dune_iic_strategy import DuneIICStrategy
 from src.ui_qt.strategies.dune_iph_strategy import DuneIPHStrategy
 
 # Utilities
-from src.utils.config_manager import ConfigManager
+from src.services.config_service import ConfigManager
 from src.utils.logging.app_logger import configure_file_logging
 from src.version import VERSION
 

@@ -6,6 +6,7 @@ from .telemetry_controller import TelemetryController
 from .printer_controller import PrinterController
 from .ews_controller import EWSController
 from .command_controller import CommandController
+from .report_controller import ReportBuilder
 
 __all__ = [
     "DataController",
@@ -14,4 +15,5 @@ __all__ = [
     "PrinterController",
     "EWSController",
     "CommandController",
+    "ReportBuilder",
 ]

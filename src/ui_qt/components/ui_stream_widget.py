@@ -5,8 +5,8 @@ from PySide6.QtGui import QImage, QPixmap, QAction
 import io
 import requests
 from PIL import Image
-from src.utils.sirius_connection import SiriusConnection
-from src.utils.config_manager import ConfigManager
+from src.services.sirius_connection import SiriusConnection
+from src.services.config_service import ConfigManager
 
 class ConnectWorker(QThread):
     """Async worker for connecting/disconnecting to avoid UI freeze"""

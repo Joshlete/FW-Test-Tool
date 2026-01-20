@@ -11,11 +11,15 @@ from .families import (
     FAMILY_NAMES,
     get_family_config,
 )
+from .step_manager import QtStepManager
 
 __all__ = [
     # App State
     "AppState",
     "ConfigModel",  # Backwards compatibility alias
+    
+    # Step Management
+    "QtStepManager",
     
     # Family Configurations
     "BaseFamilyConfig",

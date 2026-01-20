@@ -5,7 +5,7 @@ This is a utility class for tracking the current step number in a workflow.
 Used for file naming prefixes like "1. Alert.json", "2. CDM.json", etc.
 """
 from PySide6.QtCore import QObject, Signal
-from src.utils.config_manager import ConfigManager
+from src.services.config_service import ConfigManager
 
 
 class QtStepManager(QObject):

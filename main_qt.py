@@ -8,7 +8,7 @@ sys.path.append(current_dir)
 
 from PySide6.QtWidgets import QApplication
 from src.ui_qt.main_window import MainWindow
-from src.ui_qt.utils.theme_manager import ThemeManager
+from src.services.theme_service import ThemeManager
 
 def main():
     # Handle Playwright browsers in frozen environment

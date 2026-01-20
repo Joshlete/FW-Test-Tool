@@ -13,7 +13,7 @@ from ..components.ui_stream_widget import UIStreamWidget
 from ..components.manual_ops_card import ManualOpsCard
 from ..components.data_control_card import DataControlCard
 from ..components.printer_view_card import PrinterViewCard
-from src.utils.ews_capture import EWSScreenshotCapturer
+from src.services.ews_capture import EWSScreenshotCapturer
 
 
 class SiriusTab(FamilyTabBase):

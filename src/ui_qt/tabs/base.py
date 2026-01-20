@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Signal
-from src.utils.step_manager import QtStepManager
-from src.utils.file_manager import FileManager
+from src.models.step_manager import QtStepManager
+from src.services.file_service import FileManager
 
 class QtTabContent(QWidget):
     """

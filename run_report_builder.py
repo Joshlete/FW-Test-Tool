@@ -7,7 +7,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 from src.ui_qt.components.report_builder_window import ReportBuilderWindow
-from src.ui_qt.utils.theme_manager import ThemeManager
+from src.services.theme_service import ThemeManager
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

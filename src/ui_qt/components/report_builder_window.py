@@ -5,8 +5,8 @@ from PySide6.QtCore import Qt, QTimer, QSize, QRect, QPoint, QDir
 from PySide6.QtGui import QPixmap, QPainter, QColor, QIcon, QAction, QTextFormat
 from PySide6.QtWidgets import QSizePolicy
 import os
-from src.utils.config_manager import ConfigManager
-from src.utils.report_builder import ReportBuilder
+from src.services.config_service import ConfigManager
+from src.controllers.report_controller import ReportBuilder
 
 # Custom FlowLayout for Alerts (No longer used for alert items, but kept if needed for other layouts or future)
 class FlowLayout(QLayout):

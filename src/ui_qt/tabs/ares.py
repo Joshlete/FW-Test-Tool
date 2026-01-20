@@ -16,8 +16,8 @@ from ..components.cdm_widget import CDMWidget
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
-from src.utils.config_manager import ConfigManager
-from src.utils.ews_capture import EWSScreenshotCapturer
+from src.services.config_service import ConfigManager
+from src.services.ews_capture import EWSScreenshotCapturer
 from src.utils.logging.app_logger import log_info, log_error
 
 
