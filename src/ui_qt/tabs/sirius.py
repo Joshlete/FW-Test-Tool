@@ -1,8 +1,15 @@
+"""
+Sirius Tab - Refactored to use Controllers instead of Managers.
+
+Uses VCMS architecture:
+- Views: AlertsWidget, TelemetryWidget, LEDMWidget, UIStreamWidget
+- Controllers: Injected from MainWindow
+"""
 import os
 import threading
 import requests
-from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QFileDialog, QSplitterHandle)
-from PySide6.QtCore import Qt, QThreadPool, QByteArray, QTimer, Signal
+from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QSplitterHandle)
+from PySide6.QtCore import Qt, QByteArray, QTimer, Signal
 from PySide6.QtGui import QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
@@ -12,10 +19,9 @@ from ..components.ui_stream_widget import UIStreamWidget
 from ..components.slide_panel import SlidePanel
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
-# from ..managers.step_manager import QtStepManager # Inherited
-from ..managers.sirius_managers import SiriusAlertsManager, SiriusLEDMManager, SiriusTelemetryManager
 from src.utils.config_manager import ConfigManager
 from src.utils.ews_capture import EWSScreenshotCapturer
+
 
 class SiriusSplitterHandle(QSplitterHandle):
     def __init__(self, orientation, parent):
@@ -26,20 +32,15 @@ class SiriusSplitterHandle(QSplitterHandle):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # Fill background to match main bg
         painter.fillRect(self.rect(), QColor(30, 30, 30))
-
         line_color = QColor(100, 100, 100)
         pen = QPen(line_color, 1, Qt.PenStyle.DotLine)
         painter.setPen(pen)
 
         if self.orientation() == Qt.Orientation.Horizontal:
-            # Vertical line in center of handle (for horizontal splitter)
             center_x = self.width() // 2
             painter.drawLine(center_x, 10, center_x, self.height() - 10)
         else:
-            # Horizontal line in center of handle (for vertical splitter)
             center_y = self.height() // 2
             painter.drawLine(10, center_y, self.width() - 10, center_y)
 
@@ -52,37 +53,60 @@ class SiriusSplitter(QSplitter):
     def createHandle(self):
         return SiriusSplitterHandle(self.orientation(), self)
 
+
 class SiriusTab(QtTabContent):
     """
     Sirius Tab Implementation.
-    Combines UI Stream, LEDM controls, Alerts, and Telemetry in a modern layout.
+    Now uses controllers for business logic instead of managers.
     """
     
     capture_finished = Signal()
 
-    def __init__(self, config_manager):
-        super().__init__(tab_name="sirius", config_manager=config_manager) # Initializes step_manager and file_manager
+    def __init__(self, config_manager, controllers=None):
+        """
+        Initialize SiriusTab.
+        
+        Args:
+            config_manager: Configuration manager for persistence
+            controllers: Optional dict with 'data', 'alerts', 'telemetry', 'printer' controllers
+        """
+        super().__init__(tab_name="sirius", config_manager=config_manager)
         
         self.config_manager = config_manager
-        self.thread_pool = QThreadPool()
+        self.ip = None
+        
+        # Store controllers
+        self._controllers = controllers or {}
         
         # Connect signal for EWS capture button reset
         self.capture_finished.connect(lambda: self._set_busy(self.btn_ews, False, "Capture EWS"))
 
         # --- Toolbar & Steps ---
+        self._init_toolbar()
+        
+        # --- Main Layout ---
+        self._init_layout()
+        
+        # --- Restore Splitter States ---
+        self._restore_splitter_states()
+        
+        # --- Wire Controllers to Widgets ---
+        self._wire_controllers()
+
+    def _init_toolbar(self):
+        """Initialize the action toolbar."""
         self.toolbar = ActionToolbar()
         self.layout.addWidget(self.toolbar)
         
-        # self.step_manager is initialized in super()
         self.step_control = StepControl(self.step_manager)
         self.toolbar.add_widget_left(self.step_control)
         
         self.toolbar.add_spacer()
         
         self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
-        
-        from PySide6.QtCore import QByteArray
 
+    def _init_layout(self):
+        """Initialize the main layout."""
         # --- Main Splitter ---
         self.main_splitter = SiriusSplitter(Qt.Orientation.Horizontal)
         
@@ -93,7 +117,7 @@ class SiriusTab(QtTabContent):
         
         self.left_splitter = SiriusSplitter(Qt.Orientation.Vertical)
         
-        # 1. UI Stream (Top Left)
+        # UI Stream (Top Left)
         stream_container = QFrame()
         stream_container.setObjectName("Card")
         stream_layout = QVBoxLayout(stream_container)
@@ -104,7 +128,7 @@ class SiriusTab(QtTabContent):
         stream_layout.addWidget(stream_label)
         stream_layout.addWidget(self.ui_widget)
         
-        # 2. LEDM Controls (Bottom Left)
+        # LEDM Controls (Bottom Left)
         ledm_container = QFrame()
         ledm_container.setObjectName("Card")
         ledm_layout = QVBoxLayout(ledm_container)
@@ -117,7 +141,7 @@ class SiriusTab(QtTabContent):
         
         self.left_splitter.addWidget(stream_container)
         self.left_splitter.addWidget(ledm_container)
-        self.left_splitter.setStretchFactor(0, 1) # UI Stream gets more space
+        self.left_splitter.setStretchFactor(0, 1)
         self.left_splitter.setStretchFactor(1, 1)
         
         left_layout.addWidget(self.left_splitter)
@@ -129,7 +153,7 @@ class SiriusTab(QtTabContent):
         
         self.right_splitter = SiriusSplitter(Qt.Orientation.Vertical)
         
-        # 3. Alerts (Top Right)
+        # Alerts (Top Right)
         alerts_container = QFrame()
         alerts_container.setObjectName("Card")
         alerts_layout = QVBoxLayout(alerts_container)
@@ -140,7 +164,7 @@ class SiriusTab(QtTabContent):
         alerts_layout.addWidget(alerts_label)
         alerts_layout.addWidget(self.alerts_widget)
         
-        # 4. Telemetry (Bottom Right)
+        # Telemetry (Bottom Right)
         telemetry_container = QFrame()
         telemetry_container.setObjectName("Card")
         telemetry_layout = QVBoxLayout(telemetry_container)
@@ -169,7 +193,8 @@ class SiriusTab(QtTabContent):
         
         self.layout.addWidget(self.main_splitter)
 
-        # --- Restore Splitter States ---
+    def _restore_splitter_states(self):
+        """Restore splitter states from config."""
         saved_main = self.config_manager.get("sirius_main_splitter")
         if saved_main:
             self.main_splitter.restoreState(QByteArray.fromBase64(saved_main.encode()))
@@ -186,51 +211,87 @@ class SiriusTab(QtTabContent):
         self.main_splitter.splitterMoved.connect(self._save_splitter_states)
         self.left_splitter.splitterMoved.connect(self._save_splitter_states)
         self.right_splitter.splitterMoved.connect(self._save_splitter_states)
+
+    def _wire_controllers(self):
+        """Wire controllers to widgets if provided."""
         
-        # --- Initialize Managers ---
-        self.alerts_manager = SiriusAlertsManager(self.alerts_widget, self.thread_pool)
+        # --- Alerts Controller ---
+        alerts_ctrl = self._controllers.get('alerts')
+        if alerts_ctrl:
+            alerts_ctrl.alerts_updated.connect(self.alerts_widget.populate_alerts)
+            alerts_ctrl.loading_changed.connect(self.alerts_widget.set_loading)
+            alerts_ctrl.status_message.connect(self.status_message.emit)
+            alerts_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            self.alerts_widget.fetch_requested.connect(alerts_ctrl.fetch_alerts)
+            # Note: Sirius uses LEDM, action_requested may not be supported
         
-        # Pass file_manager to LEDMManager
-        self.ledm_manager = SiriusLEDMManager(self.ledm_widget, self.thread_pool, self.step_manager, self.file_manager)
+        # --- Telemetry Controller ---
+        telemetry_ctrl = self._controllers.get('telemetry')
+        if telemetry_ctrl:
+            telemetry_ctrl.set_step_manager(self.step_manager)
+            
+            telemetry_ctrl.telemetry_updated.connect(self.telemetry_widget.populate_telemetry)
+            telemetry_ctrl.loading_changed.connect(self.telemetry_widget.set_loading)
+            telemetry_ctrl.erasing_changed.connect(self.telemetry_widget.set_erasing)
+            telemetry_ctrl.status_message.connect(self.status_message.emit)
+            telemetry_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            self.telemetry_widget.fetch_requested.connect(telemetry_ctrl.fetch_telemetry)
+            self.telemetry_widget.erase_requested.connect(telemetry_ctrl.erase_telemetry)
+            self.telemetry_widget.save_requested.connect(telemetry_ctrl.save_event)
         
-        self.telemetry_manager = SiriusTelemetryManager(
-            self.telemetry_widget,
-            self.thread_pool,
-            step_manager=self.step_manager,
-            file_manager=self.file_manager
-        )
+        # --- Data Controller (LEDM) ---
+        data_ctrl = self._controllers.get('data')
+        if data_ctrl:
+            data_ctrl.set_step_manager(self.step_manager)
+            
+            data_ctrl.data_fetched.connect(self._on_data_fetched)
+            data_ctrl.status_message.connect(self.status_message.emit)
+            data_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            self.ledm_widget.save_requested.connect(
+                lambda endpoints, variant: data_ctrl.fetch_and_save(endpoints, variant)
+            )
+            self.ledm_widget.view_requested.connect(data_ctrl.view_endpoint)
+            
+            # Override LEDM widget's display_data to use slide panel
+            self.ledm_widget.display_data = self.show_data_in_slide_panel
+            
+            self.slide_panel.refresh_requested.connect(data_ctrl.view_endpoint)
         
-        # Override LEDM display to use slide panel
-        self.ledm_widget.display_data = self.show_data_in_slide_panel
-        self.slide_panel.refresh_requested.connect(self.ledm_manager.view_ledm_data)
+        # --- Printer Controller (Sirius Stream) ---
+        printer_ctrl = self._controllers.get('printer')
+        if printer_ctrl:
+            # Sirius stream uses HTTPS, wire to UI widget
+            # UI widget has its own connection logic, so we just connect status
+            pass
         
-        # Connect UI Stream Signals
+        # --- UI Stream Widget Signals ---
         self.ui_widget.status_message.connect(self.status_message.emit)
         self.ui_widget.error_occurred.connect(self.error_occurred.emit)
         self.ui_widget.capture_ui_requested.connect(self._capture_ui)
         self.ui_widget.capture_ecl_requested.connect(self._capture_ecl)
-        
-        # Connect Manager Signals
-        for mgr in [self.alerts_manager, self.ledm_manager, self.telemetry_manager]:
-            mgr.status_message.connect(self.status_message.emit)
-            mgr.error_occurred.connect(self.error_occurred.emit)
-            
+
+    def _on_data_fetched(self, results: dict):
+        """Handle data fetched from controller."""
+        for endpoint, content in results.items():
+            self.show_data_in_slide_panel(endpoint, content)
+            break
+
     def update_ip(self, new_ip):
+        """Called by MainWindow when IP changes."""
         self.ip = new_ip
         self.ui_widget.update_ip(new_ip)
-        self.alerts_manager.update_ip(new_ip)
-        self.ledm_manager.update_ip(new_ip)
-        self.telemetry_manager.update_ip(new_ip)
+        # Controllers are updated by MainWindow directly
 
     def update_directory(self, new_dir):
+        """Called by MainWindow when Directory changes."""
         super().update_directory(new_dir)
-        # ledm_manager uses file_manager now, so explicit update not strictly needed if it references file_manager
-        # but for safety if it caches anything (it doesn't in new code), we can leave it or remove.
-        # The new SiriusLEDMManager doesn't have update_directory.
-        pass
+        # Controllers are updated by MainWindow directly
 
     def show_data_in_slide_panel(self, endpoint, content):
-        # Pretty print XML if possible
+        """Display data in the slide panel."""
         try:
             import xml.etree.ElementTree as ET
             root = ET.fromstring(content)
@@ -268,7 +329,6 @@ class SiriusTab(QtTabContent):
         
         def _run_capture():
             try:
-                # Use file_manager directory
                 directory = self.file_manager.default_directory
                 capturer = EWSScreenshotCapturer(None, snap_ip, directory, password=pwd)
                 screenshots = capturer._capture_ews_screenshots()
@@ -276,7 +336,6 @@ class SiriusTab(QtTabContent):
                 saved_count = 0
                 
                 for img_bytes, desc in screenshots:
-                    # Use file_manager
                     success, _ = self.file_manager.save_image_data(
                         img_bytes,
                         desc,
@@ -305,8 +364,8 @@ class SiriusTab(QtTabContent):
         QTimer.singleShot(0, apply_state)
 
     def _capture_ui(self, description=""):
-        # Logic similar to old SiriusTab capture_ui
-        if not self.ip: return
+        if not self.ip:
+            return
         pwd = self.config_manager.get("password", "")
         if not pwd:
             self.error_occurred.emit("Password required")
@@ -320,7 +379,6 @@ class SiriusTab(QtTabContent):
                 resp = requests.get(url, verify=False, auth=("admin", pwd), timeout=10)
                 resp.raise_for_status()
                 
-                # Save via FileManager
                 base_name = "UI"
                 if description:
                     base_name += f" {description}"
@@ -338,7 +396,8 @@ class SiriusTab(QtTabContent):
         threading.Thread(target=_run).start()
 
     def _capture_ecl(self, description):
-        if not self.ip: return
+        if not self.ip:
+            return
         pwd = self.config_manager.get("password", "")
         
         def _run():

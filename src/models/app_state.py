@@ -1,26 +1,31 @@
 """
-ConfigModel - Central state management for the application.
+AppState - Central application state management.
 
 This model holds shared configuration state (IP, family, directory) and emits
 signals when values change. Components connect to these signals to stay in sync.
 
+Migrated from ui_qt/models/config_model.py as part of VCMS architecture.
+Now uses families from models/families.py instead of hardcoded list.
+
 Usage:
     # In MainWindow
-    self.config_model = ConfigModel()
+    self.app_state = AppState()
     
     # Pass to components that need it
-    self.header = AppHeader(self.config_model)
-    self.dune_tab = DuneTab(config_model=self.config_model, ...)
+    self.header = AppHeader(self.app_state)
     
     # Components connect to signals
-    self.config_model.ip_changed.connect(self.some_handler)
+    self.app_state.ip_changed.connect(self.some_handler)
 """
 from PySide6.QtCore import QObject, Signal
+from typing import Optional
+
+from src.models.families import FAMILY_NAMES, get_family_config, BaseFamilyConfig
 
 
-class ConfigModel(QObject):
+class AppState(QObject):
     """
-    Centralized configuration state with Qt signals for reactive updates.
+    Centralized application state with Qt signals for reactive updates.
     
     Signals:
         ip_changed(str): Emitted when the target IP address changes.
@@ -33,8 +38,8 @@ class ConfigModel(QObject):
     family_changed = Signal(str)
     directory_changed = Signal(str)
     
-    # Available printer families
-    FAMILIES = ["Dune IIC", "Dune IPH", "Sirius", "Ares"]
+    # Available printer families (from families.py)
+    FAMILIES = FAMILY_NAMES
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,6 +67,11 @@ class ConfigModel(QObject):
     def family(self) -> str:
         """Currently selected printer family."""
         return self._family
+    
+    @property
+    def family_config(self) -> Optional[BaseFamilyConfig]:
+        """Get the configuration object for the current family."""
+        return get_family_config(self._family)
     
     def set_family(self, value: str):
         """Set the printer family. Emits family_changed if value differs."""
@@ -106,3 +116,7 @@ class ConfigModel(QObject):
             self._family = family
         if directory:
             self._directory = directory
+
+
+# Backwards compatibility alias
+ConfigModel = AppState

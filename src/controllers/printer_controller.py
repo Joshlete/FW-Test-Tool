@@ -156,7 +156,7 @@ class PrinterController(QObject):
     # Connection Management
     # -------------------------------------------------------------------------
     
-    def connect(self, rotation: int = 0) -> None:
+    def start_stream(self, rotation: int = 0) -> None:
         """
         Connect to the printer stream.
         
@@ -192,7 +192,7 @@ class PrinterController(QObject):
             self.error_occurred.emit(str(e))
             self.connection_status.emit(False, str(e))
     
-    def disconnect(self) -> None:
+    def stop_stream(self) -> None:
         """Disconnect from the printer stream."""
         if self.use_sirius_stream:
             self._disconnect_sirius()
@@ -289,7 +289,7 @@ class PrinterController(QObject):
                 self.frame_ready.emit(pixmap)
         except Exception:
             pass
-    
+
     def _on_sirius_frame(self, image_data: bytes) -> None:
         """Handle Sirius frame update."""
         try:

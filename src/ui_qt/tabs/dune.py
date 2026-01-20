@@ -1,6 +1,14 @@
+"""
+Dune Tab - Refactored to use Controllers instead of Managers.
+
+Uses VCMS architecture:
+- Views: AlertsWidget, TelemetryWidget, CDMWidget, DuneUIStreamWidget
+- Controllers: Injected from MainWindow
+- Strategy: Family-specific configuration (IIC vs IPH)
+"""
 import os
 from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QSplitterHandle, QLineEdit, QMenu)
-from PySide6.QtCore import Qt, QThreadPool, QByteArray
+from PySide6.QtCore import Qt, QByteArray
 from PySide6.QtGui import QAction, QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
@@ -13,12 +21,6 @@ from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
 from ..components.modern_button import ModernButton
 from ..components.report_builder_window import ReportBuilderWindow
-from ..managers.alerts_manager import AlertsManager
-from ..managers.telemetry_manager import TelemetryManager
-from ..managers.cdm_manager import CDMManager
-from ..managers.dune_vnc_manager import DuneVNCManager
-from ..managers.dune_action_manager import DuneActionManager
-
 from src.utils.config_manager import ConfigManager
 
 
@@ -31,20 +33,15 @@ class DuneSplitterHandle(QSplitterHandle):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # Fill background to match main bg
         painter.fillRect(self.rect(), QColor(30, 30, 30))
-
         line_color = QColor(100, 100, 100)
         pen = QPen(line_color, 1, Qt.PenStyle.DotLine)
         painter.setPen(pen)
 
         if self.orientation() == Qt.Orientation.Horizontal:
-            # Vertical line in center of handle (for horizontal splitter)
             center_x = self.width() // 2
             painter.drawLine(center_x, 10, center_x, self.height() - 10)
         else:
-            # Horizontal line in center of handle (for vertical splitter)
             center_y = self.height() // 2
             painter.drawLine(10, center_y, self.width() - 10, center_y)
 
@@ -57,75 +54,52 @@ class DuneSplitter(QSplitter):
     def createHandle(self):
         return DuneSplitterHandle(self.orientation(), self)
 
+
 class DuneTab(QtTabContent):
     """
     Dune Tab Implementation with 3-Column Layout.
-    Now Strategy-Driven (IIC vs IPH).
+    Strategy-Driven (IIC vs IPH) with injected controllers.
     """
-    def __init__(self, config_manager, strategy):
-        super().__init__(tab_name="dune", config_manager=config_manager) # Initializes step_manager and file_manager
+    
+    def __init__(self, config_manager, strategy, controllers=None):
+        """
+        Initialize DuneTab.
+        
+        Args:
+            config_manager: Configuration manager for persistence
+            strategy: Family strategy (DuneIICStrategy or DuneIPHStrategy)
+            controllers: Optional dict with 'data', 'alerts', 'telemetry', 'printer', 'ews', 'command' controllers
+        """
+        super().__init__(tab_name="dune", config_manager=config_manager)
         
         self.config_manager = config_manager
         self.strategy = strategy
-        self.thread_pool = QThreadPool()
         self.ip = None
         self.report_window = None
-
-        # Pass file_manager to SnipTool
+        
+        # Store controllers
+        self._controllers = controllers or {}
+        
+        # Snip Tool
         self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
-        
-        self.vnc_manager = DuneVNCManager(self.thread_pool)
-        
-        # Pass file_manager to ActionManager
-        self.action_manager = DuneActionManager(self.thread_pool, self.vnc_manager, self.snip_tool, self.step_manager, self.file_manager)
         
         # --- Toolbar ---
         self._init_toolbar()
         
         # --- Main Layout (3 Columns) ---
-        self.main_splitter = DuneSplitter(Qt.Orientation.Horizontal)
-        self.layout.addWidget(self.main_splitter)
+        self._init_layout()
         
-        # 1. Left Column: Interaction (UI Stream + Actions)
-        self._init_left_column()
+        # --- Restore Splitter State ---
+        self._restore_splitter_state()
         
-        # 2. Center Column: Configuration (CDM)
-        self._init_center_column()
+        # --- Wire Controllers ---
+        self._wire_controllers()
         
-        # 3. Right Column: Monitoring (Alerts + Telemetry)
-        self._init_right_column()
-
-        # --- Setup Slide Panel Integration ---
-        # Override the CDM widget's data display handler so the slide panel is used
-        self.cdm_widget.display_data = self.show_data_in_slide_panel
-        
-        # Connect refresh signal from SlidePanel to CDMManager logic
-        self.slide_panel.refresh_requested.connect(self.cdm_manager.view_cdm_data)
-        
-        # Set Initial Stretch Factors (30%, 25%, 45%)
-        self.main_splitter.setStretchFactor(0, 30)
-        self.main_splitter.setStretchFactor(1, 25)
-        self.main_splitter.setStretchFactor(2, 45)
-
-        # Restore Splitter State
-        saved_state = self.config_manager.get("dune_splitter_state")
-        if saved_state:
-            self.main_splitter.restoreState(QByteArray.fromBase64(saved_state.encode()))
-
-        # Connect signal to save
-        self.main_splitter.splitterMoved.connect(self._save_splitter_state)
-
-        # --- Wire Up Signals ---
+        # --- Connect Signals ---
         self._connect_signals()
-        
-        # Initial IP
-        self.update_ip("15.8.177.192") # Placeholder
-
-    def _save_splitter_state(self, pos, index):
-        state = self.main_splitter.saveState().toBase64().data().decode()
-        self.config_manager.set("dune_splitter_state", state)
 
     def _init_toolbar(self):
+        """Initialize the action toolbar."""
         self.toolbar = ActionToolbar()
         self.layout.addWidget(self.toolbar)
         
@@ -137,8 +111,6 @@ class DuneTab(QtTabContent):
         
         # EWS Snips
         self.btn_ews = ModernButton("Capture EWS")
-        # Ensure we don't double-apply stylesheets that might conflict or be missing the menu part
-        # The ModernButton class now handles its own styling including the menu.
         self.btn_ews.setMenu(self._create_ews_menu())
         self.toolbar.add_widget_left(self.btn_ews)
         
@@ -164,129 +136,51 @@ class DuneTab(QtTabContent):
         self.pwd_input.setPlaceholderText("admin")
         self.pwd_input.setText(self.config_manager.get("password", ""))
         self.pwd_input.textChanged.connect(lambda t: self.config_manager.set("password", t))
-        
-        # Apply pill style
         self.toolbar.layout.addWidget(self.pwd_input)
 
-    def open_report_builder(self):
-        current_dir = self.file_manager.default_directory
+    def _init_layout(self):
+        """Initialize the 3-column layout."""
+        self.main_splitter = DuneSplitter(Qt.Orientation.Horizontal)
+        self.layout.addWidget(self.main_splitter)
         
-        if self.report_window is None:
-             self.report_window = ReportBuilderWindow(initial_directory=current_dir, strategy=self.strategy)
-             self.report_window.show()
-        else:
-            # Update directory if window already exists
-            if current_dir:
-                self.report_window.set_directory(current_dir)
-            
-            # Update strategy in case we are reusing window from another tab
-            self.report_window.set_strategy(self.strategy)
-            
-            self.report_window.show()
-            self.report_window.raise_()
-            self.report_window.activateWindow()
-
-    def _create_capture_menu(self):
-        """
-        Creates the menu for UI/VNC Captures (Home Screen, ECLs).
-        Used by the Stream Widget context menu.
-        """
-        menu = QMenu(self)
+        # 1. Left Column: Interaction (UI Stream + Actions)
+        self._init_left_column()
         
-        options = self.strategy.get_capture_options()
-        for opt in options:
-            if opt.get("separator"):
-                menu.addSeparator()
-                continue
-            
-            label = opt.get("label", "Unknown")
-            action_type = opt.get("type")
-            param = opt.get("param")
-            
-            q_action = QAction(label, self)
-            
-            # Use default args in lambda to capture loop variables correctly
-            if action_type == "ui":
-                q_action.triggered.connect(lambda checked=False, p=param: self.action_manager.capture_ui_screen(p))
-            elif action_type == "ecl":
-                q_action.triggered.connect(lambda checked=False, p=param: self.action_manager.capture_ecl(p))
-                
-            menu.addAction(q_action)
-
-        return menu
-
-    def _create_ews_menu(self):
-        """
-        Creates the menu for EWS Manual Snips.
-        Used by the Toolbar button.
-        """
-        menu = QMenu(self)
-        pages = self.strategy.get_ews_pages()
-        for page in pages:
-            action = QAction(page, self)
-            # Pass the raw page name; the action manager/file manager handle the "EWS" prefixing.
-            action.triggered.connect(lambda checked=False, p=page: self.action_manager.capture_ews(p))
-            menu.addAction(action)
-        return menu
-
-    def _create_commands_menu(self):
-        menu = QMenu(self)
-        cmds = ["AUTH", "Print 10-Tap", "Print PSR"]
-        for cmd in cmds:
-            action = QAction(cmd, self)
-            action.triggered.connect(lambda checked=False, c=cmd: self.action_manager.execute_command(c))
-            menu.addAction(action)
-        return menu
+        # 2. Center Column: Configuration (CDM)
+        self._init_center_column()
+        
+        # 3. Right Column: Monitoring (Alerts + Telemetry)
+        self._init_right_column()
+        
+        # Set Initial Stretch Factors (30%, 25%, 45%)
+        self.main_splitter.setStretchFactor(0, 30)
+        self.main_splitter.setStretchFactor(1, 25)
+        self.main_splitter.setStretchFactor(2, 45)
 
     def _init_left_column(self):
+        """Initialize the left column with UI stream."""
         left_container = QFrame()
         left_layout = QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         
-        # UI Stream Widget (Contains its own header with controls)
+        # UI Stream Widget
         self.stream_widget = DuneUIStreamWidget()
         self.stream_widget.setContentsMargins(0, 0, 0, 0)
-        
-        # Configure ECL Menu
-        # ECL menu logic moved to main "Capture" button, but stream widget has its own menu setter.
-        # For context menu compatibility, we generate a simple menu from capture options.
         self.stream_widget.set_ecl_menu(self._create_capture_menu())
         
-        # Card wrapper for consistent boundary
+        # Card wrapper
         stream_card = QFrame()
         stream_card.setObjectName("Card")
         stream_card_layout = QVBoxLayout(stream_card)
         stream_card_layout.setContentsMargins(10, 10, 10, 10)
         stream_card_layout.addWidget(self.stream_widget)
         
-        left_layout.addWidget(stream_card, 1) # Expand stream
+        left_layout.addWidget(stream_card, 1)
         
         self.main_splitter.addWidget(left_container)
 
-    def _create_ecl_menu(self, parent=None):
-        # Legacy method removed in favor of _create_capture_menu
-        return self._create_capture_menu()
-
-    def show_data_in_slide_panel(self, endpoint, content):
-        """Custom handler to show data in the slide panel instead of a dialog."""
-        # Format JSON if possible
-        try:
-            import json
-            parsed = json.loads(content)
-            content = json.dumps(parsed, indent=4)
-        except:
-            pass
-            
-        self.slide_panel.open_panel(endpoint, content)
-
-    def resizeEvent(self, event):
-        """Ensure slide panel resizes with the window."""
-        super().resizeEvent(event)
-        if hasattr(self, 'slide_panel') and self.slide_panel.isVisible():
-             # Trigger resize of panel
-             self.slide_panel.resizeEvent(None)
-
     def _init_center_column(self):
+        """Initialize the center column with CDM controls."""
         center_container = QFrame()
         center_container.setObjectName("Card")
         center_layout = QVBoxLayout(center_container)
@@ -296,7 +190,6 @@ class DuneTab(QtTabContent):
         cdm_label.setObjectName("SectionHeader")
         
         self.cdm_widget = CDMWidget()
-        self.cdm_manager = CDMManager(self.cdm_widget, self.thread_pool, self.step_manager)
         
         center_layout.addWidget(cdm_label)
         center_layout.addWidget(self.cdm_widget)
@@ -304,6 +197,7 @@ class DuneTab(QtTabContent):
         self.main_splitter.addWidget(center_container)
 
     def _init_right_column(self):
+        """Initialize the right column with alerts and telemetry."""
         right_container = QFrame()
         right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -318,7 +212,6 @@ class DuneTab(QtTabContent):
         alerts_label = QLabel("Alerts")
         alerts_label.setObjectName("SectionHeader")
         self.alerts_widget = AlertsWidget()
-        self.alerts_manager = AlertsManager(self.alerts_widget, self.thread_pool)
         alerts_layout.addWidget(alerts_label)
         alerts_layout.addWidget(self.alerts_widget)
         
@@ -329,21 +222,6 @@ class DuneTab(QtTabContent):
         telemetry_label = QLabel("Telemetry")
         telemetry_label.setObjectName("SectionHeader")
         self.telemetry_widget = TelemetryWidget()
-        # We now use self.file_manager for telemetry if possible, but TelemetryManager 
-        # might still need explicit directory or we pass file_manager.
-        # TelemetryManager currently takes default_directory.
-        # Let's check TelemetryManager in next steps if we need to update it too. 
-        # For now, pass default_directory from file_manager.
-        default_dir = self.file_manager.default_directory
-        
-        self.telemetry_manager = TelemetryManager(
-            self.telemetry_widget,
-            self.thread_pool,
-            step_manager=self.step_manager,
-            is_dune=True,
-            default_directory=default_dir,
-            file_manager=self.file_manager
-        )
         telemetry_layout.addWidget(telemetry_label)
         telemetry_layout.addWidget(self.telemetry_widget)
         
@@ -358,88 +236,301 @@ class DuneTab(QtTabContent):
         # Slide Panel (Overlay on Right Column)
         self.slide_panel = SlidePanel(right_container)
 
+    def _restore_splitter_state(self):
+        """Restore splitter state from config."""
+        saved_state = self.config_manager.get("dune_splitter_state")
+        if saved_state:
+            self.main_splitter.restoreState(QByteArray.fromBase64(saved_state.encode()))
+        self.main_splitter.splitterMoved.connect(self._save_splitter_state)
+
+    def _save_splitter_state(self, pos, index):
+        state = self.main_splitter.saveState().toBase64().data().decode()
+        self.config_manager.set("dune_splitter_state", state)
+
+    def _wire_controllers(self):
+        """Wire controllers to widgets."""
+        
+        # --- Alerts Controller ---
+        alerts_ctrl = self._controllers.get('alerts')
+        if alerts_ctrl:
+            alerts_ctrl.alerts_updated.connect(self.alerts_widget.populate_alerts)
+            alerts_ctrl.loading_changed.connect(self.alerts_widget.set_loading)
+            alerts_ctrl.status_message.connect(self.status_message.emit)
+            alerts_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            self.alerts_widget.fetch_requested.connect(alerts_ctrl.fetch_alerts)
+            self.alerts_widget.action_requested.connect(
+                lambda alert_id, action: alerts_ctrl.send_action(int(alert_id), action)
+            )
+        
+        # --- Telemetry Controller ---
+        telemetry_ctrl = self._controllers.get('telemetry')
+        if telemetry_ctrl:
+            telemetry_ctrl.set_step_manager(self.step_manager)
+            
+            # Connect with is_dune_format=True
+            telemetry_ctrl.telemetry_updated.connect(
+                lambda events: self.telemetry_widget.populate_telemetry(events, is_dune_format=True)
+            )
+            telemetry_ctrl.loading_changed.connect(self.telemetry_widget.set_loading)
+            telemetry_ctrl.erasing_changed.connect(self.telemetry_widget.set_erasing)
+            telemetry_ctrl.status_message.connect(self.status_message.emit)
+            telemetry_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            self.telemetry_widget.fetch_requested.connect(telemetry_ctrl.fetch_telemetry)
+            self.telemetry_widget.erase_requested.connect(telemetry_ctrl.erase_telemetry)
+            self.telemetry_widget.save_requested.connect(telemetry_ctrl.save_event)
+        
+        # --- Data Controller (CDM) ---
+        data_ctrl = self._controllers.get('data')
+        if data_ctrl:
+            data_ctrl.set_step_manager(self.step_manager)
+            
+            data_ctrl.data_fetched.connect(self._on_data_fetched)
+            data_ctrl.status_message.connect(self.status_message.emit)
+            data_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            self.cdm_widget.save_requested.connect(
+                lambda endpoints, variant: data_ctrl.fetch_and_save(endpoints, variant)
+            )
+            self.cdm_widget.view_requested.connect(data_ctrl.view_endpoint)
+            
+            # Override CDM widget's display_data to use slide panel
+            self.cdm_widget.display_data = self.show_data_in_slide_panel
+            
+            self.slide_panel.refresh_requested.connect(data_ctrl.view_endpoint)
+        
+        # --- Printer Controller (VNC) ---
+        printer_ctrl = self._controllers.get('printer')
+        if printer_ctrl:
+            printer_ctrl.set_step_manager(self.step_manager)
+            
+            # Printer -> Stream Widget
+            printer_ctrl.frame_ready.connect(self.stream_widget.set_frame)
+            printer_ctrl.connection_status.connect(self.stream_widget.set_status)
+            printer_ctrl.connection_status.connect(self._on_connection_status)
+            printer_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            # Stream Widget -> Printer
+            self.stream_widget.display.mouse_event.connect(self._on_mouse_event)
+            self.stream_widget.display.scroll_event.connect(lambda d: printer_ctrl.scroll(d))
+            self.stream_widget.rotation_changed.connect(self._on_rotation_changed)
+            self.stream_widget.view_toggled.connect(self._toggle_connection)
+        
+        # --- EWS Controller ---
+        ews_ctrl = self._controllers.get('ews')
+        if ews_ctrl:
+            ews_ctrl.set_password(self.config_manager.get("password", ""))
+            ews_ctrl.status_message.connect(self.status_message.emit)
+            ews_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            # Update password when changed
+            self.pwd_input.textChanged.connect(ews_ctrl.set_password)
+        
+        # --- Command Controller ---
+        command_ctrl = self._controllers.get('command')
+        if command_ctrl:
+            command_ctrl.status_message.connect(self.status_message.emit)
+            command_ctrl.error_occurred.connect(self.error_occurred.emit)
+            command_ctrl.command_completed.connect(self._on_command_finished)
+
     def _connect_signals(self):
-        # VNC -> Stream Widget
-        self.vnc_manager.frame_ready.connect(self.stream_widget.set_frame)
-        self.vnc_manager.connection_status.connect(self.stream_widget.set_status)
-        self.vnc_manager.connection_status.connect(self._on_connection_status)
-        self.vnc_manager.error_occurred.connect(self.error_occurred.emit)
-        
-        # Stream Widget -> VNC
-        self.stream_widget.display.mouse_event.connect(self._on_mouse_event)
-        self.stream_widget.display.scroll_event.connect(lambda d: self.vnc_manager.scroll(d))
-        self.stream_widget.rotation_changed.connect(self._on_rotation_changed)
-        self.stream_widget.view_toggled.connect(self._toggle_connection)
-        
-        # Managers -> Status
-        self.action_manager.status_message.connect(self.status_message.emit)
-        self.action_manager.error_occurred.connect(self.error_occurred.emit)
-        self.action_manager.command_finished.connect(self._on_command_finished)
-        
-        self.snip_tool.capture_completed.connect(lambda p: self.status_message.emit(f"Saved: {os.path.basename(p)}"))
-        
-        # CDM/Alerts/Telemetry signals
-        self.cdm_manager.status_message.connect(self.status_message.emit)
-        self.cdm_manager.error_occurred.connect(self.error_occurred.emit)
-        self.alerts_manager.status_message.connect(self.status_message.emit)
-        self.telemetry_manager.status_message.connect(self.status_message.emit)
+        """Connect remaining signals."""
+        self.snip_tool.capture_completed.connect(
+            lambda p: self.status_message.emit(f"Saved: {os.path.basename(p)}")
+        )
         
         # Connect Alert Capture signal
-        self.alerts_widget.capture_requested.connect(self.action_manager.capture_alert_ui)
+        self.alerts_widget.capture_requested.connect(self._capture_alert_ui)
 
+    def _on_data_fetched(self, results: dict):
+        """Handle data fetched from controller."""
+        for endpoint, content in results.items():
+            self.show_data_in_slide_panel(endpoint, content)
+            break
+
+    def show_data_in_slide_panel(self, endpoint, content):
+        """Display data in the slide panel."""
+        try:
+            import json
+            parsed = json.loads(content)
+            content = json.dumps(parsed, indent=4)
+        except:
+            pass
+        self.slide_panel.open_panel(endpoint, content)
+
+    def resizeEvent(self, event):
+        """Ensure slide panel resizes with the window."""
+        super().resizeEvent(event)
+        if hasattr(self, 'slide_panel') and self.slide_panel.isVisible():
+            self.slide_panel.resizeEvent(None)
+
+    # --- Menu Creation ---
+    
+    def _create_capture_menu(self):
+        """Creates the menu for UI/VNC Captures."""
+        menu = QMenu(self)
+        
+        options = self.strategy.get_capture_options()
+        for opt in options:
+            if opt.get("separator"):
+                menu.addSeparator()
+                continue
+            
+            label = opt.get("label", "Unknown")
+            action_type = opt.get("type")
+            param = opt.get("param")
+            
+            q_action = QAction(label, self)
+            
+            if action_type == "ui":
+                q_action.triggered.connect(lambda checked=False, p=param: self._capture_ui_screen(p))
+            elif action_type == "ecl":
+                q_action.triggered.connect(lambda checked=False, p=param: self._capture_ecl(p))
+                
+            menu.addAction(q_action)
+
+        return menu
+
+    def _create_ews_menu(self):
+        """Creates the menu for EWS Manual Snips."""
+        menu = QMenu(self)
+        pages = self.strategy.get_ews_pages()
+        for page in pages:
+            action = QAction(page, self)
+            action.triggered.connect(lambda checked=False, p=page: self._capture_ews(p))
+            menu.addAction(action)
+        return menu
+
+    def _create_commands_menu(self):
+        """Creates the menu for SSH commands."""
+        menu = QMenu(self)
+        cmds = ["AUTH", "Print 10-Tap", "Print PSR"]
+        for cmd in cmds:
+            action = QAction(cmd, self)
+            action.triggered.connect(lambda checked=False, c=cmd: self._execute_command(c))
+            menu.addAction(action)
+        return menu
+
+    # --- Action Handlers ---
+    
+    def _capture_ui_screen(self, screen_type: str):
+        """Capture UI screen via printer controller."""
+        printer_ctrl = self._controllers.get('printer')
+        if printer_ctrl:
+            if screen_type == "home":
+                printer_ctrl.capture_home_screen()
+            elif screen_type == "notifications":
+                printer_ctrl.capture_notifications()
+            else:
+                printer_ctrl.capture_screen(screen_type)
+        else:
+            self.error_occurred.emit("Printer controller not available")
+
+    def _capture_ecl(self, variant: str):
+        """Capture ECL screen via printer controller."""
+        printer_ctrl = self._controllers.get('printer')
+        if printer_ctrl:
+            printer_ctrl.capture_ecl(variant)
+        else:
+            self.error_occurred.emit("Printer controller not available")
+
+    def _capture_ews(self, page_name: str):
+        """Capture EWS page via snip tool."""
+        self.status_message.emit(f"Starting EWS snip: {page_name}")
+        self.snip_tool.start_capture(self.file_manager.default_directory, f"EWS {page_name}")
+
+    def _capture_alert_ui(self, alert_data: dict):
+        """Capture UI for a specific alert."""
+        printer_ctrl = self._controllers.get('printer')
+        if printer_ctrl:
+            printer_ctrl.capture_alert_ui(alert_data)
+        else:
+            self.error_occurred.emit("Printer controller not available")
+
+    def _execute_command(self, command_name: str):
+        """Execute SSH command via command controller."""
+        command_ctrl = self._controllers.get('command')
+        if command_ctrl:
+            command_ctrl.execute(command_name)
+        else:
+            self.error_occurred.emit("Command controller not available")
+
+    def _on_command_finished(self, success: bool, msg: str):
+        """Handle command completion."""
+        if success:
+            self.status_message.emit(msg)
+        else:
+            self.error_occurred.emit(msg)
+
+    # --- Connection Handlers ---
+    
+    def _toggle_connection(self):
+        """Toggle VNC connection."""
+        printer_ctrl = self._controllers.get('printer')
+        if not printer_ctrl:
+            return
+            
+        if printer_ctrl.is_connected:
+            printer_ctrl.stop_stream()
+        else:
+            rotation = int(self.config_manager.get("dune_rotation", 0))
+            printer_ctrl.start_stream(rotation=rotation)
+
+    def _on_connection_status(self, connected, msg):
+        """Handle connection status change."""
+        self.status_message.emit(f"VNC: {msg}")
+
+    def _on_rotation_changed(self, rotation):
+        """Handle rotation change."""
+        self.config_manager.set("dune_rotation", rotation)
+        printer_ctrl = self._controllers.get('printer')
+        if printer_ctrl:
+            printer_ctrl.rotate(rotation)
+
+    def _on_mouse_event(self, event_type, x, y):
+        """Handle mouse event from stream widget."""
+        printer_ctrl = self._controllers.get('printer')
+        if not printer_ctrl:
+            return
+            
+        if event_type == "down":
+            printer_ctrl.mouse_down(x, y)
+        elif event_type == "up":
+            printer_ctrl.mouse_up(x, y)
+        elif event_type == "move":
+            printer_ctrl.mouse_move(x, y)
+
+    # --- Public API ---
+    
     def update_ip(self, new_ip):
+        """Called by MainWindow when IP changes."""
         self.ip = new_ip
-        self.alerts_manager.update_ip(new_ip)
-        self.telemetry_manager.update_ip(new_ip)
-        self.cdm_manager.update_ip(new_ip)
-        self.action_manager.update_ip(new_ip)
-        self.vnc_manager.ip = new_ip 
+        # Controllers are updated by MainWindow directly
         
         # Restore rotation preference
         stored_rotation = int(self.config_manager.get("dune_rotation", 0))
         self.stream_widget.current_rotation = stored_rotation
 
     def update_directory(self, new_dir):
-        """Called by MainWindow when Directory changes"""
-        # Call super to update file_manager
+        """Called by MainWindow when Directory changes."""
         super().update_directory(new_dir)
+        # Controllers are updated by MainWindow directly
+
+    def open_report_builder(self):
+        """Open the report builder window."""
+        current_dir = self.file_manager.default_directory
         
-        self.cdm_manager.update_directory(new_dir)
-        # action_manager no longer needs update_directory as it uses file_manager
-        
-        # CHANGE: Update telemetry manager directory
-        self.telemetry_manager.update_directory(new_dir)
-
-    def _toggle_connection(self):
-        if self.vnc_manager.vnc and self.vnc_manager.vnc.connected:
-            self.vnc_manager.disconnect()
+        if self.report_window is None:
+            self.report_window = ReportBuilderWindow(initial_directory=current_dir, strategy=self.strategy)
+            self.report_window.show()
         else:
-            rotation = int(self.config_manager.get("dune_rotation", 0))
-            self.vnc_manager.connect_to_printer(self.ip, rotation=rotation)
-
-    def _on_connection_status(self, connected, msg):
-        # self.stream_widget.set_status is already connected to vnc_manager.connection_status
-        # So the widget updates itself. We just need to log/toast if needed.
-        self.status_message.emit(f"VNC: {msg}")
-
-    def _on_rotation_changed(self, rotation):
-        self.config_manager.set("dune_rotation", rotation)
-        self.vnc_manager.rotate_view(rotation)
-
-    def _on_mouse_event(self, event_type, x, y):
-        if event_type == "down":
-            self.vnc_manager.send_mouse_down(x, y)
-        elif event_type == "up":
-            self.vnc_manager.send_mouse_up(x, y)
-        elif event_type == "move":
-            self.vnc_manager.send_mouse_move(x, y)
-
-    def _on_command_finished(self, success, msg):
-        if success:
-            self.status_message.emit(msg)
-        else:
-            self.error_occurred.emit(msg)
+            if current_dir:
+                self.report_window.set_directory(current_dir)
+            self.report_window.set_strategy(self.strategy)
+            self.report_window.show()
+            self.report_window.raise_()
+            self.report_window.activateWindow()
 
     def on_hide(self):
-        # Auto disconnect VNC when tab hidden? Maybe keep it running.
         pass

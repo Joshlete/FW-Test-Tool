@@ -1,5 +1,12 @@
+"""
+Step Manager - Manages step logic and persistence for tabs.
+
+This is a utility class for tracking the current step number in a workflow.
+Used for file naming prefixes like "1. Alert.json", "2. CDM.json", etc.
+"""
 from PySide6.QtCore import QObject, Signal
 from src.utils.config_manager import ConfigManager
+
 
 class QtStepManager(QObject):
     """
@@ -72,4 +79,3 @@ class QtStepManager(QObject):
 
         current = self.get_step()
         return f"{current}. " if current >= 1 else ""
-

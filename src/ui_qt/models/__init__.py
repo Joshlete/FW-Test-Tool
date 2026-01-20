@@ -1,7 +1,9 @@
 """
-Models package for MVC architecture.
-Contains shared state models with Qt signals.
-"""
-from .config_model import ConfigModel
+Models package - Re-exports from src.models for backwards compatibility.
 
-__all__ = ["ConfigModel"]
+The canonical location for models is now src/models/.
+This package exists for backwards compatibility only.
+"""
+from src.models.app_state import AppState, ConfigModel
+
+__all__ = ["AppState", "ConfigModel"]

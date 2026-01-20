@@ -1,40 +1,51 @@
+"""
+Ares Tab - Refactored to use Controllers instead of Managers.
+
+Uses VCMS architecture:
+- Views: AlertsWidget, TelemetryWidget, CDMWidget
+- Controllers: Injected from MainWindow
+"""
 import os
 import threading
 from PySide6.QtWidgets import (QVBoxLayout, QLabel, QFrame, QSplitter, QLineEdit)
-from PySide6.QtCore import Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
 from ..components.cdm_widget import CDMWidget
 from ..components.slide_panel import SlidePanel
-from ..managers.alerts_manager import AlertsManager
-from ..managers.telemetry_manager import TelemetryManager
-from ..managers.cdm_manager import CDMManager
-
-# New Imports for Action Toolbar & Steps
 from ..components.action_toolbar import ActionToolbar
 from ..components.step_control import StepControl
 from ..components.snip_tool import QtSnipTool
-# from ..managers.step_manager import QtStepManager # Inherited from QtTabContent
 from src.utils.config_manager import ConfigManager
 from src.utils.ews_capture import EWSScreenshotCapturer
 from src.utils.logging.app_logger import log_info, log_error
 
+
 class AresTab(QtTabContent):
     """
-    Ares Tab Implementation (formerly Trillium).
-    Uses separate managers for logic (composition pattern).
+    Ares Tab Implementation.
+    Now uses controllers for business logic instead of managers.
     """
 
     capture_finished = Signal()
 
-    def __init__(self, config_manager):
-        super().__init__(tab_name="ares", config_manager=config_manager) # Initializes step_manager and file_manager
+    def __init__(self, config_manager, controllers=None):
+        """
+        Initialize AresTab.
+        
+        Args:
+            config_manager: Configuration manager for persistence
+            controllers: Optional dict with 'data', 'alerts', 'telemetry' controllers
+        """
+        super().__init__(tab_name="ares", config_manager=config_manager)
         
         self.config_manager = config_manager
-        self.thread_pool = QThreadPool()
         self.ip = None
-
+        
+        # Store controllers (can be None for backwards compatibility)
+        self._controllers = controllers or {}
+        
         self.capture_finished.connect(lambda: self._set_busy(self.btn_ews, False, "Capture EWS"))
         
         # Snip Tool
@@ -43,16 +54,23 @@ class AresTab(QtTabContent):
         self.snip_tool.error_occurred.connect(lambda err: self.error_occurred.emit(f"Snip failed: {err}"))
         
         # --- 1. Action Toolbar (Top) ---
+        self._init_toolbar()
+        
+        # --- Main Layout ---
+        self._init_layout()
+        
+        # --- Wire Controllers to Widgets ---
+        self._wire_controllers()
+
+    def _init_toolbar(self):
+        """Initialize the action toolbar."""
         self.toolbar = ActionToolbar()
         self.layout.addWidget(self.toolbar)
         
-        # self.step_manager is already initialized by super().__init__
-        
-        # Create Step Control and add to toolbar (Left)
+        # Step Control (Left)
         self.step_control = StepControl(self.step_manager)
         self.toolbar.add_widget_left(self.step_control)
         
-        # Add Spacer (Left)
         self.toolbar.add_spacer()
         
         # Password Field (Center)
@@ -66,17 +84,17 @@ class AresTab(QtTabContent):
         self.pwd_input.setPlaceholderText("admin")
         self.pwd_input.setText(self.config_manager.get("password", ""))
         self.pwd_input.textChanged.connect(self._on_password_changed)
-        
         self.toolbar.layout.addWidget(self.pwd_input)
         
-        # Add Spacer (Right) to center the password field
         self.toolbar.add_spacer()
         
-        # Add Action Buttons (Right)
+        # Action Buttons (Right)
         self.btn_snip = self.toolbar.add_action_button("Snip", self._on_snip)
         self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
         self.btn_telemetry = self.toolbar.add_action_button("Telemetry Input", self._on_telemetry_input)
-        
+
+    def _init_layout(self):
+        """Initialize the main layout with widgets."""
         # --- Main Splitter (Horizontal) ---
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         
@@ -92,14 +110,13 @@ class AresTab(QtTabContent):
         cdm_layout.addWidget(self.cdm_widget)
         
         # --- Right Panel: Alerts & Telemetry ---
-        # We wrap the right splitter in a frame so the SlidePanel can overlay it
         right_panel_container = QFrame()
         right_panel_layout = QVBoxLayout(right_panel_container)
         right_panel_layout.setContentsMargins(0, 0, 0, 0)
         
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         
-        # 1. Alerts Section
+        # Alerts Section
         alerts_container = QFrame()
         alerts_container.setObjectName("Card")
         alerts_layout = QVBoxLayout(alerts_container)
@@ -110,7 +127,7 @@ class AresTab(QtTabContent):
         alerts_layout.addWidget(alerts_label)
         alerts_layout.addWidget(self.alerts_widget)
         
-        # 2. Telemetry Section
+        # Telemetry Section
         telemetry_container = QFrame()
         telemetry_container.setObjectName("Card")
         telemetry_layout = QVBoxLayout(telemetry_container)
@@ -121,7 +138,7 @@ class AresTab(QtTabContent):
         telemetry_layout.addWidget(telemetry_label)
         telemetry_layout.addWidget(self.telemetry_widget)
         
-        # Assemble Right Panel Splitter
+        # Assemble Right Panel
         right_splitter.addWidget(alerts_container)
         right_splitter.addWidget(telemetry_container)
         right_splitter.setStretchFactor(0, 1)
@@ -129,8 +146,7 @@ class AresTab(QtTabContent):
         
         right_panel_layout.addWidget(right_splitter)
         
-        # --- Slide Panel (Overlay) ---
-        # It is parented to right_panel_container so it covers only the right side
+        # Slide Panel (Overlay)
         self.slide_panel = SlidePanel(right_panel_container)
         
         # Assemble Main Layout
@@ -141,112 +157,110 @@ class AresTab(QtTabContent):
         
         self.layout.addWidget(main_splitter)
 
-        # --- Initialize Managers (Logic) ---
-        self.alerts_manager = AlertsManager(self.alerts_widget, self.thread_pool)
+    def _wire_controllers(self):
+        """Wire controllers to widgets if provided."""
         
-        # Use file_manager's directory
-        default_dir = self.file_manager.default_directory
+        # --- Alerts Controller ---
+        alerts_ctrl = self._controllers.get('alerts')
+        if alerts_ctrl:
+            # Controller signals -> Widget methods
+            alerts_ctrl.alerts_updated.connect(self.alerts_widget.populate_alerts)
+            alerts_ctrl.loading_changed.connect(self.alerts_widget.set_loading)
+            alerts_ctrl.status_message.connect(self.status_message.emit)
+            alerts_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            # Widget signals -> Controller methods
+            self.alerts_widget.fetch_requested.connect(alerts_ctrl.fetch_alerts)
+            self.alerts_widget.action_requested.connect(
+                lambda alert_id, action: alerts_ctrl.send_action(int(alert_id), action)
+            )
         
-        self.telemetry_manager = TelemetryManager(
-            self.telemetry_widget,
-            self.thread_pool,
-            step_manager=self.step_manager,
-            default_directory=default_dir,
-            file_manager=self.file_manager
-        )
-        self.cdm_manager = CDMManager(self.cdm_widget, self.thread_pool, self.step_manager)
+        # --- Telemetry Controller ---
+        telemetry_ctrl = self._controllers.get('telemetry')
+        if telemetry_ctrl:
+            # Set step manager for file naming
+            telemetry_ctrl.set_step_manager(self.step_manager)
+            
+            # Controller signals -> Widget methods
+            telemetry_ctrl.telemetry_updated.connect(self.telemetry_widget.populate_telemetry)
+            telemetry_ctrl.loading_changed.connect(self.telemetry_widget.set_loading)
+            telemetry_ctrl.erasing_changed.connect(self.telemetry_widget.set_erasing)
+            telemetry_ctrl.status_message.connect(self.status_message.emit)
+            telemetry_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            # Widget signals -> Controller methods
+            self.telemetry_widget.fetch_requested.connect(telemetry_ctrl.fetch_telemetry)
+            self.telemetry_widget.erase_requested.connect(telemetry_ctrl.erase_telemetry)
+            self.telemetry_widget.save_requested.connect(telemetry_ctrl.save_event)
         
-        # Override the CDM widget's data display handler so the slide panel is used
-        self.cdm_widget.display_data = self.show_data_in_slide_panel
-        
-        # Connect refresh signal from SlidePanel to CDMManager logic
-        self.slide_panel.refresh_requested.connect(self.cdm_manager.view_cdm_data)
-        
-        # Propagate Status Signals from Managers to Tab
-        self.alerts_manager.status_message.connect(self.status_message.emit)
-        self.alerts_manager.error_occurred.connect(self.error_occurred.emit)
-        
-        self.telemetry_manager.status_message.connect(self.status_message.emit)
-        self.telemetry_manager.error_occurred.connect(self.error_occurred.emit)
-        
-        self.cdm_manager.status_message.connect(self.status_message.emit)
-        self.cdm_manager.error_occurred.connect(self.error_occurred.emit)
+        # --- Data Controller (CDM) ---
+        data_ctrl = self._controllers.get('data')
+        if data_ctrl:
+            # Set step manager for file naming
+            data_ctrl.set_step_manager(self.step_manager)
+            
+            # Controller signals -> Widget methods / Slide panel
+            data_ctrl.data_fetched.connect(self._on_data_fetched)
+            data_ctrl.status_message.connect(self.status_message.emit)
+            data_ctrl.error_occurred.connect(self.error_occurred.emit)
+            
+            # Widget signals -> Controller methods
+            self.cdm_widget.save_requested.connect(
+                lambda endpoints, variant: data_ctrl.fetch_and_save(endpoints, variant)
+            )
+            self.cdm_widget.view_requested.connect(data_ctrl.view_endpoint)
+            
+            # Override CDM widget's display_data to use slide panel
+            self.cdm_widget.display_data = self.show_data_in_slide_panel
+            
+            # Slide panel refresh -> re-fetch last endpoint
+            self.slide_panel.refresh_requested.connect(data_ctrl.view_endpoint)
 
-        # Set Default IP (Placeholder until MainWindow sets it)
-        self.update_ip("15.8.177.192")
+    def _on_data_fetched(self, results: dict):
+        """Handle data fetched from controller - display in slide panel."""
+        for endpoint, content in results.items():
+            self.show_data_in_slide_panel(endpoint, content)
+            break  # Show first result
 
     def show_data_in_slide_panel(self, endpoint, content):
-        """Custom handler to show data in the slide panel instead of a dialog."""
-        # Format JSON if possible
+        """Display data in the slide panel."""
         try:
             import json
             parsed = json.loads(content)
             content = json.dumps(parsed, indent=4)
         except:
             pass
-            
         self.slide_panel.open_panel(endpoint, content)
 
     def resizeEvent(self, event):
         """Ensure slide panel resizes with the window."""
         super().resizeEvent(event)
         if hasattr(self, 'slide_panel') and self.slide_panel.isVisible():
-             # Trigger resize of panel
-             self.slide_panel.resizeEvent(None)
+            self.slide_panel.resizeEvent(None)
 
     def on_show(self):
-        # print("Ares Tab Shown")
         pass
 
     def on_hide(self):
-        # print("Ares Tab Hidden")
         pass
 
     def update_ip(self, new_ip):
-        """Called by MainWindow when IP changes"""
+        """Called by MainWindow when IP changes."""
         self.ip = new_ip
-        self.alerts_manager.update_ip(new_ip)
-        self.telemetry_manager.update_ip(new_ip)
-        self.cdm_manager.update_ip(new_ip)
+        # Controllers are updated by MainWindow directly
 
     def update_directory(self, new_dir):
-        """Called by MainWindow when Directory changes"""
-        # Update file manager via base class
+        """Called by MainWindow when Directory changes."""
         super().update_directory(new_dir)
-        
-        self.cdm_manager.update_directory(new_dir)
-        # CHANGE: Update telemetry manager directory
-        self.telemetry_manager.update_directory(new_dir)
+        # Controllers are updated by MainWindow directly
         
     def _on_password_changed(self, text):
-        """Save password to config when changed"""
+        """Save password to config when changed."""
         self.config_manager.set("password", text)
 
     # --- Action Handlers ---
     def _on_snip(self):
-        # Don't add step manually; FileManager does it if we use empty string or basic name
-        # But snip tool needs a default filename for dialog if not auto-saving
-        # If we pass just extension or empty name, snip tool might complain
-        # Default snip behavior usually is just capture what's there
-        
-        # If we pass "" as filename, SnipTool -> FileManager -> get_safe_filepath
-        # get_safe_filepath(..., "", ".png", ...) -> "{Step} .png"
-        # That's fine.
-        
-        # Wait, existing code was: filename = f"{step_num}. "
-        # The space after dot is significant for the user's naming convention "1. something"
-        
-        # If we pass just " ", FileManager -> "{Step}.  " (double space?)
-        # FileManager logic: f"{step_prefix}{base_filename}"
-        # StepPrefix: "1. "
-        # If base is "", result is "1. " (plus extension) -> "1. .png" or just "1. " depending on how extension is handled.
-        # FileManager.get_safe_filepath adds extension.
-        
-        # Let's use a generic base name like "Capture" or just empty string if we want just the number
-        # If the user wants just "1. .png", passing "" works.
-        # If the user wants to type the name in the dialog, starting with "1. " is helpful.
-        
-        filename = "" # Let FileManager/SnipTool determine default
+        filename = ""
         self.snip_tool.start_capture(self.file_manager.default_directory, filename)
 
     def _on_capture_ews(self):
@@ -267,7 +281,6 @@ class AresTab(QtTabContent):
         def _run_capture():
             try:
                 log_info("ews.capture", "started", "Starting EWS Capture", {"ip": snap_ip})
-                # We can use file_manager directory
                 directory = self.file_manager.default_directory
                 
                 capturer = EWSScreenshotCapturer(None, snap_ip, directory, password=pwd)
@@ -275,17 +288,13 @@ class AresTab(QtTabContent):
                 
                 if screenshots is None:
                     log_error("ews.capture", "failed", "Capturer returned None")
-                    self.error_occurred.emit("EWS Capture failed (returned None). Check logs.")
+                    self.error_occurred.emit("EWS Capture failed. Check logs.")
                     return
 
                 saved_count = 0
-                
                 log_info("ews.capture", "processing", f"Processing {len(screenshots)} screenshots")
                 
                 for img_bytes, desc in screenshots:
-                    # Use file_manager to save to ensure step prefix and consistency
-                    # desc usually is the page name e.g. "Home Page"
-                    
                     success, filepath = self.file_manager.save_image_data(
                         img_bytes, 
                         desc, 
@@ -296,13 +305,13 @@ class AresTab(QtTabContent):
                     
                     if success:
                         saved_count += 1
-                        log_info("ews.capture", "saved", f"Saved screenshot: {os.path.basename(filepath)}")
+                        log_info("ews.capture", "saved", f"Saved: {os.path.basename(filepath)}")
                     else:
                         log_error("ews.capture", "save_failed", f"Failed to save {desc}")
                 
                 self.status_message.emit(f"Saved {saved_count} EWS screenshots")
             except Exception as e:
-                log_error("ews.capture", "exception", "EWS capture failed with exception", {"error": str(e)})
+                log_error("ews.capture", "exception", str(e))
                 self.error_occurred.emit(f"EWS capture failed: {str(e)}")
             finally:
                 self.capture_finished.emit()

@@ -240,7 +240,9 @@ class VNCService:
         if not self.is_connected or self.viewing:
             return False
         
-        self.on_frame_update = on_frame
+        # Only overwrite callback if a new one is provided
+        if on_frame is not None:
+            self.on_frame_update = on_frame
         self.viewing = True
         
         if self.capture_thread and self.capture_thread.is_alive():

@@ -3,8 +3,11 @@ AppHeader - Unified header bar matching the HTML mockup design.
 
 Layout: [Logo] [Target IP] [Family] [Directory (expanding)] [Hamburger Menu]
 
-This component connects to ConfigModel for state management and emits
+This component connects to AppState for state management and emits
 signals when user interacts with inputs.
+
+Note: Works with both AppState (new) and ConfigModel (legacy) since
+they share the same interface.
 """
 from PySide6.QtWidgets import (
     QWidget,

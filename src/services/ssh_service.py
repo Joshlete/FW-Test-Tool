@@ -255,15 +255,21 @@ class SSHService:
         if not self.is_connected:
             self.connect()
         
-        # Kill any existing VNC server
-        self.exec_command("pkill remoteControlPanel")
+        # Kill any existing VNC server (ignore errors - process may not exist)
+        try:
+            self.client.exec_command("pkill remoteControlPanel")
+        except:
+            pass
         
-        # Start VNC server
+        # Start VNC server - use direct exec_command without timeout wrapper
+        # Background commands (&) don't work well with paramiko timeouts
         command = f"cd /core/bin && ./remoteControlPanel -r {rotation} -t /dev/input/event0 &"
-        stdout, stderr, exit_code = self.exec_command(command)
+        stdin, stdout, stderr = self.client.exec_command(command)
         
+        exit_code = stdout.channel.recv_exit_status()
         if exit_code != 0:
-            raise SSHServiceError(f"Failed to start VNC server: {stderr}")
+            error_msg = stderr.read().decode('utf-8').strip()
+            raise SSHServiceError(f"Failed to start VNC server: {error_msg}")
     
     def stop_vnc_server(self) -> None:
         """Stop the VNC server on the remote device."""
