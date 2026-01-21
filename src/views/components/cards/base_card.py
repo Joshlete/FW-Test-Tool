@@ -2,7 +2,7 @@
 Base Card - Common styling and layout for all card components.
 
 Cards are the functional UI blocks that make up screens.
-This base class provides consistent styling (dark background, rounded corners, title bar).
+This base class provides consistent header styling and content area.
 """
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QSizePolicy
@@ -15,15 +15,22 @@ class BaseCard(QFrame):
     Base class for all card components.
     
     Provides:
-    - Dark background with rounded corners (via QSS)
-    - Optional title bar with icon slot
+    - Consistent header with title, optional badge, optional status
+    - Separator line under header
     - Content area for card-specific widgets
-    - Consistent margins and spacing
     
-    Subclasses should override _init_content() to add their widgets.
+    Usage:
+        card = BaseCard("ALERTS")
+        card.add_content(AlertsWidget())
+        
+        # With badge:
+        card = BaseCard("CDM CONTROLS", badge="JSON")
+        card.set_status("3 selected")
+    
+    Subclasses can override _init_content() to add their widgets.
     """
     
-    def __init__(self, title: str = "", parent=None):
+    def __init__(self, title: str = "", badge: str = None, parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
         self.setFrameShape(QFrame.Shape.StyledPanel)
@@ -34,14 +41,14 @@ class BaseCard(QFrame):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
         
-        # Title bar (optional)
-        self._title_text = title
-        self._title_bar = None
+        # Header components
         self._title_label = None
-        self._title_actions = None
+        self._badge_label = None
+        self._status_label = None
         
+        # Create header if title provided
         if title:
-            self._init_title_bar(title)
+            self._init_header(title, badge)
         
         # Content area
         self._content = QWidget()
@@ -55,53 +62,69 @@ class BaseCard(QFrame):
         # Allow subclasses to add content
         self._init_content()
     
-    def _init_title_bar(self, title: str) -> None:
-        """Create the title bar with optional action buttons."""
-        self._title_bar = QFrame()
-        self._title_bar.setObjectName("CardTitleBar")
-        self._title_bar.setFixedHeight(40)
+    def _init_header(self, title: str, badge: str = None) -> None:
+        """Create the header: title + optional badge + optional status + separator."""
+        # Header container
+        header = QFrame()
+        header.setObjectName("CardHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12, 8, 12, 8)
+        header_layout.setSpacing(8)
         
-        title_layout = QHBoxLayout(self._title_bar)
-        title_layout.setContentsMargins(12, 0, 12, 0)
-        title_layout.setSpacing(8)
+        # Title
+        self._title_label = QLabel(title.upper())
+        self._title_label.setObjectName("SectionHeader")
+        header_layout.addWidget(self._title_label)
         
-        # Title label
-        self._title_label = QLabel(title)
-        self._title_label.setObjectName("CardTitle")
-        title_layout.addWidget(self._title_label)
+        # Spacer
+        header_layout.addStretch()
+
+        # Badge (optional)
+        if badge:
+            self._badge_label = QLabel(badge)
+            self._badge_label.setObjectName("CardBadge")
+            header_layout.addWidget(self._badge_label)
         
-        # Action buttons container (right side)
-        self._title_actions = QWidget()
-        self._title_actions_layout = QHBoxLayout(self._title_actions)
-        self._title_actions_layout.setContentsMargins(0, 0, 0, 0)
-        self._title_actions_layout.setSpacing(4)
-        title_layout.addWidget(self._title_actions)
+        # Status (optional, hidden by default)
+        self._status_label = QLabel("")
+        self._status_label.setObjectName("CardStatus")
+        self._status_label.hide()
+        header_layout.addWidget(self._status_label)
         
-        self._layout.addWidget(self._title_bar)
+        self._layout.addWidget(header)
+        
+        # Separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setObjectName("CardSeparator")
+        self._layout.addWidget(separator)
     
     def _init_content(self) -> None:
         """
         Override in subclasses to add card-specific content.
-        
-        Use self._content_layout to add widgets.
+        Use self._content_layout or self.add_content() to add widgets.
         """
         pass
     
     def set_title(self, title: str) -> None:
         """Update the card title."""
         if self._title_label:
-            self._title_label.setText(title)
-        else:
-            # Create title bar if it doesn't exist
-            self._init_title_bar(title)
-            # Move content below title
-            self._layout.removeWidget(self._content)
-            self._layout.addWidget(self._content)
+            self._title_label.setText(title.upper())
     
-    def add_title_action(self, widget: QWidget) -> None:
-        """Add a widget to the title bar's action area."""
-        if self._title_actions_layout:
-            self._title_actions_layout.addWidget(widget)
+    def set_badge(self, badge: str) -> None:
+        """Update or create the badge."""
+        if self._badge_label:
+            self._badge_label.setText(badge)
+            self._badge_label.show()
+    
+    def set_status(self, status: str) -> None:
+        """Update status text (e.g., '3 selected'). Empty string hides it."""
+        if self._status_label:
+            if status:
+                self._status_label.setText(status)
+                self._status_label.show()
+            else:
+                self._status_label.hide()
     
     def add_content(self, widget: QWidget, stretch: int = 0) -> None:
         """Add a widget to the content area."""
@@ -118,86 +141,8 @@ class BaseCard(QFrame):
     def set_content_spacing(self, spacing: int) -> None:
         """Override content area spacing."""
         self._content_layout.setSpacing(spacing)
-
-
-class CollapsibleCard(BaseCard):
-    """
-    A card that can be collapsed/expanded.
-    
-    Click the title bar to toggle visibility of content.
-    """
-    
-    def __init__(self, title: str = "", collapsed: bool = False, parent=None):
-        self._is_collapsed = collapsed
-        super().__init__(title, parent)
-        
-        # Make title bar clickable
-        if self._title_bar:
-            self._title_bar.setCursor(Qt.CursorShape.PointingHandCursor)
-            self._title_bar.mousePressEvent = self._on_title_clicked
-            
-            # Add collapse indicator
-            self._collapse_indicator = QLabel("▼")
-            self._collapse_indicator.setObjectName("CollapseIndicator")
-            self._title_actions_layout.insertWidget(0, self._collapse_indicator)
-        
-        # Apply initial state
-        if collapsed:
-            self._content.hide()
-            self._update_indicator()
-    
-    def _on_title_clicked(self, event) -> None:
-        """Toggle collapsed state when title bar is clicked."""
-        self.toggle_collapsed()
-    
-    def toggle_collapsed(self) -> None:
-        """Toggle the collapsed state."""
-        self._is_collapsed = not self._is_collapsed
-        self._content.setVisible(not self._is_collapsed)
-        self._update_indicator()
-    
-    def set_collapsed(self, collapsed: bool) -> None:
-        """Set the collapsed state."""
-        self._is_collapsed = collapsed
-        self._content.setVisible(not collapsed)
-        self._update_indicator()
-    
-    def _update_indicator(self) -> None:
-        """Update the collapse indicator arrow."""
-        if hasattr(self, '_collapse_indicator'):
-            self._collapse_indicator.setText("▶" if self._is_collapsed else "▼")
     
     @property
-    def is_collapsed(self) -> bool:
-        """Check if the card is currently collapsed."""
-        return self._is_collapsed
-
-
-class LoadingCard(BaseCard):
-    """
-    A card that shows a loading indicator.
-    """
-    
-    def __init__(self, title: str = "", parent=None):
-        super().__init__(title, parent)
-        self._loading = False
-        self._loading_label = None
-    
-    def set_loading(self, loading: bool) -> None:
-        """Show or hide loading state."""
-        self._loading = loading
-        
-        if loading:
-            if not self._loading_label:
-                self._loading_label = QLabel("Loading...")
-                self._loading_label.setObjectName("LoadingLabel")
-                self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._loading_label.show()
-        else:
-            if self._loading_label:
-                self._loading_label.hide()
-    
-    @property
-    def is_loading(self) -> bool:
-        """Check if the card is in loading state."""
-        return self._loading
+    def content_layout(self) -> QVBoxLayout:
+        """Direct access to content layout for advanced usage."""
+        return self._content_layout

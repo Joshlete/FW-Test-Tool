@@ -14,8 +14,9 @@ from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
 from ..components.cdm_widget import CDMWidget
 from ..components.action_toolbar import ActionToolbar
-from ..components.step_control import StepControl
-from ..components.snip_tool import QtSnipTool
+from src.views.components.widgets import StepControl
+from src.views.components.widgets import SnipTool
+from src.views.components.cards import BaseCard
 from src.services.config_service import ConfigManager
 from src.services.ews_capture import EWSScreenshotCapturer
 from src.utils.logging.app_logger import log_info, log_error
@@ -48,10 +49,11 @@ class AresTab(QtTabContent):
         self.capture_finished.connect(lambda: self._set_busy(self.btn_ews, False, "Capture EWS"))
         
         # Snip Tool
-        self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
-        self.snip_tool.capture_completed.connect(lambda path: self.status_message.emit(f"Saved screenshot: {os.path.basename(path)}"))
+        self.snip_tool = SnipTool(file_manager=self.file_manager)
+        self.snip_tool.set_regions(self.config_manager.get("capture_regions", {}))
+        self.snip_tool.capture_completed.connect(self._on_snip_completed)
         self.snip_tool.error_occurred.connect(lambda err: self.error_occurred.emit(f"Snip failed: {err}"))
-        
+    
         # --- 1. Action Toolbar (Top) ---
         self._init_toolbar()
         
@@ -61,13 +63,19 @@ class AresTab(QtTabContent):
         # --- Wire Controllers to Widgets ---
         self._wire_controllers()
 
+    def _on_snip_completed(self, path: str):
+        """Handle snip completion: save regions and emit status."""
+        self.config_manager.set("capture_regions", self.snip_tool.get_regions())
+        self.status_message.emit(f"Saved screenshot: {os.path.basename(path)}")
+
     def _init_toolbar(self):
         """Initialize the action toolbar."""
         self.toolbar = ActionToolbar()
         self.layout.addWidget(self.toolbar)
         
         # Step Control (Left)
-        self.step_control = StepControl(self.step_manager)
+        self.step_control = StepControl()
+        self.step_control.connect_to_manager(self.step_manager)
         self.toolbar.add_widget_left(self.step_control)
         
         self.toolbar.add_spacer()
@@ -98,15 +106,9 @@ class AresTab(QtTabContent):
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # --- Left Panel: CDM Controls ---
-        cdm_container = QFrame()
-        cdm_container.setObjectName("Card")
-        cdm_layout = QVBoxLayout(cdm_container)
-        cdm_label = QLabel("CDM Controls")
-        cdm_label.setObjectName("SectionHeader")
-        
         self.cdm_widget = CDMWidget()
-        cdm_layout.addWidget(cdm_label)
-        cdm_layout.addWidget(self.cdm_widget)
+        cdm_card = BaseCard("CDM Controls")
+        cdm_card.add_content(self.cdm_widget, stretch=1)
         
         # --- Right Panel: Alerts & Telemetry ---
         right_panel_container = QFrame()
@@ -116,37 +118,25 @@ class AresTab(QtTabContent):
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         
         # Alerts Section
-        alerts_container = QFrame()
-        alerts_container.setObjectName("Card")
-        alerts_layout = QVBoxLayout(alerts_container)
-        alerts_label = QLabel("Alerts")
-        alerts_label.setObjectName("SectionHeader")
-        
         self.alerts_widget = AlertsWidget()
-        alerts_layout.addWidget(alerts_label)
-        alerts_layout.addWidget(self.alerts_widget)
+        alerts_card = BaseCard("Alerts")
+        alerts_card.add_content(self.alerts_widget, stretch=1)
         
         # Telemetry Section
-        telemetry_container = QFrame()
-        telemetry_container.setObjectName("Card")
-        telemetry_layout = QVBoxLayout(telemetry_container)
-        telemetry_label = QLabel("Telemetry")
-        telemetry_label.setObjectName("SectionHeader")
-        
         self.telemetry_widget = TelemetryWidget()
-        telemetry_layout.addWidget(telemetry_label)
-        telemetry_layout.addWidget(self.telemetry_widget)
+        telemetry_card = BaseCard("Telemetry")
+        telemetry_card.add_content(self.telemetry_widget, stretch=1)
         
         # Assemble Right Panel
-        right_splitter.addWidget(alerts_container)
-        right_splitter.addWidget(telemetry_container)
+        right_splitter.addWidget(alerts_card)
+        right_splitter.addWidget(telemetry_card)
         right_splitter.setStretchFactor(0, 1)
         right_splitter.setStretchFactor(1, 1)
         
         right_panel_layout.addWidget(right_splitter)
         
         # Assemble Main Layout
-        main_splitter.addWidget(cdm_container)
+        main_splitter.addWidget(cdm_card)
         main_splitter.addWidget(right_panel_container)
         main_splitter.setStretchFactor(0, 1)
         main_splitter.setStretchFactor(1, 2)
@@ -235,7 +225,7 @@ class AresTab(QtTabContent):
     # --- Action Handlers ---
     def _on_snip(self):
         filename = ""
-        self.snip_tool.start_capture(self.file_manager.default_directory, filename)
+        self.snip_tool.start_capture(self.file_manager.default_directory, filename, auto_save=True)
 
     def _on_capture_ews(self):
         if not self.ip:

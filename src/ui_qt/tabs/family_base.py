@@ -4,6 +4,7 @@ from PySide6.QtGui import QPainter, QPen, QColor
 from .base import QtTabContent
 from ..components.alerts_widget import AlertsWidget
 from ..components.telemetry_widget import TelemetryWidget
+from src.views.components.cards import BaseCard
 
 class FamilySplitterHandle(QSplitterHandle):
     def __init__(self, orientation, parent):
@@ -97,34 +98,18 @@ class FamilyTabBase(QtTabContent):
         # Splitter for Alerts/Telemetry
         self.right_splitter = FamilySplitter(Qt.Orientation.Vertical)
         
-        # Alerts
-        # We wrap in a card-like frame in the concrete implementation or here?
-        # The plan says "Creates common Right Column (Alerts + Telemetry)" in base.
-        # It also mentions "AlertsCard" in the diagram but "AlertsWidget" in text.
-        # "Modify src/ui_qt/tabs/dune.py ... Remove code now handled by base class (Alerts/Telemetry init)"
-        
-        # I'll create containers here.
-        alerts_container = QFrame()
-        alerts_container.setObjectName("Card")
-        alerts_layout = QVBoxLayout(alerts_container)
-        alerts_label = QLabel("Alerts")
-        alerts_label.setObjectName("SectionHeader")
+        # Alerts Card
         self.alerts_widget = AlertsWidget()
-        alerts_layout.addWidget(alerts_label)
-        alerts_layout.addWidget(self.alerts_widget)
+        alerts_card = BaseCard("Alerts")
+        alerts_card.add_content(self.alerts_widget, stretch=1)
         
-        # Telemetry
-        telemetry_container = QFrame()
-        telemetry_container.setObjectName("Card")
-        telemetry_layout = QVBoxLayout(telemetry_container)
-        telemetry_label = QLabel("Telemetry")
-        telemetry_label.setObjectName("SectionHeader")
+        # Telemetry Card
         self.telemetry_widget = TelemetryWidget()
-        telemetry_layout.addWidget(telemetry_label)
-        telemetry_layout.addWidget(self.telemetry_widget)
+        telemetry_card = BaseCard("Telemetry")
+        telemetry_card.add_content(self.telemetry_widget, stretch=1)
         
-        self.right_splitter.addWidget(alerts_container)
-        self.right_splitter.addWidget(telemetry_container)
+        self.right_splitter.addWidget(alerts_card)
+        self.right_splitter.addWidget(telemetry_card)
         self.right_splitter.setStretchFactor(0, 1)
         self.right_splitter.setStretchFactor(1, 1)
         

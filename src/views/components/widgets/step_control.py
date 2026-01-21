@@ -1,11 +1,12 @@
 """
 Step Control - Widget for selecting/incrementing step numbers.
 
-A capsule-style widget with increment/decrement buttons and editable input:
-[ ◀ ] [ 123 ] [ ▶ ]
+A stacked widget with label on top and controls below:
+    STEP CONTROL
+[ − ]    123    [ + ]
 """
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QPushButton, QLineEdit, QLabel
+    QWidget, QHBoxLayout, QPushButton, QLineEdit
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIntValidator
@@ -13,7 +14,7 @@ from PySide6.QtGui import QIntValidator
 
 class StepControl(QWidget):
     """
-    A modern, capsule-style widget for selecting steps.
+    A modern widget for selecting steps with label on top.
     
     Emits step_changed signal when the step value changes.
     Can be connected to a StepManager or used standalone.
@@ -36,53 +37,39 @@ class StepControl(QWidget):
     
     def _init_ui(self) -> None:
         """Initialize the UI components."""
+        # Horizontal layout for the merged control: [ − | input | + ]
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(0)  # No gap - controls merge together
         
-        # Label
-        self.label = QLabel("STEP")
-        self.label.setObjectName("StepLabel")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
-        # Controls container
-        controls = QWidget()
-        controls_layout = QHBoxLayout(controls)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(4)
-        
-        # Decrement Button
-        self.dec_btn = QPushButton("◀")
-        self.dec_btn.setObjectName("StepBtn")
-        self.dec_btn.setFixedSize(30, 30)
+        # Decrement Button (left side - rounded left corners only)
+        self.dec_btn = QPushButton("−")
+        self.dec_btn.setObjectName("StepBtnLeft")
+        self.dec_btn.setFixedSize(32, 32)
         self.dec_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.dec_btn.clicked.connect(self.decrement)
         
-        # Input Field
+        # Input Field (middle - no rounded corners)
         self.input = QLineEdit()
         self.input.setObjectName("StepInput")
         self.input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.input.setFixedWidth(40)
-        self.input.setFixedHeight(30)
+        self.input.setFixedHeight(32)
         self.input.setValidator(QIntValidator(self._min_value, self._max_value))
         self.input.setText(str(self._value))
         self.input.returnPressed.connect(self._on_manual_input)
         self.input.editingFinished.connect(self._on_manual_input)
         
-        # Increment Button
-        self.inc_btn = QPushButton("▶")
-        self.inc_btn.setObjectName("StepBtn")
-        self.inc_btn.setFixedSize(30, 30)
+        # Increment Button (right side - rounded right corners only)
+        self.inc_btn = QPushButton("+")
+        self.inc_btn.setObjectName("StepBtnRight")
+        self.inc_btn.setFixedSize(32, 32)
         self.inc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.inc_btn.clicked.connect(self.increment)
         
-        # Assemble
-        controls_layout.addWidget(self.dec_btn)
-        controls_layout.addWidget(self.input)
-        controls_layout.addWidget(self.inc_btn)
-        
-        layout.addWidget(self.label)
-        layout.addWidget(controls, 0, Qt.AlignmentFlag.AlignLeft)
+        # Assemble - all in one row
+        layout.addWidget(self.dec_btn)
+        layout.addWidget(self.input, 1)  # stretch=1 to fill space
+        layout.addWidget(self.inc_btn)
     
     @property
     def value(self) -> int:

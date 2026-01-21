@@ -45,44 +45,43 @@ QFrame#Card, .Card {
 
 /* Card Header/Footer */
 QFrame#CardHeader {
-    background-color: #171717;
+    background-color: transparent;
     border: none;
-    border-bottom: 1px solid #262626;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
+    border-bottom: 1px solid #404040;
+    min-height: 44px;
 }
 
-/* Card Header Title (white text) */
-QLabel#CardHeaderTitle {
+/* Card Content Area */
+QWidget#CardContent {
+    background-color: transparent;
+}
+
+/* Card Separator Line */
+QFrame#CardSeparator {
+    background-color: #404040;
+    border: none;
+    max-height: 1px;
+}
+
+/* Card/Section Headers - unified style */
+QLabel#CardHeaderTitle,
+QLabel#SectionHeader {
     color: #FFFFFF;
     font-weight: bold;
     text-transform: uppercase;
-    font-size: 12px;
+    font-size: 11px;
     letter-spacing: 0.5px;
     background-color: transparent;
     border: none;
     padding: 0px;
     margin: 0px;
 }
+
 QFrame#CardFooter {
     background-color: #171717;
     border-top: 1px solid #262626;
     border-bottom-left-radius: 4px;
     border-bottom-right-radius: 4px;
-}
-
-/* Section Headers inside Cards (lighter than card bg) */
-QLabel#SectionHeader {
-    background-color: rgba(38, 38, 38, 0.8); /* neutral-800 at 80% - LIGHTER than card */
-    color: #a3a3a3; /* neutral-400 - visible muted text */
-    font-weight: bold;
-    text-transform: uppercase;
-    font-size: 9px;
-    letter-spacing: 1px;
-    border: none;
-    border-bottom: 1px solid #404040; /* neutral-700 */
-    padding: 4px 12px;
-    margin: 0px;
 }
 
 /* CDM Row Container - flat, no borders between items */
@@ -116,6 +115,7 @@ QLabel#ConfigLabel {
 
 /* Field Labels (Manual Ops) */
 QLabel#FieldLabel {
+    background-color: transparent;
     color: #737373; /* neutral-500 */
     font-size: 10px;
     font-weight: bold;
@@ -150,13 +150,15 @@ QLineEdit:focus {
 
 /* Dark Input (Password) */
 QLineEdit#DarkInput {
-    background-color: #000000;
+    background-color: #1a1a1a;
     border: 1px solid #404040;
+    border-radius: 4px;
     color: #FFFFFF;
     font-size: 12px;
+    padding: 6px 8px;
 }
 QLineEdit#DarkInput:focus {
-    border: 1px solid #FFFFFF;
+    border-color: #007ACC;
 }
 
 /* --- BUTTONS --- */
@@ -194,6 +196,11 @@ QPushButton#ActionKey:pressed {
     background-color: #171717;
     border-color: #262626;
     transform: translateY(1px);
+}
+QPushButton#ActionKey::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 8px;
 }
 
 /* Danger Button (Disconnect) */
@@ -464,8 +471,15 @@ QComboBox {
     border: 1px solid #3E3E42;
     border-radius: 4px;
     color: #DDD;
-    padding: 4px;
+    padding: 4px 20px 4px 4px;
     font-size: 11px;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 16px;
+    border: none;
 }
 
 QComboBox QAbstractItemView {
@@ -524,6 +538,61 @@ QScrollArea > QWidget > QWidget {
 QFrame#StepPill {
     background-color: #252526;
     border-radius: 17px; /* Half height */
+}
+
+/* Step Control - Merged Button Group */
+QPushButton#StepBtnLeft {
+    background-color: #262626;
+    color: #FFFFFF;
+    border: 1px solid #404040;
+    border-right: none;
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+    font-size: 16px;
+    font-weight: bold;
+}
+QPushButton#StepBtnLeft:hover {
+    background-color: #333333;
+    border-color: #505050;
+}
+QPushButton#StepBtnLeft:pressed {
+    background-color: #007ACC;
+}
+
+QPushButton#StepBtnRight {
+    background-color: #262626;
+    color: #FFFFFF;
+    border: 1px solid #404040;
+    border-left: none;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    font-size: 16px;
+    font-weight: bold;
+}
+QPushButton#StepBtnRight:hover {
+    background-color: #333333;
+    border-color: #505050;
+}
+QPushButton#StepBtnRight:pressed {
+    background-color: #007ACC;
+}
+
+QLineEdit#StepInput {
+    background-color: #1a1a1a;
+    color: #FFFFFF;
+    border: 1px solid #404040;
+    border-left: none;
+    border-right: none;
+    border-radius: 0px;
+    font-size: 14px;
+    padding: 0px 8px;
+}
+QLineEdit#StepInput:focus {
+    border-color: #007ACC;
 }
 
 /* Status Label (Error/Status) */
@@ -592,6 +661,12 @@ QLabel#CardBadge {
     border-radius: 8px;
     padding: 2px 8px;
     font-size: 11px;
+}
+
+/* Card Status (e.g., "3 selected") */
+QLabel#CardStatus {
+    color: #737373;
+    font-size: 10px;
 }
 
 /* Badge (JSON/XML) */

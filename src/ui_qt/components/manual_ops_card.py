@@ -1,13 +1,14 @@
-from PySide6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QLineEdit, QPushButton, QGridLayout, QWidget, QMenu)
+from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, 
+                               QLineEdit, QPushButton, QGridLayout)
 from PySide6.QtCore import Qt, Signal
-from .step_control import StepControl
-from .modern_button import ModernButton
+from src.views.components.cards import BaseCard
+from src.views.components.widgets import StepControl
 
-class ManualOpsCard(QFrame):
+
+class ManualOpsCard(BaseCard):
     """
     Card for Manual Operations (Step Control, Password, Action Keys).
-    Matches the "Tactile Keys" design from the new UI.
+    Extends BaseCard for consistent header styling.
     """
     
     # Signals for action buttons
@@ -17,136 +18,63 @@ class ManualOpsCard(QFrame):
     password_changed = Signal(str)
 
     def __init__(self, step_manager, parent=None):
-        super().__init__(parent)
-        self.setObjectName("Card")
         self.step_manager = step_manager
-        
-        self._init_layout()
+        super().__init__(title="MANUAL OPERATIONS", parent=parent)
 
-    def _init_layout(self):
-        # Main Layout
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+    def _init_content(self):
+        """Add card-specific content."""
+        # 2-column grid
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(12)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
 
-        # Header
-        header = QFrame()
-        header.setObjectName("CardHeader")
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
-        
-        title = QLabel("MANUAL OPERATIONS")
-        title.setObjectName("SectionHeader")
-        header_layout.addWidget(title)
-        
-        layout.addWidget(header)
-
-        # Content Grid (2 Columns)
-        content = QWidget()
-        content_layout = QGridLayout(content)
-        content_layout.setContentsMargins(12, 12, 12, 12)
-        content_layout.setSpacing(16)
-
-        # --- Left Column: Input Groups (Step Control + Password) ---
-        inputs_container = QWidget()
-        inputs_layout = QVBoxLayout(inputs_container)
-        inputs_layout.setContentsMargins(0, 0, 12, 0) # Right padding for separator
-        inputs_layout.setSpacing(12)
-
-        # Step Control Group
-        step_group = QWidget()
-        step_layout = QVBoxLayout(step_group)
-        step_layout.setContentsMargins(0, 0, 0, 0)
-        step_layout.setSpacing(4)
-        
+        # Left column - Row 0: Step Control label
         step_label = QLabel("STEP CONTROL")
         step_label.setObjectName("FieldLabel")
-        
-        self.step_control = StepControl(self.step_manager)
-        # We might need to style StepControl to match the new design more closely, 
-        # but for now we reuse the component.
-        
-        step_layout.addWidget(step_label)
-        step_layout.addWidget(self.step_control)
-        
-        # Password Group
-        pwd_group = QWidget()
-        pwd_layout = QVBoxLayout(pwd_group)
-        pwd_layout.setContentsMargins(0, 0, 0, 0)
-        pwd_layout.setSpacing(4)
-        
-        pwd_label = QLabel("UNLOCK")
+        grid.addWidget(step_label, 0, 0)
+
+        # Left column - Row 1: Step Control widget
+        self.step_control = StepControl()
+        self.step_control.connect_to_manager(self.step_manager)
+        grid.addWidget(self.step_control, 1, 0)
+
+        # Left column - Row 2: Password label
+        pwd_label = QLabel("PASSWORD")
         pwd_label.setObjectName("FieldLabel")
-        
-        pwd_input_container = QWidget()
-        pwd_input_layout = QHBoxLayout(pwd_input_container)
-        pwd_input_layout.setContentsMargins(0, 0, 0, 0)
-        
+        grid.addWidget(pwd_label, 2, 0)
+
+        # Left column - Row 3: Password input
         self.pwd_input = QLineEdit()
-        self.pwd_input.setPlaceholderText("********")
-        self.pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pwd_input.setPlaceholderText("Enter password")
         self.pwd_input.setObjectName("DarkInput")
         self.pwd_input.textChanged.connect(self.password_changed.emit)
-        
-        pwd_icon = QLabel("🔒") # Or use font awesome if available via QSS
-        pwd_icon.setObjectName("InputIcon")
-        
-        pwd_input_layout.addWidget(self.pwd_input)
-        # pwd_input_layout.addWidget(pwd_icon) # Icon positioning usually done via QSS or overlay
-        
-        pwd_layout.addWidget(pwd_label)
-        pwd_layout.addWidget(self.pwd_input) # Simplified for now
+        grid.addWidget(self.pwd_input, 3, 0)
 
-        inputs_layout.addWidget(step_group)
-        inputs_layout.addWidget(pwd_group)
-        
-        # Add separator styling in QSS for inputs_container or use a VLine
-        
-        # --- Right Column: Action Keys ---
-        actions_container = QWidget()
-        actions_layout = QVBoxLayout(actions_container)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(8)
-        actions_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        # Right column - Buttons (span rows 0-3, centered vertically)
+        btn_container = QVBoxLayout()
+        btn_container.setSpacing(8)
+        btn_container.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        # Capture EWS
-        self.btn_ews = self._create_action_button("Capture EWS", "📷")
+        self.btn_ews = QPushButton("Capture EWS")
+        self.btn_ews.setObjectName("ActionKey")
         self.btn_ews.clicked.connect(self.ews_clicked.emit)
-        
-        # Commands
-        self.btn_cmds = self._create_action_button("Commands", "💻")
+        btn_container.addWidget(self.btn_ews)
+
+        self.btn_cmds = QPushButton("Commands")
+        self.btn_cmds.setObjectName("ActionKey")
         self.btn_cmds.clicked.connect(self.commands_clicked.emit)
-        
-        # Report
-        self.btn_report = self._create_action_button("Report", "📄")
+        btn_container.addWidget(self.btn_cmds)
+
+        self.btn_report = QPushButton("Report")
+        self.btn_report.setObjectName("ActionKey")
         self.btn_report.clicked.connect(self.report_clicked.emit)
+        btn_container.addWidget(self.btn_report)
 
-        actions_layout.addWidget(self.btn_ews)
-        actions_layout.addWidget(self.btn_cmds)
-        actions_layout.addWidget(self.btn_report)
+        grid.addLayout(btn_container, 0, 1, 4, 1)
 
-        # Add columns to grid
-        content_layout.addWidget(inputs_container, 0, 0)
-        content_layout.addWidget(actions_container, 0, 1)
-        
-        # Split 50/50
-        content_layout.setColumnStretch(0, 1)
-        content_layout.setColumnStretch(1, 1)
-
-        layout.addWidget(content)
-        
-        # Styling hooks
-        # We'll rely on object names and class names for QSS
-        
-    def _create_action_button(self, text, icon_char):
-        btn = QPushButton(text)
-        btn.setObjectName("ActionKey")
-        # Store icon char to add via custom paint or just append to text?
-        # For simplicity, we just set text. QSS can add icons or we use text.
-        # btn.setText(f"{text}  {icon_char}")
-        # Actually ModernButton usage is preferred if we want consistent look, 
-        # but the plan says "Tactile Keys". I'll use QPushButton with "ActionKey" object name.
-        return btn
+        self.add_content_layout(grid)
 
     def set_password(self, text):
         self.pwd_input.setText(text)

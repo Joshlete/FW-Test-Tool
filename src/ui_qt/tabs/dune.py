@@ -8,7 +8,7 @@ from PySide6.QtGui import QAction
 from .family_base import FamilyTabBase
 from ..components.cdm_widget import CDMWidget
 from ..components.dune_ui_stream_widget import DuneUIStreamWidget
-from ..components.snip_tool import QtSnipTool
+from src.views.components.widgets import SnipTool
 from ..components.report_builder_window import ReportBuilderWindow
 from ..components.manual_ops_card import ManualOpsCard
 from ..components.data_control_card import DataControlCard
@@ -33,7 +33,8 @@ class DuneTab(FamilyTabBase):
         super().__init__(tab_name="dune", config_manager=config_manager, controllers=controllers)
         
         # Initialize Snip Tool (after base init so file_manager is ready)
-        self.snip_tool = QtSnipTool(self.config_manager, file_manager=self.file_manager)
+        self.snip_tool = SnipTool(file_manager=self.file_manager)
+        self.snip_tool.set_regions(self.config_manager.get("capture_regions", {}))
         
         # Connect remaining signals
         self._connect_dune_signals()
@@ -155,9 +156,7 @@ class DuneTab(FamilyTabBase):
         # Actually ModernButton/QPushButton with setMenu shows menu on click.
         
         # Snip Tool
-        self.snip_tool.capture_completed.connect(
-            lambda p: self.status_message.emit(f"Saved: {os.path.basename(p)}")
-        )
+        self.snip_tool.capture_completed.connect(self._on_snip_completed)
         
         # Alert Capture
         self.alerts_widget.capture_requested.connect(self._capture_alert_ui)
@@ -169,6 +168,11 @@ class DuneTab(FamilyTabBase):
         for endpoint, content in results.items():
             self.cdm_widget.display_data(endpoint, content)
             break
+
+    def _on_snip_completed(self, path: str):
+        """Handle snip completion: save regions and emit status."""
+        self.config_manager.set("capture_regions", self.snip_tool.get_regions())
+        self.status_message.emit(f"Saved: {os.path.basename(path)}")
 
     # --- Connection & View Logic ---
 
@@ -283,7 +287,7 @@ class DuneTab(FamilyTabBase):
 
     def _capture_ews(self, page_name: str):
         self.status_message.emit(f"Starting EWS snip: {page_name}")
-        self.snip_tool.start_capture(self.file_manager.default_directory, f"EWS {page_name}")
+        self.snip_tool.start_capture(self.file_manager.default_directory, f"EWS {page_name}", auto_save=True)
 
     def _capture_alert_ui(self, alert_data: dict):
         printer_ctrl = self._controllers.get('printer')

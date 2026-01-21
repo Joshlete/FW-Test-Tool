@@ -44,6 +44,13 @@ class PrinterViewCard(QFrame):
         header_layout.setContentsMargins(12, 8, 12, 8)
         header_layout.setSpacing(12)
         
+        # Title
+        title = QLabel("PRINTER VIEW")
+        title.setObjectName("SectionHeader")
+        header_layout.addWidget(title)
+        
+        header_layout.addStretch()
+        
         # Tools Group
         tools_layout = QHBoxLayout()
         tools_layout.setSpacing(8)
@@ -94,7 +101,6 @@ class PrinterViewCard(QFrame):
         tools_layout.addWidget(self.btn_capture)
         
         header_layout.addLayout(tools_layout)
-        header_layout.addStretch()
         
         # Live Feed Status
         status_container = QFrame()
@@ -116,12 +122,20 @@ class PrinterViewCard(QFrame):
         
         layout.addWidget(header)
         
+        # Separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setObjectName("CardSeparator")
+        layout.addWidget(separator)
+        
         # --- Content (Stream Widget) ---
         layout.addWidget(self.inner_widget, 1)
 
     def _hide_inner_controls(self):
         """Hide controls of the wrapped widget to avoid duplication."""
         # For DuneUIStreamWidget
+        if hasattr(self.inner_widget, "lbl_title"):
+            self.inner_widget.lbl_title.hide()
         if hasattr(self.inner_widget, "header"):
             self.inner_widget.header.hide()
             
