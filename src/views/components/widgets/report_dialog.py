@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Qt
 import json
 import os
-from utils.report_builder import ReportBuilder
+from src.controllers.report_controller import ReportBuilder
 
 class ReportDialog(QDialog):
     def __init__(self, parent, directory, step_number):

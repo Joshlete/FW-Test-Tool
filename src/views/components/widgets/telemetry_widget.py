@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                                QScrollArea, QLabel, QFrame, QMessageBox)
 from PySide6.QtCore import Qt, Signal
-from .telemetry_card import TelemetryCard
+from src.views.components.cards.telemetry_card import TelemetryCard
 
 class TelemetryWidget(QWidget):
     """

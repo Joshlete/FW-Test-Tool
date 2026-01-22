@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from src.views.components.cards import BaseCard
-from src.views.components.widgets import StepControl
+from src.views.components.widgets.step_control import StepControl
 
 
 class ManualOpsCard(BaseCard):

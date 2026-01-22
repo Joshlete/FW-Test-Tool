@@ -10,10 +10,23 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 
+class InputGroup(QWidget):
+    """
+    A unified wrapper that can contain multiple input types (LabeledInput, LabeledCombo, etc.)
+    Basically a vertical layout container for forms.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(10)
+
+    def add_widget(self, widget):
+        self.layout.addWidget(widget)
+
+
 class LabeledInput(QWidget):
     """
-    A horizontal label + text input widget.
-    
     [ Label: ] [ Input Field ]
     
     Signals:

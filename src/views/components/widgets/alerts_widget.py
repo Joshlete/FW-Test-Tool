@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                QScrollArea, QLabel, QMessageBox, QFrame, QMenu)
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtCore import Qt, Signal
-from .alert_card import AlertCard  # Import the new component
+from src.views.components.cards.alert_card import AlertCard  # Import the new component
 
 class AlertsWidget(QWidget):
     """

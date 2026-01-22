@@ -11,17 +11,17 @@ import threading
 from PySide6.QtCore import Signal, QObject, QTimer, Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
-from src.views.screens import FamilyScreen
+from src.views.screens.family_screen import FamilyScreen
 from src.views.components.cards import BaseCard
 from src.views.components.widgets import SnipTool
 from src.models.step_manager import QtStepManager
 from src.services.file_service import FileManager
 
 # Widget imports
-from src.ui_qt.components.cdm_widget import CDMWidget
-from src.ui_qt.components.alerts_widget import AlertsWidget
-from src.ui_qt.components.telemetry_widget import TelemetryWidget
-from src.ui_qt.components.manual_ops_card import ManualOpsCard
+from src.views.components.widgets.cdm_widget import CDMWidget
+from src.views.components.widgets.alerts_widget import AlertsWidget
+from src.views.components.widgets.telemetry_widget import TelemetryWidget
+from src.views.components.cards.manual_ops_card import ManualOpsCard
 from src.services.ews_capture import EWSScreenshotCapturer
 from src.utils.logging.app_logger import log_info, log_error
 

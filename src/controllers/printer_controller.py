@@ -119,6 +119,8 @@ class PrinterController(QObject):
         self._rotation: int = 0
         self._directory: str = os.getcwd()
         self._step_manager = None
+        self._username: Optional[str] = None
+        self._password: Optional[str] = None
         
         # Services
         self._vnc_service: Optional[VNCService] = None
@@ -136,6 +138,14 @@ class PrinterController(QObject):
     def set_step_manager(self, step_manager) -> None:
         """Set the step manager for file naming."""
         self._step_manager = step_manager
+    
+    def set_credentials(self, username: Optional[str] = None, password: Optional[str] = None) -> None:
+        """Set authentication credentials (for Sirius connections)."""
+        self._username = username
+        self._password = password
+        # Update existing service if connected
+        if self._sirius_service:
+            self._sirius_service.set_credentials(username, password)
     
     @property
     def is_connected(self) -> bool:
@@ -184,7 +194,11 @@ class PrinterController(QObject):
     def _connect_sirius(self) -> None:
         """Connect via HTTPS (Sirius printers)."""
         try:
-            self._sirius_service = SiriusStreamService(self._ip)
+            self._sirius_service = SiriusStreamService(
+                self._ip,
+                username=self._username or "admin",
+                password=self._password
+            )
             self._sirius_service.on_image_update = self._on_sirius_frame
             self._sirius_service.on_connection_status = self._on_sirius_status
             self._sirius_service.connect()

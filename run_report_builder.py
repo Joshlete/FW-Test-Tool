@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QApplication
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
-from src.ui_qt.components.report_builder_window import ReportBuilderWindow
+from src.views.screens.report_builder_window import ReportBuilderWindow
 from src.services.theme_service import ThemeManager
 
 if __name__ == "__main__":

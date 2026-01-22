@@ -25,8 +25,8 @@ from src.controllers import (
 )
 
 # UI Components (still in ui_qt during migration)
-from src.ui_qt.components.app_header import AppHeader
-from src.ui_qt.components.toast import ToastWidget
+from src.views.components.widgets.app_header import AppHeader
+from src.views.components.widgets.toast import ToastWidget
 
 from src.views.screens import SettingsScreen, LogScreen
 

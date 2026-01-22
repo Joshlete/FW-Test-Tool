@@ -10,21 +10,21 @@ import os
 from PySide6.QtWidgets import QMenu
 from PySide6.QtGui import QAction
 
-from src.views.screens import FamilyScreen
+from src.views.screens.family_screen import FamilyScreen
 from src.views.components.cards import BaseCard
 from src.views.components.widgets import SnipTool
 from src.models.step_manager import QtStepManager
 from src.services.file_service import FileManager
 
 # Widget imports (these will stay in ui_qt/components for now)
-from src.ui_qt.components.cdm_widget import CDMWidget
-from src.ui_qt.components.dune_ui_stream_widget import DuneUIStreamWidget
-from src.ui_qt.components.alerts_widget import AlertsWidget
-from src.ui_qt.components.telemetry_widget import TelemetryWidget
-from src.ui_qt.components.manual_ops_card import ManualOpsCard
-from src.ui_qt.components.data_control_card import DataControlCard
-from src.ui_qt.components.printer_view_card import PrinterViewCard
-from src.ui_qt.components.report_builder_window import ReportBuilderWindow
+from src.views.components.widgets.cdm_widget import CDMWidget
+from src.views.components.widgets.vnc_stream import VNCStreamWidget
+from src.views.components.widgets.alerts_widget import AlertsWidget
+from src.views.components.widgets.telemetry_widget import TelemetryWidget
+from src.views.components.cards.manual_ops_card import ManualOpsCard
+from src.views.components.cards.data_control_card import DataControlCard
+from src.views.components.cards.printer_view_card import PrinterViewCard
+from src.views.screens.report_builder_window import ReportBuilderWindow
 
 
 class DuneScreenController:
@@ -85,7 +85,7 @@ class DuneScreenController:
             ews_pages=ews_pages,
             commands=commands
         )
-        self.stream_widget = DuneUIStreamWidget()
+        self.stream_widget = VNCStreamWidget()
         self.printer_card = PrinterViewCard(self.stream_widget)
         
         # === Right Column: Alerts + Telemetry ===

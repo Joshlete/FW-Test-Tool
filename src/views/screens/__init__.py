@@ -1,15 +1,17 @@
-# Full tab/screen layouts
+# Screen definitions (Ares, Dune, Sirius, Settings, Logs, Report Builder)
 
-from .family_screen import FamilyScreen, FamilySplitter, FamilySplitterHandle
 from .ares_screen import AresScreen
-from .settings_screen import SettingsScreen
+from src.controllers.screens.dune_controller import DuneScreenController # Note: Controller is exported here? Check usage.
+# Usually screens module exports View classes.
+from .family_screen import FamilyScreen
 from .log_screen import LogScreen
+from .report_builder_window import ReportBuilderWindow
+from .settings_screen import SettingsScreen
 
 __all__ = [
-    "FamilyScreen",
-    "FamilySplitter",
-    "FamilySplitterHandle",
     "AresScreen",
-    "SettingsScreen",
+    "FamilyScreen",
     "LogScreen",
+    "ReportBuilderWindow",
+    "SettingsScreen",
 ]
