@@ -1,4 +1,4 @@
-/* src/ui_qt/themes/dark_theme.qss */
+/* src/views/themes/dark_theme.qss */
 /* --- GLOBAL RESET & TYPOGRAPHY --- */
 QWidget {
     background-color: #000000;

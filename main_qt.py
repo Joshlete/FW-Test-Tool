@@ -7,7 +7,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 from PySide6.QtWidgets import QApplication
-from src.ui_qt.main_window import MainWindow
+from src.views.main_window import MainWindow
 from src.services.theme_service import ThemeManager
 
 def main():

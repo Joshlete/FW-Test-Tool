@@ -16,7 +16,7 @@ from src.views.components.widgets import SnipTool
 from src.models.step_manager import QtStepManager
 from src.services.file_service import FileManager
 
-# Widget imports (these will stay in ui_qt/components for now)
+# Widget imports
 from src.views.components.widgets.cdm_widget import CDMWidget
 from src.views.components.widgets.vnc_stream import VNCStreamWidget
 from src.views.components.widgets.alerts_widget import AlertsWidget

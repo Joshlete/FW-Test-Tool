@@ -24,7 +24,7 @@ from src.controllers import (
     CommandController,
 )
 
-# UI Components (still in ui_qt during migration)
+# UI Components
 from src.views.components.widgets.app_header import AppHeader
 from src.views.components.widgets.toast import ToastWidget
 

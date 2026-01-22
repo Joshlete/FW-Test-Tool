@@ -4,7 +4,7 @@ AppState - Central application state management.
 This model holds shared configuration state (IP, family, directory) and emits
 signals when values change. Components connect to these signals to stay in sync.
 
-Migrated from ui_qt/models/config_model.py as part of VCMS architecture.
+Migrated from the old model structure as part of VCMS architecture.
 Now uses families from models/families.py instead of hardcoded list.
 
 Usage:

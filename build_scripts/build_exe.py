@@ -60,12 +60,12 @@ def build():
 
         # Include QSS themes
         # format is "source;dest" for Windows
-        '--add-data', f"src/ui_qt/themes{os.pathsep}src/ui_qt/themes",
+        '--add-data', f"src/views/themes{os.pathsep}src/views/themes",
         
     ] + chromium_arg + [
         
         # Add any other assets here if needed
-        # '--add-data', f"src/ui_qt/assets{os.pathsep}src/ui_qt/assets",
+        # '--add-data', f"src/views/assets{os.pathsep}src/views/assets",
 
         # Main entry point
         'main_qt.py'
