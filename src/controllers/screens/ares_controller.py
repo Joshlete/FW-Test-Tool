@@ -8,12 +8,12 @@ Responsibilities:
 """
 import os
 import threading
-from PySide6.QtWidgets import QLabel, QLineEdit
 from PySide6.QtCore import Signal, QObject, QTimer, Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout
 
-from src.views.screens import AresScreen
+from src.views.screens import FamilyScreen
 from src.views.components.cards import BaseCard
-from src.views.components.widgets import StepControl, SnipTool
+from src.views.components.widgets import SnipTool
 from src.models.step_manager import QtStepManager
 from src.services.file_service import FileManager
 
@@ -21,7 +21,7 @@ from src.services.file_service import FileManager
 from src.ui_qt.components.cdm_widget import CDMWidget
 from src.ui_qt.components.alerts_widget import AlertsWidget
 from src.ui_qt.components.telemetry_widget import TelemetryWidget
-from src.ui_qt.components.action_toolbar import ActionToolbar
+from src.ui_qt.components.manual_ops_card import ManualOpsCard
 from src.services.ews_capture import EWSScreenshotCapturer
 from src.utils.logging.app_logger import log_info, log_error
 
@@ -30,7 +30,7 @@ class AresScreenController(QObject):
     """
     Controller for Ares family screens.
     
-    Uses toolbar layout with 2-column main area.
+    Uses 3-column FamilyScreen layout: Left (CDM) | Center (Manual Ops) | Right (Alerts + Telemetry)
     """
     
     capture_finished = Signal()
@@ -65,43 +65,36 @@ class AresScreenController(QObject):
         
         # EWS busy state
         self.capture_finished.connect(
-            lambda: self._set_busy(self.btn_ews, False, "Capture EWS")
+            lambda: self._set_busy(self.manual_ops.btn_ews, False, "Capture EWS")
+        )
+        
+        # Restore splitter state
+        self.screen.restore_splitter_state("ares_splitter_state")
+        self.screen.main_splitter.splitterMoved.connect(
+            lambda pos, idx: self.screen.save_splitter_state("ares_splitter_state")
         )
     
     def _build_screen(self):
-        """Create all widgets and compose into AresScreen."""
-        
-        # === Toolbar ===
-        self.toolbar = ActionToolbar()
-        
-        # Step Control
-        self.step_control = StepControl()
-        self.toolbar.add_widget_left(self.step_control)
-        self.toolbar.add_spacer()
-        
-        # Password Field
-        pwd_label = QLabel("Password:")
-        pwd_label.setObjectName("ConfigLabel")
-        self.toolbar.layout.addWidget(pwd_label)
-        
-        self.pwd_input = QLineEdit()
-        self.pwd_input.setEchoMode(QLineEdit.EchoMode.Normal)
-        self.pwd_input.setFixedWidth(100)
-        self.pwd_input.setPlaceholderText("admin")
-        self.pwd_input.setText(self.config_manager.get("password", ""))
-        self.toolbar.layout.addWidget(self.pwd_input)
-        
-        self.toolbar.add_spacer()
-        
-        # Action Buttons
-        self.btn_snip = self.toolbar.add_action_button("Snip", self._on_snip)
-        self.btn_ews = self.toolbar.add_action_button("Capture EWS", self._on_capture_ews)
-        self.btn_telemetry = self.toolbar.add_action_button("Telemetry Input", self._on_telemetry_input)
+        """Create all widgets and compose into FamilyScreen."""
         
         # === Left Column: CDM Controls ===
         self.cdm_widget = CDMWidget()
         self.cdm_card = BaseCard("CDM Controls")
         self.cdm_card.add_content(self.cdm_widget, stretch=1)
+        
+        # === Center Column: Manual Operations ===
+        self.manual_ops = ManualOpsCard(step_manager=self.step_manager)
+        
+        # Ares doesn't use Commands or Report buttons
+        self.manual_ops.btn_cmds.hide()
+        self.manual_ops.btn_report.hide()
+
+        # Wrap ManualOpsCard in a container to push it to the top
+        center_container = QWidget()
+        container_layout = QVBoxLayout(center_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.addWidget(self.manual_ops)
+        container_layout.addStretch(1)
         
         # === Right Column: Alerts + Telemetry ===
         self.alerts_widget = AlertsWidget()
@@ -113,18 +106,18 @@ class AresScreenController(QObject):
         self.telemetry_card.add_content(self.telemetry_widget, stretch=1)
         
         # === Create the Screen ===
-        self.screen = AresScreen(
+        self.screen = FamilyScreen(
             tab_name="ares",
             config_manager=self.config_manager,
             step_manager=self.step_manager,
             file_manager=self.file_manager,
-            toolbar=self.toolbar,
             left_widget=self.cdm_card,
+            center_widgets=[center_container],
             right_widgets=[self.alerts_card, self.telemetry_card]
         )
         
-        # Connect step manager to step control
-        self.step_control.connect_to_manager(self.step_manager)
+        # Configure Manual Ops
+        self.manual_ops.set_password(self.config_manager.get("password", ""))
     
     def _wire_signals(self):
         """Wire all signals between widgets and controllers."""
@@ -135,8 +128,11 @@ class AresScreenController(QObject):
             lambda err: self.screen.error_occurred.emit(f"Snip failed: {err}")
         )
         
-        # === Password ===
-        self.pwd_input.textChanged.connect(self._on_password_changed)
+        # === Manual Ops Actions ===
+        self.manual_ops.ews_clicked.connect(self._on_capture_ews)
+        self.manual_ops.snip_clicked.connect(self._on_snip)
+        self.manual_ops.telemetry_input_clicked.connect(self._on_telemetry_input)
+        self.manual_ops.password_changed.connect(lambda t: self.config_manager.set("password", t))
         
         # === Alerts Controller ===
         alerts_ctrl = self._controllers.get('alerts')
@@ -193,10 +189,6 @@ class AresScreenController(QObject):
         self.config_manager.set("capture_regions", self.snip_tool.get_regions())
         self.screen.status_message.emit(f"Saved screenshot: {os.path.basename(path)}")
     
-    def _on_password_changed(self, text):
-        """Save password to config."""
-        self.config_manager.set("password", text)
-    
     # === Action Handlers ===
     
     def _on_snip(self):
@@ -211,13 +203,13 @@ class AresScreenController(QObject):
             self.screen.error_occurred.emit("No IP configured")
             return
         
-        pwd = self.pwd_input.text()
+        pwd = self.manual_ops.pwd_input.text()
         if not pwd:
             self.screen.error_occurred.emit("Password required for EWS")
             return
         
         self.screen.status_message.emit("Capturing EWS...")
-        self._set_busy(self.btn_ews, True, idle_text="Capture EWS")
+        self._set_busy(self.manual_ops.btn_ews, True, idle_text="Capture EWS")
         snap_step = self.step_manager.get_step()
         snap_ip = self.ip
         
@@ -285,6 +277,6 @@ class AresScreenController(QObject):
         """Called when directory changes."""
         self.screen.update_directory(new_dir)
     
-    def get_screen(self) -> AresScreen:
+    def get_screen(self) -> FamilyScreen:
         """Return the screen widget for adding to tab widget."""
         return self.screen

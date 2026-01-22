@@ -18,6 +18,8 @@ class ManualOpsCard(BaseCard):
     commands_clicked = Signal()  # Deprecated: use command_selected instead
     command_selected = Signal(str)  # Emitted when user selects a command from menu
     report_clicked = Signal()
+    snip_clicked = Signal()  # Emitted when Snip button is clicked
+    telemetry_input_clicked = Signal()  # Emitted when Telemetry Input button is clicked
     password_changed = Signal(str)
 
     def __init__(self, step_manager, ews_pages=None, commands=None, parent=None):
@@ -109,6 +111,16 @@ class ManualOpsCard(BaseCard):
         self.btn_report.setObjectName("ActionKey")
         self.btn_report.clicked.connect(self.report_clicked.emit)
         btn_container.addWidget(self.btn_report)
+
+        self.btn_snip = QPushButton("Snip")
+        self.btn_snip.setObjectName("ActionKey")
+        self.btn_snip.clicked.connect(self.snip_clicked.emit)
+        btn_container.addWidget(self.btn_snip)
+
+        self.btn_telemetry_input = QPushButton("Telemetry Input")
+        self.btn_telemetry_input.setObjectName("ActionKey")
+        self.btn_telemetry_input.clicked.connect(self.telemetry_input_clicked.emit)
+        btn_container.addWidget(self.btn_telemetry_input)
 
         grid.addLayout(btn_container, 0, 1, 4, 1)
 
