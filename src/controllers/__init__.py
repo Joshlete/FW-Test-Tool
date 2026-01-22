@@ -8,6 +8,9 @@ from .ews_controller import EWSController
 from .command_controller import CommandController
 from .report_controller import ReportBuilder
 
+# Strategies
+from .strategies import BaseDuneStrategy, DuneIICStrategy, DuneIPHStrategy
+
 __all__ = [
     "DataController",
     "AlertsController",
@@ -16,4 +19,8 @@ __all__ = [
     "EWSController",
     "CommandController",
     "ReportBuilder",
+    # Strategies
+    "BaseDuneStrategy",
+    "DuneIICStrategy",
+    "DuneIPHStrategy",
 ]

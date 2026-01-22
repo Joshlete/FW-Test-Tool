@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, 
-                               QLineEdit, QPushButton, QGridLayout)
+                               QLineEdit, QPushButton, QGridLayout, QMenu)
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
 from src.views.components.cards import BaseCard
 from src.views.components.widgets import StepControl
 
@@ -12,13 +13,26 @@ class ManualOpsCard(BaseCard):
     """
     
     # Signals for action buttons
-    ews_clicked = Signal()
-    commands_clicked = Signal()
+    ews_clicked = Signal()  # Deprecated: use ews_page_selected instead
+    ews_page_selected = Signal(str)  # Emitted when user selects an EWS page from menu
+    commands_clicked = Signal()  # Deprecated: use command_selected instead
+    command_selected = Signal(str)  # Emitted when user selects a command from menu
     report_clicked = Signal()
     password_changed = Signal(str)
 
-    def __init__(self, step_manager, parent=None):
+    def __init__(self, step_manager, ews_pages=None, commands=None, parent=None):
+        """
+        Initialize Manual Operations Card.
+        
+        Args:
+            step_manager: Step manager instance
+            ews_pages: Optional list of EWS page names. If provided, creates dropdown menu.
+            commands: Optional list of command names. If provided, creates dropdown menu.
+            parent: Parent widget
+        """
         self.step_manager = step_manager
+        self.ews_pages = ews_pages  # Store for menu creation
+        self.commands = commands  # Store for menu creation
         super().__init__(title="MANUAL OPERATIONS", parent=parent)
 
     def _init_content(self):
@@ -59,12 +73,36 @@ class ManualOpsCard(BaseCard):
 
         self.btn_ews = QPushButton("Capture EWS")
         self.btn_ews.setObjectName("ActionKey")
-        self.btn_ews.clicked.connect(self.ews_clicked.emit)
+        
+        # Create menu if EWS pages were provided
+        if self.ews_pages:
+            menu = QMenu(self)
+            for page in self.ews_pages:
+                action = QAction(page, menu)
+                action.triggered.connect(lambda checked=False, p=page: self.ews_page_selected.emit(p))
+                menu.addAction(action)
+            self.btn_ews.setMenu(menu)
+        else:
+            # Only connect clicked signal if no menu (for backward compatibility)
+            self.btn_ews.clicked.connect(self.ews_clicked.emit)
+        
         btn_container.addWidget(self.btn_ews)
 
         self.btn_cmds = QPushButton("Commands")
         self.btn_cmds.setObjectName("ActionKey")
-        self.btn_cmds.clicked.connect(self.commands_clicked.emit)
+        
+        # Create menu if commands were provided
+        if self.commands:
+            menu = QMenu(self)
+            for cmd in self.commands:
+                action = QAction(cmd, menu)
+                action.triggered.connect(lambda checked=False, c=cmd: self.command_selected.emit(c))
+                menu.addAction(action)
+            self.btn_cmds.setMenu(menu)
+        else:
+            # Only connect clicked signal if no menu (for backward compatibility)
+            self.btn_cmds.clicked.connect(self.commands_clicked.emit)
+        
         btn_container.addWidget(self.btn_cmds)
 
         self.btn_report = QPushButton("Report")
@@ -80,7 +118,33 @@ class ManualOpsCard(BaseCard):
         self.pwd_input.setText(text)
 
     def set_ews_menu(self, menu):
+        """
+        Set EWS menu on button.
+        
+        Note: This method is kept for backward compatibility.
+        Prefer passing ews_pages to constructor instead.
+        """
+        # Disconnect clicked signal when menu is set (menu takes precedence)
+        if menu:
+            try:
+                self.btn_ews.clicked.disconnect()
+            except TypeError:
+                pass  # No connections to disconnect
+        
         self.btn_ews.setMenu(menu)
 
     def set_commands_menu(self, menu):
+        """
+        Set Commands menu on button.
+        
+        Note: This method is kept for backward compatibility.
+        Prefer passing commands to constructor instead.
+        """
+        # Disconnect clicked signal when menu is set (menu takes precedence)
+        if menu:
+            try:
+                self.btn_cmds.clicked.disconnect()
+            except TypeError:
+                pass  # No connections to disconnect
+        
         self.btn_cmds.setMenu(menu)

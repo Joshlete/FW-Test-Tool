@@ -115,11 +115,10 @@ class StepControl(QWidget):
             manager: Object with get_step(), set_step(int), increment(), 
                      decrement() methods and step_changed signal.
         """
-        # Disconnect our own signal
-        try:
+        # Disconnect our own signal only if it has connections
+        # This prevents RuntimeWarning when the signal was never connected
+        if self.receivers("step_changed") > 0:
             self.step_changed.disconnect()
-        except RuntimeError:
-            pass
         
         # Connect to manager
         self.dec_btn.clicked.disconnect()

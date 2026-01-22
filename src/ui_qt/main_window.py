@@ -28,16 +28,15 @@ from src.controllers import (
 from src.ui_qt.components.app_header import AppHeader
 from src.ui_qt.components.toast import ToastWidget
 
-# Tabs (still in ui_qt during migration)
-from src.ui_qt.tabs.settings import SettingsTab
-from src.ui_qt.tabs.ares import AresTab
-from src.ui_qt.tabs.sirius import SiriusTab
-from src.ui_qt.tabs.dune import DuneTab
-from src.ui_qt.tabs.log import LogTab
+from src.views.screens import SettingsScreen, LogScreen
 
-# Legacy strategies (will be replaced by family configs)
-from src.ui_qt.strategies.dune_iic_strategy import DuneIICStrategy
-from src.ui_qt.strategies.dune_iph_strategy import DuneIPHStrategy
+from src.controllers.screens import (
+    DuneScreenController,
+    SiriusScreenController,
+    AresScreenController,
+)
+
+from src.controllers.strategies import DuneIICStrategy, DuneIPHStrategy
 
 # Utilities
 from src.services.config_service import ConfigManager
@@ -206,22 +205,22 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         """Connect AppState signals to components."""
         
-        # --- IP changes -> update all tabs and controllers ---
-        self.app_state.ip_changed.connect(self.ares_tab.update_ip)
-        self.app_state.ip_changed.connect(self.sirius_tab.update_ip)
-        self.app_state.ip_changed.connect(self.dune_iic_tab.update_ip)
-        self.app_state.ip_changed.connect(self.dune_iph_tab.update_ip)
+        # --- IP changes -> update screen controllers ---
+        self.app_state.ip_changed.connect(self.ares_controller.update_ip)
+        self.app_state.ip_changed.connect(self.sirius_controller.update_ip)
+        self.app_state.ip_changed.connect(self.dune_iic_controller.update_ip)
+        self.app_state.ip_changed.connect(self.dune_iph_controller.update_ip)
         
-        # IP -> Controllers
+        # IP -> Data Controllers
         self.app_state.ip_changed.connect(self._update_controllers_ip)
         
-        # --- Directory changes -> update all tabs and controllers ---
-        self.app_state.directory_changed.connect(self.ares_tab.update_directory)
-        self.app_state.directory_changed.connect(self.sirius_tab.update_directory)
-        self.app_state.directory_changed.connect(self.dune_iic_tab.update_directory)
-        self.app_state.directory_changed.connect(self.dune_iph_tab.update_directory)
+        # --- Directory changes -> update screen controllers ---
+        self.app_state.directory_changed.connect(self.ares_controller.update_directory)
+        self.app_state.directory_changed.connect(self.sirius_controller.update_directory)
+        self.app_state.directory_changed.connect(self.dune_iic_controller.update_directory)
+        self.app_state.directory_changed.connect(self.dune_iph_controller.update_directory)
         
-        # Directory -> Controllers
+        # Directory -> Data Controllers
         self.app_state.directory_changed.connect(self._update_controllers_directory)
         
         # --- Family changes -> switch content stack ---
@@ -279,63 +278,67 @@ class MainWindow(QMainWindow):
         # self.toast.reposition() 
 
     def _init_tabs(self):
-        """Create tabs with injected controllers."""
+        """Create screens with screen controllers (new MVCS architecture)."""
         
         # 1. Dune IIC (Strategy-driven, with controllers)
-        self.dune_iic_tab = DuneTab(
-            config_manager=self.config_manager, 
+        self.dune_iic_controller = DuneScreenController(
+            config_manager=self.config_manager,
             strategy=DuneIICStrategy(),
             controllers=self.get_controllers_for_family("Dune IIC")
         )
-        self.content_stack.addWidget(self.dune_iic_tab)
+        self.dune_iic_screen = self.dune_iic_controller.get_screen()
+        self.content_stack.addWidget(self.dune_iic_screen)
         
         # Connect Dune IIC Signals
-        self.dune_iic_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
-        self.dune_iic_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
+        self.dune_iic_screen.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
+        self.dune_iic_screen.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
 
         # 2. Dune IPH (Strategy-driven, with controllers)
-        self.dune_iph_tab = DuneTab(
-            config_manager=self.config_manager, 
+        self.dune_iph_controller = DuneScreenController(
+            config_manager=self.config_manager,
             strategy=DuneIPHStrategy(),
             controllers=self.get_controllers_for_family("Dune IPH")
         )
-        self.content_stack.addWidget(self.dune_iph_tab)
+        self.dune_iph_screen = self.dune_iph_controller.get_screen()
+        self.content_stack.addWidget(self.dune_iph_screen)
         
         # Connect Dune IPH Signals
-        self.dune_iph_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
-        self.dune_iph_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
+        self.dune_iph_screen.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
+        self.dune_iph_screen.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
         # 3. Sirius (with controllers)
-        self.sirius_tab = SiriusTab(
+        self.sirius_controller = SiriusScreenController(
             config_manager=self.config_manager,
             controllers=self.get_controllers_for_family("Sirius")
         )
-        self.content_stack.addWidget(self.sirius_tab)
+        self.sirius_screen = self.sirius_controller.get_screen()
+        self.content_stack.addWidget(self.sirius_screen)
         
         # Connect Sirius Signals to Toast
-        self.sirius_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
-        self.sirius_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
+        self.sirius_screen.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
+        self.sirius_screen.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
         # 4. Ares (with controllers)
-        self.ares_tab = AresTab(
+        self.ares_controller = AresScreenController(
             config_manager=self.config_manager,
             controllers=self.get_controllers_for_family("Ares")
         )
-        self.content_stack.addWidget(self.ares_tab)
+        self.ares_screen = self.ares_controller.get_screen()
+        self.content_stack.addWidget(self.ares_screen)
         
         # Connect Ares Signals to Toast
-        self.ares_tab.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
-        self.ares_tab.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
+        self.ares_screen.status_message.connect(lambda msg: self.toast.show_message(msg, style="info"))
+        self.ares_screen.error_occurred.connect(lambda msg: self.toast.show_message(msg, style="error"))
         
         # 5. Tools (Placeholder)
         self.content_stack.addWidget(self._create_placeholder("Tools"))
         
         # 6. Settings (Real Implementation)
-        self.settings_tab = SettingsTab()
+        self.settings_tab = SettingsScreen()
         self.content_stack.addWidget(self.settings_tab)
 
         # 7. Log Tab
-        self.log_tab = LogTab()
+        self.log_tab = LogScreen()
         self.content_stack.addWidget(self.log_tab)
 
     def _create_placeholder(self, name):
