@@ -2,7 +2,6 @@ TODO
 
 Dune:
 * fix black box around empty alerts or telemetry.
-* copy button next to password input
 * highlight the new items in alerts or telemetry.
 * add nhio and iro button to UI 
 * ews capture slowly expands after each snip

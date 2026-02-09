@@ -5,6 +5,7 @@ from .alerts_widget import AlertsWidget
 from .app_header import AppHeader
 from .cdm_widget import CDMWidget
 from .code_editor import CodeEditor
+from .copy_button import CopyButton
 from .input_groups import InputGroup
 from .ledm_widget import LEDMWidget
 from .modern_button import ModernButton
@@ -22,6 +23,7 @@ __all__ = [
     "AppHeader",
     "CDMWidget",
     "CodeEditor",
+    "CopyButton",
     "InputGroup",
     "LEDMWidget",
     "ModernButton",

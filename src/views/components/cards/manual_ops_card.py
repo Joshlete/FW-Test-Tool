@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from src.views.components.cards import BaseCard
 from src.views.components.widgets.step_control import StepControl
+from src.views.components.widgets.copy_button import CopyButton
 
 
 class ManualOpsCard(BaseCard):
@@ -61,12 +62,30 @@ class ManualOpsCard(BaseCard):
         pwd_label.setObjectName("FieldLabel")
         grid.addWidget(pwd_label, 2, 0)
 
-        # Left column - Row 3: Password input
+        # Left column - Row 3: Password input + Copy Button (fused)
+        pwd_container = QHBoxLayout()
+        pwd_container.setSpacing(0)  # Join them together
+        pwd_container.setContentsMargins(0, 0, 0, 0)
+        
         self.pwd_input = QLineEdit()
         self.pwd_input.setPlaceholderText("Enter password")
         self.pwd_input.setObjectName("DarkInput")
+        # Remove right border radius to fuse with button
+        self.pwd_input.setStyleSheet("""
+            QLineEdit#DarkInput {
+                border-top-right-radius: 0px;
+                border-bottom-right-radius: 0px;
+            }
+        """)
         self.pwd_input.textChanged.connect(self.password_changed.emit)
-        grid.addWidget(self.pwd_input, 3, 0)
+        pwd_container.addWidget(self.pwd_input, 1)
+        
+        # Copy Button (fused to password input)
+        self.pwd_copy_btn = CopyButton(target=self.pwd_input, tooltip="Copy Password")
+        self.pwd_copy_btn.set_height(30)  # Match DarkInput height
+        pwd_container.addWidget(self.pwd_copy_btn)
+        
+        grid.addLayout(pwd_container, 3, 0)
 
         # Right column - Buttons (span rows 0-3, centered vertically)
         btn_container = QVBoxLayout()

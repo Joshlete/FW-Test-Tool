@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QMetaObject, Q_ARG, Slot
 from PySide6.QtGui import QPixmap, QImage, QAction
+from src.views.components.widgets.copy_button import CopyButton
 
 
 class SiriusStreamWidget(QWidget):
@@ -45,13 +46,27 @@ class SiriusStreamWidget(QWidget):
         # Controls header
         controls_layout = QHBoxLayout()
         
-        # Password field
+        # Password field with copy button (fused)
         controls_layout.addWidget(QLabel("Password:"))
+        
+        pwd_container = QHBoxLayout()
+        pwd_container.setSpacing(0)  # Join them together
+        pwd_container.setContentsMargins(0, 0, 0, 0)
+        
         self.pwd_input = QLineEdit()
         self.pwd_input.setEchoMode(QLineEdit.EchoMode.Normal)
         self.pwd_input.setFixedWidth(100)
+        # Remove right border radius to fuse with button
+        self.pwd_input.setStyleSheet("border-top-right-radius: 0px; border-bottom-right-radius: 0px;")
         self.pwd_input.textChanged.connect(self.password_changed.emit)
-        controls_layout.addWidget(self.pwd_input)
+        pwd_container.addWidget(self.pwd_input)
+        
+        # Copy Button (fused to password input)
+        self.pwd_copy_btn = CopyButton(target=self.pwd_input, tooltip="Copy Password")
+        self.pwd_copy_btn.set_height(self.pwd_input.sizeHint().height())
+        pwd_container.addWidget(self.pwd_copy_btn)
+        
+        controls_layout.addLayout(pwd_container)
         
         # Connect button
         self.connect_btn = QPushButton("View UI")

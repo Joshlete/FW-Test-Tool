@@ -21,8 +21,9 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QAction, QGuiApplication
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
+from src.views.components.widgets.copy_button import CopyButton
 import os
 
 
@@ -98,11 +99,8 @@ class AppHeader(QWidget):
         self.ip_group.add_widget(self.ip_input)
         
         # Copy Button (attached to IP input)
-        self.copy_btn = QPushButton("❐") # Unicode copy icon
-        self.copy_btn.setObjectName("HeaderButton")
-        self.copy_btn.setFixedSize(28, self.HEADER_INPUT_HEIGHT)
-        self.copy_btn.setToolTip("Copy IP")
-        self.copy_btn.clicked.connect(self._copy_ip)
+        self.copy_btn = CopyButton(target=self.ip_input, tooltip="Copy IP")
+        self.copy_btn.set_height(self.HEADER_INPUT_HEIGHT)
         self.ip_group.add_widget(self.copy_btn)
         
         self.ip_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
@@ -204,23 +202,6 @@ class AppHeader(QWidget):
     def _on_ip_changed(self, text: str):
         """User typed in IP field -> update model."""
         self.config_model.set_ip(text)
-        
-    def _copy_ip(self):
-        """Copy current IP to clipboard with visual feedback."""
-        clipboard = QGuiApplication.clipboard()
-        if clipboard:
-            clipboard.setText(self.ip_input.text())
-            # Visual feedback: briefly show checkmark
-            original_text = self.copy_btn.text()
-            self.copy_btn.setText("✓")
-            self.copy_btn.setStyleSheet("color: #22C55E;")  # Green checkmark
-            # Revert after 800ms
-            QTimer.singleShot(800, lambda: self._reset_copy_button(original_text))
-    
-    def _reset_copy_button(self, original_text: str):
-        """Reset copy button to original state."""
-        self.copy_btn.setText(original_text)
-        self.copy_btn.setStyleSheet("")  # Clear inline style, revert to QSS
     
     def _on_family_selected(self, family: str):
         """User selected family from menu -> update model."""
