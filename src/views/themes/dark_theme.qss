@@ -850,31 +850,38 @@ QLineEdit#HeaderInput[readOnly="true"] {
     color: #D4D4D4; /* Lighter text for directory */
 }
 
-/* Header Combo (Family selector) */
-QComboBox#HeaderCombo {
+/* Header Family Button (menu-backed, same pattern as ActionKey) */
+QPushButton#HeaderFamilyButton {
     background-color: #000000;
     border: 1px solid #525252; /* Match input border */
     border-radius: 4px;
     color: #FFFFFF;
-    font-size: 11px;
+    font-family: "JetBrains Mono", "Consolas", monospace; /* Match HeaderInput font */
+    font-size: 12px; /* Match HeaderInput font size */
     font-weight: bold;
-    text-transform: uppercase;
-    padding: 0px 8px;
+    text-align: left; /* QPushButton respects text-align better than QToolButton */
+    padding: 8px 30px 8px 16px; /* top right bottom left - more space from left edge */
 }
-QComboBox#HeaderCombo:hover {
+QPushButton#HeaderFamilyButton:hover {
     border: 1px solid #737373;
 }
-QComboBox#HeaderCombo:focus {
-    /* Remove distinct focus style to avoid "permanent highlight" look */
-    border: 1px solid #525252; 
-}
-QComboBox#HeaderCombo QAbstractItemView {
+QMenu#HeaderFamilyMenu {
     background-color: #1F1F1F;
     border: 1px solid #525252;
     color: #FFFFFF;
-    selection-background-color: #333333; /* Neutral selection, not blue */
-    selection-color: #FFFFFF;
-    outline: none;
+    padding: 4px;
+}
+QMenu#HeaderFamilyMenu::item {
+    padding: 6px 20px;
+}
+QMenu#HeaderFamilyMenu::item:selected {
+    background-color: #333333;
+    color: #FFFFFF;
+}
+QPushButton#HeaderFamilyButton::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 8px;
 }
 
 /* Header Buttons (Browse, Open, Copy) - joined with input */

@@ -173,7 +173,7 @@ class MainWindow(QMainWindow):
         # --- Ares Controllers ---
         self.ares_data_ctrl = DataController(self.thread_pool, use_ledm=False)
         self.ares_alerts_ctrl = AlertsController(self.thread_pool, use_ledm=False)
-        self.ares_telemetry_ctrl = TelemetryController(self.thread_pool)
+        self.ares_telemetry_ctrl = TelemetryController(self.thread_pool, is_dune_format=False)
         
         # Collect all controllers for bulk operations
         self._all_controllers = [

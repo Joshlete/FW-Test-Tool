@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QLabel,
     QLineEdit,
-    QComboBox,
     QToolButton,
     QPushButton,
     QMenu,
@@ -111,14 +110,13 @@ class AppHeader(QWidget):
         
         # --- Family Selector Group ---
         self.family_group = HeaderInputGroup("Family")
-        self.family_combo = QComboBox()
-        self.family_combo.setObjectName("HeaderCombo")
-        self.family_combo.addItems(config_model.FAMILIES)
-        self.family_combo.setCurrentIndex(config_model.family_index)
-        self.family_combo.setFixedWidth(120)
-        self.family_combo.setFixedHeight(self.HEADER_INPUT_HEIGHT)
-        self.family_combo.currentIndexChanged.connect(self._on_family_changed)
-        self.family_group.add_widget(self.family_combo)
+        self.family_btn = QPushButton()
+        self.family_btn.setText("  " + config_model.family.upper())  # Add spaces prefix for left alignment
+        self.family_btn.setObjectName("HeaderFamilyButton")
+        self.family_btn.setFixedWidth(120)
+        self.family_btn.setFixedHeight(self.HEADER_INPUT_HEIGHT)
+        self.family_btn.setMenu(self._create_family_menu())
+        self.family_group.add_widget(self.family_btn)
         
         self.family_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         layout.addWidget(self.family_group)
@@ -188,6 +186,18 @@ class AppHeader(QWidget):
         menu.addAction(log_action)
         
         return menu
+
+    def _create_family_menu(self) -> QMenu:
+        """Create family selection menu (button + menu pattern like ActionKey)."""
+        menu = QMenu(self)
+        menu.setObjectName("HeaderFamilyMenu")
+
+        for family in self.config_model.FAMILIES:
+            action = QAction(family, menu)
+            action.triggered.connect(lambda checked=False, f=family: self._on_family_selected(f))
+            menu.addAction(action)
+
+        return menu
     
     # --- Input Handlers (User -> ConfigModel) ---
     
@@ -212,9 +222,9 @@ class AppHeader(QWidget):
         self.copy_btn.setText(original_text)
         self.copy_btn.setStyleSheet("")  # Clear inline style, revert to QSS
     
-    def _on_family_changed(self, index: int):
-        """User selected family -> update model."""
-        self.config_model.set_family_by_index(index)
+    def _on_family_selected(self, family: str):
+        """User selected family from menu -> update model."""
+        self.config_model.set_family(family)
     
     def _browse_directory(self):
         """Open directory picker dialog."""
@@ -239,10 +249,10 @@ class AppHeader(QWidget):
             self.ip_input.setText(ip)
     
     def _update_family_display(self, family: str):
-        """Model family changed -> update combo if different."""
-        index = self.config_model.family_index
-        if self.family_combo.currentIndex() != index:
-            self.family_combo.setCurrentIndex(index)
+        """Model family changed -> update family button label."""
+        display_text = "  " + family.upper()  # Add spaces prefix for left alignment
+        if self.family_btn.text() != display_text:
+            self.family_btn.setText(display_text)
     
     def _update_directory_display(self, directory: str):
         """Model directory changed -> update input field."""
