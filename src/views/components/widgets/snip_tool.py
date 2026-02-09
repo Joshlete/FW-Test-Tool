@@ -255,8 +255,8 @@ class SnipTool(QWidget):
         
         abs_x1 = rect.x() + screen_geometry.x()
         abs_y1 = rect.y() + screen_geometry.y()
-        abs_x2 = rect.x() + rect.width() + screen_geometry.x()
-        abs_y2 = rect.y() + rect.height() + screen_geometry.y()
+        abs_x2 = rect.right() + screen_geometry.x()
+        abs_y2 = rect.bottom() + screen_geometry.y()
         
         self._regions[region_name] = {
             "x1": abs_x1, "y1": abs_y1, "x2": abs_x2, "y2": abs_y2
