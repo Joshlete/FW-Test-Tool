@@ -226,6 +226,10 @@ class MainWindow(QMainWindow):
         # --- Family changes -> switch content stack ---
         self.app_state.family_changed.connect(self._on_family_changed)
         
+        # --- Family clicked (from header) -> navigate to family screen ---
+        # This ensures clicking the same family still navigates to its screen
+        self.header.family_clicked.connect(self._on_family_changed)
+        
         # --- Header hamburger menu -> switch to tools/settings/log ---
         self.header.menu_item_clicked.connect(self._on_menu_item_clicked)
         

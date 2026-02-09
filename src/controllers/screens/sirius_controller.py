@@ -80,11 +80,11 @@ class SiriusScreenController(QObject):
         self.data_card = DataControlCard(self.ledm_widget, title="LEDM Controls", badge_text="XML")
         
         # === Center Column: Manual Ops + Printer View ===
-        self.manual_ops = ManualOpsCard(step_manager=self.step_manager)  # Pass step_manager
-        
-        # Sirius doesn't use Commands or Report
-        self.manual_ops.btn_cmds.hide()
-        self.manual_ops.btn_report.hide()
+        # Sirius only uses: EWS, Snip, Telemetry Input (no Commands or Report)
+        self.manual_ops = ManualOpsCard(
+            step_manager=self.step_manager,
+            buttons=['ews', 'snip', 'telemetry_input']
+        )
         
         self.ui_widget = SiriusStreamWidget()
         self.printer_card = PrinterViewCard(self.ui_widget)

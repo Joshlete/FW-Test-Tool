@@ -83,11 +83,11 @@ class AresScreenController(QObject):
         self.cdm_card.add_content(self.cdm_widget, stretch=1)
         
         # === Center Column: Manual Operations ===
-        self.manual_ops = ManualOpsCard(step_manager=self.step_manager)
-        
-        # Ares doesn't use Commands or Report buttons
-        self.manual_ops.btn_cmds.hide()
-        self.manual_ops.btn_report.hide()
+        # Ares only uses: EWS, Snip, Telemetry Input (no Commands or Report)
+        self.manual_ops = ManualOpsCard(
+            step_manager=self.step_manager,
+            buttons=['ews', 'snip', 'telemetry_input']
+        )
 
         # Wrap ManualOpsCard in a container to push it to the top
         center_container = QWidget()

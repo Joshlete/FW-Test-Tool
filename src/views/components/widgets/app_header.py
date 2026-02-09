@@ -66,9 +66,12 @@ class AppHeader(QWidget):
     Signals:
         menu_item_clicked(str): Emitted when a hamburger menu item is clicked.
                                  Values: "tools", "settings", "log"
+        family_clicked(str): Emitted when a family is clicked (always, even if already selected).
+                             Use this for navigation. Values: family names
     """
     
     menu_item_clicked = Signal(str)
+    family_clicked = Signal(str)
     
     # Constant for uniform input height
     HEADER_INPUT_HEIGHT = 36
@@ -204,8 +207,10 @@ class AppHeader(QWidget):
         self.config_model.set_ip(text)
     
     def _on_family_selected(self, family: str):
-        """User selected family from menu -> update model."""
+        """User selected family from menu -> update model and emit navigation signal."""
         self.config_model.set_family(family)
+        # Always emit family_clicked for navigation, even if family didn't change
+        self.family_clicked.emit(family)
     
     def _browse_directory(self):
         """Open directory picker dialog."""
