@@ -8,6 +8,7 @@ import time
 import socket
 from sys import path
 import logging
+from tkinter import simpledialog
 
 # SFTE Libraries
 path.append("G:\\sfte\\env\\non_sirius\\dunetuf")
@@ -184,6 +185,181 @@ PRINTER_PORT = 80
 # Monitoring settings
 MAX_RETRY_ATTEMPTS = 3  # number of times to retry failed operations
 ERROR_RECOVERY_DELAY = 2  # seconds to wait before retrying after error
+
+# ============================================================================
+
+class ResponsiveRowFrame(ttk.Frame):
+    """
+    A frame that automatically adjusts its children's layout based on actual content size.
+    Dynamically measures content width and only wraps when truly necessary.
+    When content fits: children are packed horizontally (side by side)
+    When content doesn't fit AND frame is narrow: children are packed vertically
+    """
+    
+    def __init__(self, parent, **kwargs):
+        """
+        Initialize the responsive frame.
+        Uses dynamic content measurement to determine when to wrap.
+        
+        Args:
+            parent: The parent widget
+            **kwargs: Additional arguments passed to ttk.Frame
+        """
+        super().__init__(parent, **kwargs)
+        
+        self.current_mode = None  # Track current layout mode: "horizontal" or "vertical"
+        self._child_pack_info = {}  # Store original pack info for each child
+        
+        # Bind to Configure event to detect resizing
+        self.bind("<Configure>", self._onConfigure)
+    
+    def _onConfigure(self, event):
+        """
+        Handle frame resize events.
+        Only triggered when the frame itself is resized, not its children.
+        """
+        # Only process if this is the frame being configured (not children)
+        if event.widget == self:
+            self._repackChildren()
+    
+    def _repackChildren(self):
+        """
+        Dynamically measure content and repack children based on actual space requirements.
+        Only wraps when content truly doesn't fit. Uses debouncing to avoid excessive redraws.
+        """
+        # Get current frame width
+        current_width = self.winfo_width()
+        
+        # Skip if width hasn't been calculated yet (during initial setup)
+        if current_width <= 1:
+            return
+        
+        # Get all children widgets
+        children = self.winfo_children()
+        
+        if not children:
+            return
+        
+        # Get list of currently packed children
+        packed_children = []
+        for child in children:
+            try:
+                child.pack_info()
+                packed_children.append(child)
+            except:
+                # Widget not packed (like hidden stop button), skip it
+                continue
+        
+        if not packed_children:
+            return
+        
+        # === DYNAMIC CONTENT MEASUREMENT ===
+        # Calculate how much space the content actually needs
+        total_content_width = 0
+        for child in packed_children:
+            # Request width gives natural size of widget
+            child_width = child.winfo_reqwidth()
+            if child_width > 1:  # Valid measurement
+                total_content_width += child_width
+        
+        # Add padding between widgets (estimated 10px per widget)
+        total_content_width += len(packed_children) * 10
+        
+        # Add buffer to prevent premature wrapping
+        total_content_width += 30
+        
+        # === SMART MODE DECISION ===
+        # Only wrap if content truly doesn't fit AND we're narrow enough
+        MIN_WIDTH_FOR_VERTICAL = 250  # Don't go vertical unless really narrow
+        
+        if current_width >= total_content_width:
+            # Content fits comfortably - stay horizontal
+            new_mode = "horizontal"
+        elif current_width < MIN_WIDTH_FOR_VERTICAL:
+            # Very narrow - go vertical
+            new_mode = "vertical"
+        else:
+            # In between - prefer horizontal (avoid ugly stacking)
+            new_mode = "horizontal"
+        
+        # Debounce: only repack if mode actually changed
+        if new_mode == self.current_mode:
+            return
+        
+        # Update mode
+        self.current_mode = new_mode
+        
+        # Save pack info for children if not already saved
+        for child in packed_children:
+            if child not in self._child_pack_info:
+                try:
+                    pack_info = child.pack_info()
+                    if pack_info:
+                        self._child_pack_info[child] = pack_info.copy()
+                except:
+                    pass
+        
+        # Repack all children with new orientation
+        for child in packed_children:
+            # Skip widgets that aren't packed (like hidden stop button)
+            try:
+                child.pack_info()
+            except:
+                continue  # Widget not packed, skip it
+            # Get original pack info (or defaults)
+            original_info = self._child_pack_info.get(child, {})
+            
+            # Extract padding values (maintain original padx)
+            padx = original_info.get('padx', 0)
+            pady = original_info.get('pady', 0)
+            
+            # Forget current packing
+            child.pack_forget()
+            
+            # Repack with new orientation
+            if new_mode == "horizontal":
+                # Horizontal layout: pack side by side
+                child.pack(
+                    side="left",
+                    padx=padx,
+                    pady=pady,
+                    fill=original_info.get('fill', 'none'),
+                    expand=original_info.get('expand', False)
+                )
+            else:
+                # Vertical layout: pack top to bottom (each on new row)
+                child.pack(
+                    side="top",
+                    padx=padx,
+                    pady=pady,
+                    fill=original_info.get('fill', 'x'),  # Fill horizontally in vertical mode
+                    expand=original_info.get('expand', False),
+                    anchor="w"  # Align to left in vertical mode
+                )
+    
+    def add_child(self, child, **pack_options):
+        """
+        Helper method to add a child widget with pack options.
+        Stores the pack info for later use during repack operations.
+        
+        Args:
+            child: The child widget to add
+            **pack_options: Pack options to use when adding the child
+        """
+        # Store pack info before packing
+        self._child_pack_info[child] = pack_options.copy()
+        
+        # Initial pack (will be adjusted by _repackChildren on next Configure)
+        if self.current_mode == "horizontal":
+            child.pack(side="left", **pack_options)
+        else:
+            # Modify for vertical layout
+            pack_options_vertical = pack_options.copy()
+            pack_options_vertical['side'] = 'top'
+            if 'fill' not in pack_options_vertical:
+                pack_options_vertical['fill'] = 'x'
+            pack_options_vertical['anchor'] = 'w'
+            child.pack(**pack_options_vertical)
 
 # ============================================================================
 
@@ -396,22 +572,34 @@ class testRunner:
         self.levels_frame.pack(fill="x", padx=15, pady=10)
     
     def _createDrainControlsCard(self):
-        """Create drain controls card"""
+        """Create drain controls card with responsive layout"""
         # Drain Controls Card - Modern Design using ttkbootstrap
         drain_card = ttk.Labelframe(self.scrollable_frame, text="Ink Drain Controls", padding=15)
         drain_card.pack(fill="x", padx=15, pady=(5, 10))
         
-        # Controls section - Compact horizontal layout
-        controls_frame = ttk.Frame(drain_card)
-        controls_frame.pack(fill="x")
+        # Main container for all control rows
+        self.controls_container = ttk.Frame(drain_card)
+        self.controls_container.pack(fill="x")
         
+        # Create three responsive rows for organized layout
+        # Each row will dynamically measure content and wrap only when truly needed
+        self.controls_row1 = ResponsiveRowFrame(self.controls_container)
+        self.controls_row2 = ResponsiveRowFrame(self.controls_container)
+        self.controls_row3 = ResponsiveRowFrame(self.controls_container)
+        
+        # Pack rows initially stacked vertically
+        self.controls_row1.pack(fill="x", pady=(0, 8))
+        self.controls_row2.pack(fill="x", pady=(0, 8))
+        self.controls_row3.pack(fill="x")
+        
+        # === ROW 1: Selection Controls (Color, Type, Delay) ===
         # Color selection label
-        color_label = ttk.Label(controls_frame, text="Color:")
+        color_label = ttk.Label(self.controls_row1, text="Color:")
         color_label.pack(side="left", padx=(0, 8))
         
         # Modern color dropdown
         self.color_dropdown = ttk.Combobox(
-            controls_frame,
+            self.controls_row1,
             textvariable=self.selected_color,
             values=self.current_cartridges,
             state="readonly",
@@ -420,51 +608,57 @@ class testRunner:
         self.color_dropdown.pack(side="left", padx=(0, 12))
         self.color_dropdown.bind('<<ComboboxSelected>>', self._onColorChange)
         
-        # --- NEW: Print Type Selection (Visible only for IIC) ---
-        self.type_frame = ttk.Frame(controls_frame)
+        # Print Type Selection (Visible only for IIC/IPH)
+        self.type_frame = ttk.Frame(self.controls_row1)
         self.type_frame.pack(side="left", padx=(0, 12))
         
         type_label = ttk.Label(self.type_frame, text="Type:")
         type_label.pack(side="left", padx=(0, 5))
         
         # Segmented button style (Radiobuttons with Toolbutton style)
-        # for mode in ["Full", "50%", "25%", "ISO"]:
         for mode in ["Full", "ISO"]:
             rb = ttk.Radiobutton(
                 self.type_frame, 
                 text=mode, 
                 variable=self.print_type_var, 
                 value=mode,
-                bootstyle="toolbutton-outline" # Gives the modern toggle look
+                bootstyle="toolbutton-outline"
             )
             rb.pack(side="left", padx=0)
-        # --------------------------------------------------------
         
         # Delay selection
-        delay_label = ttk.Label(controls_frame, text="Delay (s):")
+        delay_label = ttk.Label(self.controls_row1, text="Delay (s):")
         delay_label.pack(side="left", padx=(0, 8))
         
         self.delay_dropdown = ttk.Combobox(
-            controls_frame,
+            self.controls_row1,
             textvariable=self.delay_var,
             values=["0", "1", "2", "5", "10", "15", "30", "60"],
             width=5
         )
         self.delay_dropdown.pack(side="left", padx=(0, 12))
         
-        # Modern buttons with ttkbootstrap styling
+        # === ROW 2: Drain Action Buttons ===
         self.drain_button = ttk.Button(
-            controls_frame,
+            self.controls_row2,
             text="Connect to Begin Draining",
             bootstyle=SECONDARY,
             command=self._startDrain,
             state="disabled"
         )
         self.drain_button.pack(side="left", padx=(0, 8))
+
+        self.custom_drain_button = ttk.Button(
+            self.controls_row2,
+            text="Drain To...",
+            bootstyle=PRIMARY,
+            command=self._startCustomDrain,
+            state="disabled"
+        )
+        self.custom_drain_button.pack(side="left", padx=(0, 8))
         
-        # NEW indefinite drain button
         self.indefinite_drain_button = ttk.Button(
-            controls_frame,
+            self.controls_row2,
             text="Drain Indefinitely",
             bootstyle=WARNING,
             command=self._startIndefiniteDrain,
@@ -472,9 +666,19 @@ class testRunner:
         )
         self.indefinite_drain_button.pack(side="left", padx=(0, 8))
         
-        # Single print button
+        # Stop button (initially hidden)
+        self.stop_button = ttk.Button(
+            self.controls_row2,
+            text="Stop Drain",
+            bootstyle=DANGER,
+            command=self._stopDrain,
+            state="disabled"
+        )
+        # Don't pack the stop button initially
+        
+        # === ROW 3: Print Action Buttons ===
         self.single_print_button = ttk.Button(
-            controls_frame,
+            self.controls_row3,
             text="Single Print",
             bootstyle=INFO,
             command=self._singlePrint,
@@ -482,9 +686,8 @@ class testRunner:
         )
         self.single_print_button.pack(side="left", padx=(0, 8))
         
-        # Print PSR button
         self.psr_button = ttk.Button(
-            controls_frame,
+            self.controls_row3,
             text="Print PSR",
             bootstyle=PRIMARY,
             command=self._printPSR,
@@ -492,9 +695,8 @@ class testRunner:
         )
         self.psr_button.pack(side="left", padx=(0, 8))
         
-        # Print 10-Tap button
         self.tap_button = ttk.Button(
-            controls_frame,
+            self.controls_row3,
             text="Print 10-Tap",
             bootstyle=SUCCESS,
             command=self._print10Tap,
@@ -502,15 +704,69 @@ class testRunner:
         )
         self.tap_button.pack(side="left", padx=(0, 8))
         
-        # Stop button (initially hidden)
-        self.stop_button = ttk.Button(
-            controls_frame,
-            text="Stop Drain",
-            bootstyle=DANGER,
-            command=self._stopDrain,
-            state="disabled"
-        )
-        # Don't pack the stop button initially
+        # Track current group layout mode for smart repositioning
+        self._current_group_layout = None
+        
+        # Bind window resize to adjust group positioning
+        self.root.bind("<Configure>", self._onWindowResize)
+    
+    def _onWindowResize(self, event):
+        """Handle window resize for smart group positioning"""
+        # Only respond to root window resize events
+        if event.widget == self.root:
+            self._adjustGroupLayout()
+    
+    def _adjustGroupLayout(self):
+        """
+        Intelligently reposition control row groups based on window width.
+        
+        Wide windows: All three rows side-by-side
+        Medium windows: Row1 on top, Row2+Row3 side-by-side below
+        Narrow windows: All three rows stacked vertically
+        """
+        window_width = self.root.winfo_width()
+        
+        # Skip if window hasn't been rendered yet
+        if window_width <= 1:
+            return
+        
+        # Determine layout mode based on width
+        # These thresholds are based on the actual minimum widths needed for groups
+        if window_width >= 1100:  # Wide: all three groups side by side
+            new_layout = "wide"
+        elif window_width >= 750:  # Medium: row1 solo, row2+row3 together
+            new_layout = "medium"
+        else:  # Narrow: all stacked
+            new_layout = "narrow"
+        
+        # Only repack if layout actually changed (debouncing)
+        if new_layout == self._current_group_layout:
+            return
+        
+        self._current_group_layout = new_layout
+        
+        # Unpack all rows first
+        self.controls_row1.pack_forget()
+        self.controls_row2.pack_forget()
+        self.controls_row3.pack_forget()
+        
+        if new_layout == "wide":
+            # Wide layout: All three rows side-by-side
+            self.controls_row1.pack(side="left", fill="both", expand=True, padx=(0, 8))
+            self.controls_row2.pack(side="left", fill="both", expand=True, padx=(0, 8))
+            self.controls_row3.pack(side="left", fill="both", expand=True)
+            
+        elif new_layout == "medium":
+            # Medium layout: Row1 on top, Row2+Row3 side-by-side
+            self.controls_row1.pack(fill="x", pady=(0, 8))
+            self.controls_row2.pack(side="left", fill="both", expand=True, padx=(0, 8))
+            self.controls_row3.pack(side="left", fill="both", expand=True)
+            
+        else:  # narrow
+            # Narrow layout: All rows stacked vertically
+            self.controls_row1.pack(fill="x", pady=(0, 8))
+            self.controls_row2.pack(fill="x", pady=(0, 8))
+            self.controls_row3.pack(fill="x")
     
     def _createActivityLogCard(self):
         """Create activity log card"""
@@ -799,6 +1055,7 @@ class testRunner:
         print("DEBUG: Enabling drain controls")
         self.color_dropdown.config(state="readonly")
         self.drain_button.config(state="normal")
+        self.custom_drain_button.config(state="normal")
         self.indefinite_drain_button.config(state="normal")
         self.single_print_button.config(state="normal")
         self.psr_button.config(state="normal")
@@ -862,6 +1119,7 @@ class testRunner:
         # Disable drain controls and update button text
         self.color_dropdown.config(state="disabled")
         self.drain_button.config(state="disabled")
+        self.custom_drain_button.config(state="disabled")
         self.indefinite_drain_button.config(state="disabled")
         self.single_print_button.config(state="disabled")
         self.psr_button.config(state="disabled")
@@ -1302,36 +1560,73 @@ class testRunner:
     
     def _startDrain(self):
         """Start draining ink for selected color"""
+        current_level = self.ink_levels.get(self.selected_color.get(), 0)
+        target_level = self._calculateNextDrainTarget(current_level)
+        self._startDrainToTarget(target_level, is_custom_target=False)
+
+    def _startCustomDrain(self):
+        """Prompt user for a custom target and start draining."""
+        if not self.is_connected:
+            ttk.messagebox.showwarning("Warning", "Please connect to printer first")
+            return
+
+        if self.is_draining:
+            ttk.messagebox.showwarning("Warning", "A drain operation is already running")
+            return
+
+        color = self.selected_color.get()
+        custom_target = simpledialog.askinteger(
+            "Custom Drain Target",
+            f"Enter target % for {color} drain ({MIN_DRAIN_LEVEL}-100):",
+            parent=self.root,
+            minvalue=MIN_DRAIN_LEVEL,
+            maxvalue=100,
+        )
+
+        if custom_target is None:
+            return
+
+        self._startDrainToTarget(custom_target, is_custom_target=True)
+
+    def _startDrainToTarget(self, target_level, is_custom_target=False):
+        """Start draining selected color until it reaches the target level."""
         color = self.selected_color.get()
         current_level = self.ink_levels.get(color, 0)
-        target_level = self._calculateNextDrainTarget(current_level)
-        
-        if target_level < MIN_DRAIN_LEVEL or current_level <= target_level:
-            ttk.messagebox.showwarning("Warning", f"{color} ink is already at minimum level")
+
+        if target_level < MIN_DRAIN_LEVEL:
+            ttk.messagebox.showwarning("Warning", f"Target must be at least {MIN_DRAIN_LEVEL}%")
             return
-        
-        self._logMessage(f"Starting {color} ink drain from {current_level}% to {target_level}%")
-        
+
+        if current_level <= target_level:
+            ttk.messagebox.showwarning("Warning", f"{color} is already at or below {target_level}%")
+            return
+
+        if is_custom_target:
+            self._logMessage(f"Starting CUSTOM {color} ink drain from {current_level}% to {target_level}%")
+        else:
+            self._logMessage(f"Starting {color} ink drain from {current_level}% to {target_level}%")
+
         # Update UI
         self.is_draining = True
         self.drain_button.config(state="disabled")
+        self.custom_drain_button.config(state="disabled")
         self.single_print_button.config(state="disabled")
         self.psr_button.config(state="disabled")
         self.tap_button.config(state="disabled")
         self.color_dropdown.config(state="disabled")
         self.stop_button.pack(side="left", padx=(8, 0))
         self.stop_button.config(state="normal")
-        
+
         # Start drain thread
         self.stop_drain.clear()
         try:
             delay = float(self.delay_var.get())
         except ValueError:
             delay = 5.0
-            
+
         self.drain_thread = threading.Thread(
-            target=self._performDrain, 
-            args=(color, target_level, delay), 
+            target=self._performDrain,
+            args=(color, target_level, delay),
             daemon=True
         )
         self.drain_thread.start()
@@ -1346,6 +1641,7 @@ class testRunner:
         # Update UI
         self.is_draining = True
         self.drain_button.config(state="disabled")
+        self.custom_drain_button.config(state="disabled")
         self.indefinite_drain_button.config(state="disabled")
         self.single_print_button.config(state="disabled")
         self.psr_button.config(state="disabled")
@@ -1456,6 +1752,7 @@ class testRunner:
         self.stop_button.config(state="disabled")
         self.color_dropdown.config(state="readonly")
         self.drain_button.config(state="normal", bootstyle=SUCCESS)
+        self.custom_drain_button.config(state="normal", bootstyle=PRIMARY)
         self.indefinite_drain_button.config(state="normal", bootstyle=WARNING)
         self.single_print_button.config(state="normal", bootstyle=INFO)
         self.psr_button.config(state="normal", bootstyle=PRIMARY)
@@ -1513,6 +1810,8 @@ class testRunner:
     
     def run(self):
         """Start the application"""
+        # Schedule initial layout adjustment after window is rendered
+        self.root.after(100, self._adjustGroupLayout)
         self.root.mainloop()
 
 def runTest():
