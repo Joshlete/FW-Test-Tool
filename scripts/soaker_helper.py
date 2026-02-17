@@ -151,7 +151,8 @@ PRINTER_TYPES = {
         "cartridges": ["CMY", "K"],
         "description": "Ink Print Head Dune printer with 2 cartridges (CMY combined + Black)",
         "pcl_base_path": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\Pyramid",
-        "pcl_base_path_iso": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\driven_files\\AmpereXL",
+        # Update ISO path to point to pcl3 folder where ISO_K.pcl likely exists
+        "pcl_base_path_iso": "G:\\iws_tests\\Print\\external\\Ink_Triggers\\PythonScripts\\drivenFiles\\pcl3", 
         "color_file_mapping": {
             "CMY": "25%_CMY.pcl",
             "K": "K_out_6x6_25_pn.pcl"
@@ -247,7 +248,8 @@ class testRunner:
         
         # Toggle visibility of Print Type controls
         if hasattr(self, 'type_frame'):
-            if new_type == "IIC":
+            # Show for IIC and IPH_DUNE/ARES
+            if new_type in ["IIC", "IPH_DUNE", "IPH_ARES"]:
                 self.type_frame.pack(side="left", padx=(0, 12), after=self.color_dropdown)
             else:
                 self.type_frame.pack_forget()
@@ -1162,10 +1164,10 @@ class testRunner:
     def _getPCLFile(self, printer_type, cartridge):
         """Construct the PCL file path based on printer type and selection."""
         config = PRINTER_TYPES[printer_type]
+        mode = self.print_type_var.get()
         
         # 1. Handle IIC Logic (with transparency/ISO options)
         if printer_type == "IIC":
-            mode = self.print_type_var.get()
             color_codes = {"CYAN": "C", "MAGENTA": "M", "YELLOW": "Y", "BLACK": "K"}
             code = color_codes.get(cartridge, "K")
             
@@ -1182,12 +1184,20 @@ class testRunner:
                 # Path: G:\...\AmpereXL\C_out_6x6_50_pn.pcl
                 return f"{config['pcl_base_path']}\\{code}_out_6x6{suffix}_pn.pcl"
 
-        # 2. Handle IPH Logic (Keep existing logic)
+        # 2. Handle IPH Logic (Enhanced with Selection)
         elif printer_type in ["IPH_DUNE", "IPH_ARES"]:
             if cartridge == "K":
-                return f'{config["pcl_base_path_iso"]}\\{config["color_file_mapping"][cartridge]}'
+                if mode == "ISO":
+                    # Use ISO K file
+                    return f'{config["pcl_base_path_iso"]}\\ISO_K.pcl'
+                else:
+                    # Use Soaker K file (K_out_6x6_25_pn.pcl) from AmpereXL
+                    # Note: config["pcl_base_path"] points to Pyramid, but K file is in AmpereXL
+                    ampere_path = PRINTER_TYPES["IIC"]["pcl_base_path"]
+                    return f'{ampere_path}\\{config["color_file_mapping"]["K"]}'
             else:
-                return f'{config["pcl_base_path"]}\\{config["color_file_mapping"][cartridge]}'
+                # CMY (Usually just one option: 25%_CMY.pcl)
+                return f'{config["pcl_base_path"]}\\{config["color_file_mapping"]["CMY"]}'
         
         return None
 

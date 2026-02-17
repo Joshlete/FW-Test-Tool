@@ -1,0 +1,246 @@
+"""
+AppHeader - Unified header bar matching the HTML mockup design.
+
+Layout: [Logo] [Target IP] [Family] [Directory (expanding)] [Hamburger Menu]
+
+This component connects to AppState for state management and emits
+signals when user interacts with inputs.
+
+Note: Works with both AppState (new) and ConfigModel (legacy) since
+they share the same interface.
+"""
+from PySide6.QtWidgets import (
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QLineEdit,
+    QToolButton,
+    QPushButton,
+    QMenu,
+    QFileDialog,
+    QSizePolicy,
+)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
+from src.views.components.widgets.copy_button import CopyButton
+import os
+
+
+class HeaderInputGroup(QWidget):
+    """
+    A vertical group with a label above an input widget.
+    Mimics the HTML pattern: label positioned above the input.
+    """
+    def __init__(self, label_text: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("HeaderInputGroup")
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        
+        # Label (small, uppercase, muted)
+        self.label = QLabel(label_text.upper())
+        self.label.setObjectName("HeaderLabel")
+        layout.addWidget(self.label)
+        
+        # Placeholder for the input widget (added by subclass or externally)
+        self.input_container = QHBoxLayout()
+        self.input_container.setContentsMargins(0, 0, 0, 0)
+        self.input_container.setSpacing(0)
+        layout.addLayout(self.input_container)
+    
+    def add_widget(self, widget, stretch=0):
+        """Add a widget to the input container."""
+        self.input_container.addWidget(widget, stretch)
+
+
+class AppHeader(QWidget):
+    """
+    Unified application header bar.
+    
+    Connects to ConfigModel for IP, Family, and Directory state.
+    Provides a hamburger menu for Tools, Settings, and Log navigation.
+    
+    Signals:
+        menu_item_clicked(str): Emitted when a hamburger menu item is clicked.
+                                 Values: "tools", "settings", "log"
+        family_clicked(str): Emitted when a family is clicked (always, even if already selected).
+                             Use this for navigation. Values: family names
+    """
+    
+    menu_item_clicked = Signal(str)
+    family_clicked = Signal(str)
+    
+    # Constant for uniform input height
+    HEADER_INPUT_HEIGHT = 36
+    
+    def __init__(self, config_model, parent=None):
+        super().__init__(parent)
+        self.config_model = config_model
+        
+        self.setObjectName("AppHeader")
+        self.setFixedHeight(90)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
+        # Main horizontal layout
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setSpacing(16)
+        
+        
+        # --- Target IP Group ---
+        self.ip_group = HeaderInputGroup("Target IP")
+        self.ip_input = QLineEdit()
+        self.ip_input.setObjectName("HeaderInput")
+        self.ip_input.setPlaceholderText("Enter IP")
+        self.ip_input.setFixedWidth(130)
+        self.ip_input.setFixedHeight(self.HEADER_INPUT_HEIGHT)
+        self.ip_input.setText(config_model.ip)
+        self.ip_input.textChanged.connect(self._on_ip_changed)
+        self.ip_group.add_widget(self.ip_input)
+        
+        # Copy Button (attached to IP input)
+        self.copy_btn = CopyButton(target=self.ip_input, tooltip="Copy IP")
+        self.copy_btn.set_height(self.HEADER_INPUT_HEIGHT)
+        self.ip_group.add_widget(self.copy_btn)
+        
+        self.ip_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self.ip_group)
+        
+        # --- Family Selector Group ---
+        self.family_group = HeaderInputGroup("Family")
+        self.family_btn = QPushButton()
+        self.family_btn.setText("  " + config_model.family.upper())  # Add spaces prefix for left alignment
+        self.family_btn.setObjectName("HeaderFamilyButton")
+        self.family_btn.setFixedWidth(120)
+        self.family_btn.setFixedHeight(self.HEADER_INPUT_HEIGHT)
+        self.family_btn.setMenu(self._create_family_menu())
+        self.family_group.add_widget(self.family_btn)
+        
+        self.family_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self.family_group)
+        
+        # --- Directory Group (Expanding) ---
+        self.dir_group = HeaderInputGroup("Directory") 
+        
+        self.dir_input = QLineEdit()
+        self.dir_input.setObjectName("HeaderInput")
+        self.dir_input.setPlaceholderText("No directory selected")
+        self.dir_input.setReadOnly(True)
+        self.dir_input.setFixedHeight(self.HEADER_INPUT_HEIGHT)
+        self.dir_input.setText(config_model.directory)
+        self.dir_group.add_widget(self.dir_input, stretch=1)
+        
+        # Browse button
+        self.browse_btn = QPushButton("📂")
+        self.browse_btn.setObjectName("HeaderButton")
+        self.browse_btn.setFixedSize(28, self.HEADER_INPUT_HEIGHT)
+        self.browse_btn.setToolTip("Browse Directory")
+        self.browse_btn.clicked.connect(self._browse_directory)
+        self.dir_group.add_widget(self.browse_btn)
+        
+        # Open in Explorer button
+        self.open_btn = QPushButton("↗")
+        self.open_btn.setObjectName("HeaderButton")
+        self.open_btn.setFixedSize(28, self.HEADER_INPUT_HEIGHT)
+        self.open_btn.setToolTip("Open in File Explorer")
+        self.open_btn.clicked.connect(self._open_in_explorer)
+        self.dir_group.add_widget(self.open_btn)
+        
+        self.dir_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self.dir_group)
+        
+        # --- Hamburger Menu ---
+        self.menu_btn = QToolButton()
+        self.menu_btn.setObjectName("HamburgerButton")
+        self.menu_btn.setText("☰")
+        self.menu_btn.setFixedSize(32, self.HEADER_INPUT_HEIGHT)  # Match input height
+        self.menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.menu_btn.setMenu(self._create_menu())
+        # Align to bottom so it lines up with the input boxes (not the labels above them)
+        layout.addWidget(self.menu_btn, 0, Qt.AlignmentFlag.AlignBottom)
+        
+        # --- Connect to ConfigModel signals for external updates ---
+        config_model.ip_changed.connect(self._update_ip_display)
+        config_model.family_changed.connect(self._update_family_display)
+        config_model.directory_changed.connect(self._update_directory_display)
+    
+    def _create_menu(self) -> QMenu:
+        """Create the hamburger menu with Tools, Settings, Log options."""
+        menu = QMenu(self)
+        menu.setObjectName("HamburgerMenu")
+        
+        tools_action = QAction("Tools", self)
+        tools_action.triggered.connect(lambda: self.menu_item_clicked.emit("tools"))
+        menu.addAction(tools_action)
+        
+        menu.addSeparator()
+        
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(lambda: self.menu_item_clicked.emit("settings"))
+        menu.addAction(settings_action)
+        
+        log_action = QAction("Log", self)
+        log_action.triggered.connect(lambda: self.menu_item_clicked.emit("log"))
+        menu.addAction(log_action)
+        
+        return menu
+
+    def _create_family_menu(self) -> QMenu:
+        """Create family selection menu (button + menu pattern like ActionKey)."""
+        menu = QMenu(self)
+        menu.setObjectName("HeaderFamilyMenu")
+
+        for family in self.config_model.FAMILIES:
+            action = QAction(family, menu)
+            action.triggered.connect(lambda checked=False, f=family: self._on_family_selected(f))
+            menu.addAction(action)
+
+        return menu
+    
+    # --- Input Handlers (User -> ConfigModel) ---
+    
+    def _on_ip_changed(self, text: str):
+        """User typed in IP field -> update model."""
+        self.config_model.set_ip(text)
+    
+    def _on_family_selected(self, family: str):
+        """User selected family from menu -> update model and emit navigation signal."""
+        self.config_model.set_family(family)
+        # Always emit family_clicked for navigation, even if family didn't change
+        self.family_clicked.emit(family)
+    
+    def _browse_directory(self):
+        """Open directory picker dialog."""
+        start_dir = self.config_model.directory or ""
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select Output Directory", start_dir
+        )
+        if directory:
+            self.config_model.set_directory(directory)
+    
+    def _open_in_explorer(self):
+        """Open current directory in file explorer."""
+        path = self.config_model.directory
+        if path and os.path.isdir(path):
+            os.startfile(path)
+    
+    # --- ConfigModel Signal Handlers (Model -> UI) ---
+    
+    def _update_ip_display(self, ip: str):
+        """Model IP changed -> update input field if different."""
+        if self.ip_input.text() != ip:
+            self.ip_input.setText(ip)
+    
+    def _update_family_display(self, family: str):
+        """Model family changed -> update family button label."""
+        display_text = "  " + family.upper()  # Add spaces prefix for left alignment
+        if self.family_btn.text() != display_text:
+            self.family_btn.setText(display_text)
+    
+    def _update_directory_display(self, directory: str):
+        """Model directory changed -> update input field."""
+        if self.dir_input.text() != directory:
+            self.dir_input.setText(directory)

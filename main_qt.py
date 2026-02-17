@@ -7,8 +7,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 from PySide6.QtWidgets import QApplication
-from src.ui_qt.main_window import MainWindow
-from src.ui_qt.styles import load_stylesheet
+from src.views.main_window import MainWindow
+from src.services.theme_service import ThemeManager
 
 def main():
     # Handle Playwright browsers in frozen environment
@@ -23,7 +23,7 @@ def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     
     # Apply the dark theme stylesheet
-    app.setStyleSheet(load_stylesheet())
+    ThemeManager.load_theme(app)
     
     window = MainWindow()
     window.show()
