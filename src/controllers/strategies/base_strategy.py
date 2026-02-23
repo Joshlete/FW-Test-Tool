@@ -68,3 +68,10 @@ class BaseDuneStrategy(ABC):
             bool: True if this object should be included for the selected colors.
         """
         pass
+
+    def get_tap_label(self):
+        """
+        Returns the manual tap section label for reports.
+        Defaults to 63-Tap for IIC-like behavior.
+        """
+        return "63-Tap"

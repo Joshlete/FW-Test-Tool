@@ -71,21 +71,21 @@ class ReportBuilder:
         except Exception:
             return "Unknown"
 
-        supply_code = None
-        try:
-            if "eventDetail" in data and "identityInfo" in data["eventDetail"]:
-                supply_code = data["eventDetail"]["identityInfo"].get("supplyColorCode")
-        except Exception:
-            supply_code = None
+        supply_code = self._extract_supply_color_code(data)
 
         if not supply_code:
             return "Unknown"
 
         code = str(supply_code).strip().upper()
 
-        # Strategy-specific labels
-        if self.strategy and self.strategy.get_name() == "Dune IPH":
-            return "Black" if code == "K" else "Tri-Color"
+        # Strategy-specific label resolution by cartridge semantics.
+        if self.strategy:
+            try:
+                for cartridge in self.strategy.get_cartridges():
+                    if self.strategy.matches_color_code(code, [cartridge]):
+                        return cartridge
+            except Exception:
+                pass
 
         # Default (IIC-like): C/M/Y/K -> names
         return {
@@ -94,6 +94,36 @@ class ReportBuilder:
             "Y": "Yellow",
             "K": "Black",
         }.get(code, "Unknown")
+
+    def _extract_supply_color_code(self, data):
+        """
+        Extracts supplyColorCode from known telemetry payload variants.
+        Supports:
+        - Dune-style: eventDetail.identityInfo.supplyColorCode
+        - Ares-style: eventDetail.eventDetailConsumable.identityInfo.supplyColorCode
+        """
+        if not isinstance(data, dict):
+            return None
+
+        details = data.get("eventDetail", {})
+        if not isinstance(details, dict):
+            return None
+
+        identity = details.get("identityInfo", {})
+        if isinstance(identity, dict):
+            code = identity.get("supplyColorCode")
+            if code:
+                return code
+
+        consumable = details.get("eventDetailConsumable", {})
+        if isinstance(consumable, dict):
+            nested_identity = consumable.get("identityInfo", {})
+            if isinstance(nested_identity, dict):
+                code = nested_identity.get("supplyColorCode")
+                if code:
+                    return code
+
+        return None
 
     def get_available_alerts(self):
         """
@@ -203,8 +233,8 @@ class ReportBuilder:
             tap_label = tap_value[0]
         elif "Tap" in selected_categories:
             # Fallback: infer from strategy when UI didn't provide a label
-            if self.strategy and self.strategy.get_name() == "Dune IPH":
-                tap_label = "43-Tap"
+            if self.strategy and hasattr(self.strategy, "get_tap_label"):
+                tap_label = self.strategy.get_tap_label()
             else:
                 tap_label = "63-Tap"
 

@@ -41,6 +41,9 @@ class DuneIPHStrategy(BaseDuneStrategy):
     def get_alert_id(self, color_name):
         return self.COLOR_TO_ALERT_ID.get(color_name)
 
+    def get_tap_label(self):
+        return "43-Tap"
+
     def is_valid_supply(self, supply_obj, selected_colors):
         """
         IPH Logic: 

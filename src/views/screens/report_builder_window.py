@@ -354,6 +354,7 @@ class ReportBuilderWindow(QMainWindow):
     def set_strategy(self, strategy):
         """Update the printer strategy dynamically."""
         self.strategy = strategy
+        self._update_tap_category_label()
         # Re-init controls to update color checkboxes
         # Clear existing color controls
         for cb in self.color_checks.values():
@@ -364,6 +365,38 @@ class ReportBuilderWindow(QMainWindow):
         self._populate_color_controls()
         self._rebuild_telemetry_controls()
         self.generate_report()
+
+    def _get_tap_label(self):
+        """Get the tap label from strategy when available."""
+        if self.strategy and hasattr(self.strategy, "get_tap_label"):
+            try:
+                return self.strategy.get_tap_label()
+            except Exception:
+                pass
+        return "63-Tap"
+
+    def _update_tap_category_label(self):
+        """Keep the Tap category display label in sync with strategy."""
+        if not hasattr(self, "cat_map"):
+            return
+
+        new_tap_label = self._get_tap_label()
+        current_tap_label = None
+        for display_name, internal_key in self.cat_map.items():
+            if internal_key == "Tap":
+                current_tap_label = display_name
+                break
+
+        if current_tap_label == new_tap_label:
+            return
+
+        if current_tap_label in self.cat_map:
+            del self.cat_map[current_tap_label]
+        self.cat_map[new_tap_label] = "Tap"
+
+        tap_button = self.category_checks.get("Tap")
+        if tap_button:
+            tap_button.setText(new_tap_label)
 
     def _init_file_explorer(self):
         # File System Model
@@ -535,10 +568,8 @@ class ReportBuilderWindow(QMainWindow):
         }
         
         # Add dynamic Tap category based on strategy
-        tap_label = "63-Tap" # Default
-        if self.strategy and self.strategy.get_name() == "Dune IPH":
-            tap_label = "43-Tap"
-            
+        tap_label = self._get_tap_label()
+
         self.cat_map[tap_label] = "Tap" # Map display name to internal key "Tap"
         
         for display_name, internal_key in self.cat_map.items():
@@ -1007,6 +1038,13 @@ class ReportBuilderWindow(QMainWindow):
                     header_str = f"{', '.join(active_cats_display_names)}, and {last} were correct and to spec."
             else:
                 header_str = "Nothing selected."
+
+            # If Reports data source is selected, add the standard attachment note.
+            reports_selected = bool(
+                self.category_checks.get("Reports") and self.category_checks["Reports"].isChecked()
+            )
+            if reports_selected and header_str != "Nothing selected.":
+                header_str += " See attached for report values."
 
             # 5. Generate Body
             body = builder.generate_report(selected_categories, colors, selected_alerts=None)

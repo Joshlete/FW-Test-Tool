@@ -21,7 +21,10 @@ from src.services.file_service import FileManager
 from src.views.components.widgets.cdm_widget import CDMWidget
 from src.views.components.widgets.alerts_widget import AlertsWidget
 from src.views.components.widgets.telemetry_widget import TelemetryWidget
+from src.views.components.dialogs import TelemetryInputDialog
 from src.views.components.cards.manual_ops_card import ManualOpsCard
+from src.views.screens.report_builder_window import ReportBuilderWindow
+from src.controllers.strategies import AresStrategy
 from src.services.ews_capture import EWSScreenshotCapturer
 from src.utils.logging.app_logger import log_info, log_error
 
@@ -47,7 +50,10 @@ class AresScreenController(QObject):
         
         self.config_manager = config_manager
         self._controllers = controllers
+        self.strategy = AresStrategy()
         self.ip = None
+        self.report_window = None
+        self.telemetry_input_dialog = None
         
         # Create managers FIRST (controller owns these)
         self.step_manager = QtStepManager(tab_name="ares", config_manager=config_manager)
@@ -83,10 +89,10 @@ class AresScreenController(QObject):
         self.cdm_card.add_content(self.cdm_widget, stretch=1)
         
         # === Center Column: Manual Operations ===
-        # Ares only uses: EWS, Snip, Telemetry Input (no Commands or Report)
+        # Ares uses EWS/Snip/Telemetry Input plus report generation.
         self.manual_ops = ManualOpsCard(
             step_manager=self.step_manager,
-            buttons=['ews', 'snip', 'telemetry_input']
+            buttons=['ews', 'report', 'snip', 'telemetry_input']
         )
 
         # Wrap ManualOpsCard in a container to push it to the top
@@ -130,6 +136,7 @@ class AresScreenController(QObject):
         
         # === Manual Ops Actions ===
         self.manual_ops.ews_clicked.connect(self._on_capture_ews)
+        self.manual_ops.report_clicked.connect(self.open_report_builder)
         self.manual_ops.snip_clicked.connect(self._on_snip)
         self.manual_ops.telemetry_input_clicked.connect(self._on_telemetry_input)
         self.manual_ops.password_changed.connect(lambda t: self.config_manager.set("password", t))
@@ -254,7 +261,21 @@ class AresScreenController(QObject):
         threading.Thread(target=_run_capture).start()
     
     def _on_telemetry_input(self):
-        self.screen.status_message.emit("Telemetry Input clicked (Not implemented)")
+        telemetry_ctrl = self._controllers.get("telemetry")
+        if telemetry_ctrl is None:
+            self.screen.error_occurred.emit("Telemetry controller unavailable")
+            return
+
+        if self.telemetry_input_dialog is None:
+            self.telemetry_input_dialog = TelemetryInputDialog(
+                self.screen,
+                step_manager=self.step_manager,
+            )
+            self.telemetry_input_dialog.save_requested.connect(telemetry_ctrl.save_event)
+
+        self.telemetry_input_dialog.show()
+        self.telemetry_input_dialog.raise_()
+        self.telemetry_input_dialog.activateWindow()
     
     def _set_busy(self, button, busy, idle_text):
         """Toggle a busy state on a button."""
@@ -276,6 +297,23 @@ class AresScreenController(QObject):
     def update_directory(self, new_dir: str):
         """Called when directory changes."""
         self.screen.update_directory(new_dir)
+
+    def open_report_builder(self):
+        """Open report builder with Ares strategy."""
+        current_dir = self.screen.file_manager.default_directory
+        if self.report_window is None:
+            self.report_window = ReportBuilderWindow(
+                initial_directory=current_dir,
+                strategy=self.strategy,
+            )
+            self.report_window.show()
+        else:
+            if current_dir:
+                self.report_window.set_directory(current_dir)
+            self.report_window.set_strategy(self.strategy)
+            self.report_window.show()
+            self.report_window.raise_()
+            self.report_window.activateWindow()
     
     def get_screen(self) -> FamilyScreen:
         """Return the screen widget for adding to tab widget."""
